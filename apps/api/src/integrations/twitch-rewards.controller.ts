@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Body,
+  Delete,
   Controller,
   Get,
   Inject,
@@ -29,6 +30,7 @@ import {
   normalizeTwitchRewardFeatureSettings,
 } from './twitch-reward-features.js';
 import { TwitchRewardsService } from './twitch-rewards.service.js';
+import type { CreateTwitchCustomReward, UpdateTwitchCustomReward } from './twitch-helix.service.js';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -88,6 +90,97 @@ function featureSettings(feature: ReturnType<typeof featureKey>, value: unknown)
 export class TwitchRewardsController {
   constructor(@Inject(TwitchRewardsService) private readonly rewards: TwitchRewardsService) {}
 
+  @Get()
+  @RequireWorkspacePermission('workspace:read')
+  listRemoteRewards(@Req() request: HttpRequest) {
+    return this.rewards.listRemoteRewards(workspace(request), user(request));
+  }
+
+  @Post()
+  @UseGuards(CsrfGuard)
+  @RequireWorkspacePermission('workspace:manage')
+  createReward(@Req() request: HttpRequest, @Body() body: unknown) {
+    const data = record(body);
+    const key = featureKey(data.featureKey);
+    const settings = featureSettings(key, data.featureSettings ?? {});
+    const title = requiredString(data.title, 'title', 45);
+    const prompt = optionalString(data.prompt, 'prompt', 200);
+    const cost = data.cost;
+    if (typeof cost !== 'number' || !Number.isInteger(cost) || cost < 1 || cost > 1_000_000) {
+      throw new BadRequestException('cost must be an integer between 1 and 1000000.');
+    }
+    if (data.isEnabled !== undefined && typeof data.isEnabled !== 'boolean') {
+      throw new BadRequestException('isEnabled must be a boolean.');
+    }
+    if (data.isUserInputRequired !== undefined && typeof data.isUserInputRequired !== 'boolean') {
+      throw new BadRequestException('isUserInputRequired must be a boolean.');
+    }
+    const reward: CreateTwitchCustomReward = {
+      title,
+      cost,
+      ...(prompt !== undefined ? { prompt } : {}),
+      ...(data.isEnabled !== undefined ? { is_enabled: data.isEnabled } : {}),
+      ...(data.isUserInputRequired !== undefined
+        ? { is_user_input_required: data.isUserInputRequired }
+        : {}),
+    };
+    return this.rewards.createReward(workspace(request), user(request), reward, key, settings);
+  }
+
+  @Patch(':rewardId')
+  @UseGuards(CsrfGuard)
+  @RequireWorkspacePermission('workspace:manage')
+  updateRemoteReward(
+    @Req() request: HttpRequest,
+    @Param('rewardId') rewardId: string,
+    @Body() body: unknown,
+  ) {
+    const id = requiredString(rewardId, 'rewardId', 128);
+    const data = record(body);
+    const input: UpdateTwitchCustomReward = {};
+    if (data.title !== undefined) input.title = requiredString(data.title, 'title', 45);
+    if (data.prompt !== undefined) {
+      const prompt = optionalString(data.prompt, 'prompt', 200);
+      input.prompt = prompt ?? '';
+    }
+    if (data.cost !== undefined) {
+      if (
+        typeof data.cost !== 'number' ||
+        !Number.isInteger(data.cost) ||
+        data.cost < 1 ||
+        data.cost > 1_000_000
+      ) {
+        throw new BadRequestException('cost must be an integer between 1 and 1000000.');
+      }
+      input.cost = data.cost;
+    }
+    if (data.isEnabled !== undefined) {
+      if (typeof data.isEnabled !== 'boolean') {
+        throw new BadRequestException('isEnabled must be a boolean.');
+      }
+      input.is_enabled = data.isEnabled;
+    }
+    if (data.isUserInputRequired !== undefined) {
+      if (typeof data.isUserInputRequired !== 'boolean') {
+        throw new BadRequestException('isUserInputRequired must be a boolean.');
+      }
+      input.is_user_input_required = data.isUserInputRequired;
+    }
+    if (Object.keys(input).length === 0) {
+      throw new BadRequestException('At least one Twitch reward field must be supplied.');
+    }
+    return this.rewards.updateRemoteReward(workspace(request), user(request), id, input);
+  }
+
+  @Delete(':rewardId')
+  @UseGuards(CsrfGuard)
+  @RequireWorkspacePermission('workspace:manage')
+  async deleteRemoteReward(@Req() request: HttpRequest, @Param('rewardId') rewardId: string) {
+    const id = requiredString(rewardId, 'rewardId', 128);
+    await this.rewards.deleteRemoteReward(workspace(request), user(request), id);
+    return { deleted: true, rewardId: id };
+  }
+
   @Get('mappings')
   @RequireWorkspacePermission('workspace:read')
   listMappings(@Req() request: HttpRequest) {
@@ -101,16 +194,8 @@ export class TwitchRewardsController {
     const data = record(body);
     const key = featureKey(data.featureKey);
     const settings = featureSettings(key, data.featureSettings ?? {});
-    const cost = data.rewardCost;
-    if (typeof cost !== 'number' || !Number.isInteger(cost) || cost < 1 || cost > 1_000_000) {
-      throw new BadRequestException('rewardCost must be an integer between 1 and 1000000.');
-    }
-    const rewardPrompt = optionalString(data.rewardPrompt, 'rewardPrompt', 200);
     return this.rewards.linkExistingReward(workspace(request), user(request), {
       rewardId: requiredString(data.rewardId, 'rewardId', 128),
-      rewardTitle: requiredString(data.rewardTitle, 'rewardTitle', 45),
-      ...(rewardPrompt !== undefined ? { rewardPrompt } : {}),
-      rewardCost: cost,
       featureKey: key,
       featureSettings: settings,
     });
