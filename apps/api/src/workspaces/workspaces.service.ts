@@ -9,7 +9,7 @@ import { randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { DatabaseService } from '../database/database.service.js';
 
-interface WorkspaceRecord {
+export interface WorkspaceRecord {
   id: string;
   name: string;
   status: 'active' | 'restricted' | 'suspended';
