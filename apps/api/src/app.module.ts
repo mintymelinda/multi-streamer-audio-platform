@@ -5,6 +5,7 @@ import { IdentityModule } from './identity/identity.module.js';
 import { OutboxModule } from './outbox/outbox.module.js';
 import { RequestsModule } from './requests/requests.module.js';
 import { TwitchEventSubModule } from './integrations/twitch-eventsub.module.js';
+import { TwitchRewardsModule } from './integrations/twitch-rewards.module.js';
 import { WorkspacesModule } from './workspaces/workspaces.module.js';
 
 @Module({
@@ -15,6 +16,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module.js';
     OutboxModule,
     RequestsModule,
     TwitchEventSubModule,
+    TwitchRewardsModule,
   ],
   controllers: [HealthController],
 })
