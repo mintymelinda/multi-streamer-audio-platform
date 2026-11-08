@@ -35,11 +35,12 @@ export function classifyModeration(
   holdTerms: readonly string[],
   rejectTerms: readonly string[],
 ): 'pending' | 'held' | 'rejected' | 'approved' {
-  const haystack = `${title} ${artist ?? ''}`.normalize('NFKC').toLocaleLowerCase();
-  const matches = (terms: readonly string[]) =>
-    terms.some((term) => term.trim().length > 0 && haystack.includes(term.normalize('NFKC').toLocaleLowerCase()));
-  if (matches(rejectTerms)) return 'rejected';
   if (mode === 'manual') return 'pending';
-  if (mode === 'filtered' && matches(holdTerms)) return 'held';
+  if (mode === 'automatic') return 'approved';
+  const haystack = `${title} ${artist ?? ''}`.normalize('NFKC').toLowerCase();
+  const matches = (terms: readonly string[]) =>
+    terms.some((term) => term.trim().length > 0 && haystack.includes(term.normalize('NFKC').toLowerCase()));
+  if (matches(rejectTerms)) return 'rejected';
+  if (matches(holdTerms)) return 'held';
   return 'approved';
 }
