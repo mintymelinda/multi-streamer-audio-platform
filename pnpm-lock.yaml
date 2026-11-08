@@ -1461,7 +1461,7 @@ snapshots:
 
   '@types/pg@8.15.5':
     dependencies:
-      '@types/node': 26.0.0
+      '@types/node': 26.6.6
       pg-protocol: 1.16.1
       pg-types: 2.2.0
 
@@ -1896,6 +1896,6 @@ snapshots:
 
   uint8array-extras@1.6.0: {}
 
-  undici-types@8.3.0: {}
+  undici-types@8.9.0: {}
 
   xtend@4.0.2: {}
