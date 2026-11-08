@@ -47,7 +47,8 @@ CREATE TABLE media_requests (
   submitted_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   completed_at timestamptz,
-  CHECK (source <> 'twitch_reward' OR source_event_id IS NOT NULL)
+  CHECK (source <> 'twitch_reward' OR source_event_id IS NOT NULL),
+  UNIQUE (workspace_id, id)
 );
 
 CREATE UNIQUE INDEX media_requests_source_event_dedupe
@@ -62,14 +63,15 @@ CREATE INDEX media_requests_requester_active
 CREATE TABLE request_state_history (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-  request_id uuid NOT NULL REFERENCES media_requests(id) ON DELETE CASCADE,
+  request_id uuid NOT NULL,
   from_status request_status,
   to_status request_status NOT NULL,
   actor_user_id uuid REFERENCES platform_users(id) ON DELETE SET NULL,
   actor_type text NOT NULL CHECK (actor_type IN ('user', 'moderator', 'system', 'twitch')),
   reason text,
   details jsonb NOT NULL DEFAULT '{}'::jsonb,
-  created_at timestamptz NOT NULL DEFAULT now()
+  created_at timestamptz NOT NULL DEFAULT now(),
+  FOREIGN KEY (workspace_id, request_id) REFERENCES media_requests(workspace_id, id) ON DELETE CASCADE
 );
 CREATE INDEX request_state_history_request_created
   ON request_state_history (workspace_id, request_id, created_at, id);
@@ -77,12 +79,13 @@ CREATE INDEX request_state_history_request_created
 CREATE TABLE logical_queue_entries (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-  request_id uuid NOT NULL UNIQUE REFERENCES media_requests(id) ON DELETE CASCADE,
+  request_id uuid NOT NULL UNIQUE,
   priority integer NOT NULL DEFAULT 0 CHECK (priority BETWEEN 0 AND 100),
   sequence bigint NOT NULL CHECK (sequence > 0),
   inserted_by_user_id uuid REFERENCES platform_users(id) ON DELETE SET NULL,
   inserted_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (workspace_id, sequence)
+  UNIQUE (workspace_id, sequence),
+  FOREIGN KEY (workspace_id, request_id) REFERENCES media_requests(workspace_id, id) ON DELETE CASCADE
 );
 CREATE INDEX logical_queue_order
   ON logical_queue_entries (workspace_id, priority DESC, sequence ASC);
