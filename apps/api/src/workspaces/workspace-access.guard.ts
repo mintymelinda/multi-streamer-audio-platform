@@ -25,12 +25,12 @@ export class WorkspaceAccessGuard implements CanActivate {
     const userId = user.id;
     const result = await this.database.transaction({ userId, workspaceId }, (client) =>
       client.query<{
-          role: WorkspaceRequestContext['role'];
-          status: WorkspaceRequestContext['status'];
-        }>(
-          "SELECT m.role, w.status FROM workspace_memberships m JOIN workspaces w ON w.id = m.workspace_id WHERE m.workspace_id = $1 AND m.user_id = $2 AND m.status = 'active' LIMIT 1",
-          [workspaceId, userId],
-        ),
+        role: WorkspaceRequestContext['role'];
+        status: WorkspaceRequestContext['status'];
+      }>(
+        "SELECT m.role, w.status FROM workspace_memberships m JOIN workspaces w ON w.id = m.workspace_id WHERE m.workspace_id = $1 AND m.user_id = $2 AND m.status = 'active' LIMIT 1",
+        [workspaceId, userId],
+      ),
     );
     const membership = result.rows[0];
     if (!membership || membership.status === 'suspended') {
