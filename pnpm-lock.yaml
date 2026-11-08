@@ -272,8 +272,8 @@ importers:
         specifier: 6.7.0
         version: 6.7.0(ioredis@6.0.0)(pg@8.23.1)
       ioredis:
-        specifier: 5.6.1
-        version: 5.6.1
+        specifier: 6.0.0
+        version: 6.0.0
       pg:
         specifier: 8.23.1
         version: 8.23.1
