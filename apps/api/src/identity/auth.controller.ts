@@ -1,7 +1,7 @@
 import {
   Controller, Get, Inject, Post, Query, Req, Res, UnauthorizedException, UseGuards,
 } from '@nestjs/common';
-import type { AuthService } from './auth.service.js';
+import { AuthService } from './auth.service.js';
 import { CsrfGuard } from './csrf.guard.js';
 import type { HttpReply, HttpRequest } from './http.types.js';
 import { SessionGuard } from './session.guard.js';
