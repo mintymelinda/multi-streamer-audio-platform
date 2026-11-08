@@ -30,7 +30,9 @@ export interface EncryptedCredentialEnvelope {
 function decodeKey(encoded: string, version: string): Buffer {
   const key = Buffer.from(encoded, 'base64');
   if (key.length !== KEY_BYTES || key.toString('base64') !== encoded) {
-    throw new Error(`Integration KEK version "${version}" must be a canonical base64-encoded 32-byte key.`);
+    throw new Error(
+      `Integration KEK version "${version}" must be a canonical base64-encoded 32-byte key.`,
+    );
   }
   return key;
 }
@@ -52,7 +54,9 @@ function wrappingAad(credentialId: string, kekVersion: string): Buffer {
 export function loadIntegrationKeyRing(): IntegrationKeyRing {
   const path = process.env.INTEGRATION_KEK_RING_FILE;
   if (!path) {
-    throw new Error('Integration credential encryption is unavailable: INTEGRATION_KEK_RING_FILE is not configured.');
+    throw new Error(
+      'Integration credential encryption is unavailable: INTEGRATION_KEK_RING_FILE is not configured.',
+    );
   }
   let parsed: unknown;
   try {
@@ -79,7 +83,9 @@ export function loadIntegrationKeyRing(): IntegrationKeyRing {
   }
   decodeKey(current, ring.currentVersion);
   for (const [version, encoded] of Object.entries(ring.keys)) {
-    if (typeof encoded !== 'string') throw new Error(`Integration KEK version "${version}" is invalid.`);
+    if (typeof encoded !== 'string') {
+      throw new Error(`Integration KEK version "${version}" is invalid.`);
+    }
     decodeKey(encoded, version);
   }
   return ring;
@@ -131,7 +137,9 @@ export function decryptIntegrationCredentials(
     throw new Error('Unsupported integration credential encryption format.');
   }
   const encodedKek = keyRing.keys[envelope.kekVersion];
-  if (!encodedKek) throw new Error(`Integration KEK version "${envelope.kekVersion}" is unavailable.`);
+  if (!encodedKek) {
+    throw new Error(`Integration KEK version "${envelope.kekVersion}" is unavailable.`);
+  }
   const kek = decodeKey(encodedKek, envelope.kekVersion);
 
   const dekDecipher = createDecipheriv(
