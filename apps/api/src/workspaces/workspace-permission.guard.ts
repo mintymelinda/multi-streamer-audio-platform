@@ -21,10 +21,10 @@ export class WorkspacePermissionGuard implements CanActivate {
   constructor(@Inject(Reflector) private readonly reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
-    const permission = this.reflector.getAllAndOverride<WorkspacePermission>(
-      PERMISSION_METADATA,
-      [context.getHandler(), context.getClass()],
-    );
+    const permission = this.reflector.getAllAndOverride<WorkspacePermission>(PERMISSION_METADATA, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
     if (!permission) return true;
     const request = context.switchToHttp().getRequest<HttpRequest>();
     if (!request.workspace || !hasWorkspacePermission(request.workspace.role, permission)) {
