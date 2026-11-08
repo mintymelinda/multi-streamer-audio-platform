@@ -1,6 +1,6 @@
 -- Verify the API router can inspect durable intake while the worker cannot
 -- directly read reward mappings or create media requests.
-\\set ON_ERROR_STOP on
+\set ON_ERROR_STOP on
 BEGIN;
 SELECT set_config('app.user_id', '', true);
 SELECT set_config('app.workspace_id', '', true);
