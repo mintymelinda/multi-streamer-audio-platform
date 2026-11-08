@@ -1,3 +1,4 @@
+import type { VerifiedWorkspaceId } from '@platform/contracts';
 import {
   ConflictException,
   ForbiddenException,
@@ -33,7 +34,7 @@ export class TeamService {
     @Inject(TwitchDirectoryService) private readonly twitchDirectory: TwitchDirectoryService,
   ) {}
 
-  async listMembers(userId: string, workspaceId: string) {
+  async listMembers(userId: string, workspaceId: VerifiedWorkspaceId) {
     const result = await this.database.transaction(
       { userId, verifiedWorkspaceId: workspaceId },
       (client) =>
@@ -45,7 +46,7 @@ export class TeamService {
     return result.rows;
   }
 
-  async listWorkspaceInvitations(userId: string, workspaceId: string) {
+  async listWorkspaceInvitations(userId: string, workspaceId: VerifiedWorkspaceId) {
     const result = await this.database.transaction(
       { userId, verifiedWorkspaceId: workspaceId },
       (client) =>
@@ -59,7 +60,7 @@ export class TeamService {
 
   async createInvitation(
     actor: AuthenticatedUser,
-    workspaceId: string,
+    workspaceId: VerifiedWorkspaceId,
     username: unknown,
     roleInput: unknown,
     actorRole: WorkspaceRole,
@@ -121,7 +122,7 @@ export class TeamService {
     }
   }
 
-  async cancelInvitation(actor: AuthenticatedUser, workspaceId: string, invitationId: string) {
+  async cancelInvitation(actor: AuthenticatedUser, workspaceId: VerifiedWorkspaceId, invitationId: string) {
     return this.database.transaction(
       { userId: actor.id, verifiedWorkspaceId: workspaceId },
       async (client) => {
@@ -144,7 +145,7 @@ export class TeamService {
 
   async changeMemberRole(
     actor: AuthenticatedUser,
-    workspaceId: string,
+    workspaceId: VerifiedWorkspaceId,
     memberUserId: string,
     roleInput: unknown,
     actorRole: WorkspaceRole,
@@ -178,7 +179,7 @@ export class TeamService {
     });
   }
 
-  async revokeMember(actor: AuthenticatedUser, workspaceId: string, memberUserId: string) {
+  async revokeMember(actor: AuthenticatedUser, workspaceId: VerifiedWorkspaceId, memberUserId: string) {
     return this.database.transaction(
       { userId: actor.id, verifiedWorkspaceId: workspaceId },
       async (client) => {
@@ -267,7 +268,7 @@ export class TeamService {
 
   private async audit(
     client: PoolClient,
-    workspaceId: string,
+    workspaceId: VerifiedWorkspaceId,
     actorId: string,
     eventType: string,
     targetType: string,
