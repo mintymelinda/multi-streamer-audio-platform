@@ -1,4 +1,4 @@
-import { ArgumentsHost, Catch, HttpException, Logger, type ExceptionFilter } from '@nestjs/common';
+import { Catch, HttpException, Logger, type ArgumentsHost, type ExceptionFilter } from '@nestjs/common';
 import { mapPublicError } from './public-errors.js';
 
 interface RequestWithId {
