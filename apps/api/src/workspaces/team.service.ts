@@ -38,10 +38,10 @@ export class TeamService {
     const result = await this.database.transaction(
       { userId, verifiedWorkspaceId: workspaceId },
       (client) =>
-      client.query(
-        "SELECT m.user_id, u.twitch_user_id, m.role, m.status, m.created_at, m.revoked_at FROM workspace_memberships m JOIN platform_users u ON u.id = m.user_id WHERE m.workspace_id = $1 ORDER BY CASE m.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 WHEN 'moderator' THEN 2 ELSE 3 END, m.created_at ASC",
-        [workspaceId],
-      ),
+        client.query(
+          "SELECT m.user_id, u.twitch_user_id, m.role, m.status, m.created_at, m.revoked_at FROM workspace_memberships m JOIN platform_users u ON u.id = m.user_id WHERE m.workspace_id = $1 ORDER BY CASE m.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 WHEN 'moderator' THEN 2 ELSE 3 END, m.created_at ASC",
+          [workspaceId],
+        ),
     );
     return result.rows;
   }
@@ -50,10 +50,10 @@ export class TeamService {
     const result = await this.database.transaction(
       { userId, verifiedWorkspaceId: workspaceId },
       (client) =>
-      client.query<InvitationRecord>(
-        "SELECT id, workspace_id, assigned_role, status, created_at, expires_at FROM workspace_invitations WHERE workspace_id = $1 AND status = 'pending' ORDER BY created_at DESC",
-        [workspaceId],
-      ),
+        client.query<InvitationRecord>(
+          "SELECT id, workspace_id, assigned_role, status, created_at, expires_at FROM workspace_invitations WHERE workspace_id = $1 AND status = 'pending' ORDER BY created_at DESC",
+          [workspaceId],
+        ),
     );
     return result.rows;
   }
@@ -84,36 +84,37 @@ export class TeamService {
       return await this.database.transaction(
         { userId: actor.id, verifiedWorkspaceId: workspaceId },
         async (client) => {
-        const existingMembership = await client.query(
-          "SELECT 1 FROM workspace_memberships m JOIN platform_users u ON u.id = m.user_id WHERE m.workspace_id = $1 AND u.twitch_user_id = $2 AND m.status = 'active' LIMIT 1",
-          [workspaceId, invitedTwitchUserId],
-        );
-        if (existingMembership.rowCount) {
-          throw new ConflictException('That Twitch account is already a workspace member.');
-        }
-        const invitationId = randomUUID();
-        const result = await client.query<InvitationRecord>(
-          "INSERT INTO workspace_invitations (id, workspace_id, invited_twitch_user_id, assigned_role, token_hash, invited_by_user_id, expires_at) VALUES ($1, $2, $3, $4, $5, $6, now() + interval '7 days') RETURNING id, workspace_id, assigned_role, status, created_at, expires_at",
-          [
-            invitationId,
+          const existingMembership = await client.query(
+            "SELECT 1 FROM workspace_memberships m JOIN platform_users u ON u.id = m.user_id WHERE m.workspace_id = $1 AND u.twitch_user_id = $2 AND m.status = 'active' LIMIT 1",
+            [workspaceId, invitedTwitchUserId],
+          );
+          if (existingMembership.rowCount) {
+            throw new ConflictException('That Twitch account is already a workspace member.');
+          }
+          const invitationId = randomUUID();
+          const result = await client.query<InvitationRecord>(
+            "INSERT INTO workspace_invitations (id, workspace_id, invited_twitch_user_id, assigned_role, token_hash, invited_by_user_id, expires_at) VALUES ($1, $2, $3, $4, $5, $6, now() + interval '7 days') RETURNING id, workspace_id, assigned_role, status, created_at, expires_at",
+            [
+              invitationId,
+              workspaceId,
+              invitedTwitchUserId,
+              role,
+              sha256(newOpaqueToken()),
+              actor.id,
+            ],
+          );
+          await this.audit(
+            client,
             workspaceId,
-            invitedTwitchUserId,
-            role,
-            sha256(newOpaqueToken()),
             actor.id,
-          ],
-        );
-        await this.audit(
-          client,
-          workspaceId,
-          actor.id,
-          'team.invitation_created',
-          'invitation',
-          invitationId,
-          { invitedTwitchUserId, assignedRole: role },
-        );
-        return result.rows[0];
-      });
+            'team.invitation_created',
+            'invitation',
+            invitationId,
+            { invitedTwitchUserId, assignedRole: role },
+          );
+          return result.rows[0];
+        },
+      );
     } catch (error) {
       if (isUniqueViolation(error)) {
         throw new ConflictException('A pending invitation already exists for that Twitch account.');
@@ -122,25 +123,30 @@ export class TeamService {
     }
   }
 
-  async cancelInvitation(actor: AuthenticatedUser, workspaceId: VerifiedWorkspaceId, invitationId: string) {
+  async cancelInvitation(
+    actor: AuthenticatedUser,
+    workspaceId: VerifiedWorkspaceId,
+    invitationId: string,
+  ) {
     return this.database.transaction(
       { userId: actor.id, verifiedWorkspaceId: workspaceId },
       async (client) => {
-      const result = await client.query(
-        "UPDATE workspace_invitations SET status = 'cancelled', responded_at = now() WHERE id = $1 AND workspace_id = $2 AND status = 'pending' RETURNING id",
-        [invitationId, workspaceId],
-      );
-      if (!result.rowCount) throw new NotFoundException('Pending invitation not found.');
-      await this.audit(
-        client,
-        workspaceId,
-        actor.id,
-        'team.invitation_cancelled',
-        'invitation',
-        invitationId,
-      );
-      return { cancelled: true };
-    });
+        const result = await client.query(
+          "UPDATE workspace_invitations SET status = 'cancelled', responded_at = now() WHERE id = $1 AND workspace_id = $2 AND status = 'pending' RETURNING id",
+          [invitationId, workspaceId],
+        );
+        if (!result.rowCount) throw new NotFoundException('Pending invitation not found.');
+        await this.audit(
+          client,
+          workspaceId,
+          actor.id,
+          'team.invitation_cancelled',
+          'invitation',
+          invitationId,
+        );
+        return { cancelled: true };
+      },
+    );
   }
 
   async changeMemberRole(
@@ -159,45 +165,51 @@ export class TeamService {
     return this.database.transaction(
       { userId: actor.id, verifiedWorkspaceId: workspaceId },
       async (client) => {
-      const result = await client.query(
-        "UPDATE workspace_memberships SET role = $1, updated_at = now() WHERE workspace_id = $2 AND user_id = $3 AND status = 'active' AND role <> 'owner' RETURNING user_id",
-        [roleInput, workspaceId, memberUserId],
-      );
-      if (!result.rowCount) throw new NotFoundException('Active non-owner member not found.');
-      await this.audit(
-        client,
-        workspaceId,
-        actor.id,
-        'team.member_role_changed',
-        'user',
-        memberUserId,
-        {
-          role: roleInput,
-        },
-      );
-      return { userId: memberUserId, role: roleInput };
-    });
+        const result = await client.query(
+          "UPDATE workspace_memberships SET role = $1, updated_at = now() WHERE workspace_id = $2 AND user_id = $3 AND status = 'active' AND role <> 'owner' RETURNING user_id",
+          [roleInput, workspaceId, memberUserId],
+        );
+        if (!result.rowCount) throw new NotFoundException('Active non-owner member not found.');
+        await this.audit(
+          client,
+          workspaceId,
+          actor.id,
+          'team.member_role_changed',
+          'user',
+          memberUserId,
+          {
+            role: roleInput,
+          },
+        );
+        return { userId: memberUserId, role: roleInput };
+      },
+    );
   }
 
-  async revokeMember(actor: AuthenticatedUser, workspaceId: VerifiedWorkspaceId, memberUserId: string) {
+  async revokeMember(
+    actor: AuthenticatedUser,
+    workspaceId: VerifiedWorkspaceId,
+    memberUserId: string,
+  ) {
     return this.database.transaction(
       { userId: actor.id, verifiedWorkspaceId: workspaceId },
       async (client) => {
-      const result = await client.query(
-        "UPDATE workspace_memberships SET status = 'revoked', revoked_at = now(), updated_at = now() WHERE workspace_id = $1 AND user_id = $2 AND status = 'active' AND role <> 'owner' RETURNING user_id",
-        [workspaceId, memberUserId],
-      );
-      if (!result.rowCount) throw new NotFoundException('Active non-owner member not found.');
-      await this.audit(
-        client,
-        workspaceId,
-        actor.id,
-        'team.member_access_revoked',
-        'user',
-        memberUserId,
-      );
-      return { revoked: true };
-    });
+        const result = await client.query(
+          "UPDATE workspace_memberships SET status = 'revoked', revoked_at = now(), updated_at = now() WHERE workspace_id = $1 AND user_id = $2 AND status = 'active' AND role <> 'owner' RETURNING user_id",
+          [workspaceId, memberUserId],
+        );
+        if (!result.rowCount) throw new NotFoundException('Active non-owner member not found.');
+        await this.audit(
+          client,
+          workspaceId,
+          actor.id,
+          'team.member_access_revoked',
+          'user',
+          memberUserId,
+        );
+        return { revoked: true };
+      },
+    );
   }
 
   async listMyInvitations(user: AuthenticatedUser) {

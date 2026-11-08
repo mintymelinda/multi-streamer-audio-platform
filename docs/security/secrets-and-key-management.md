@@ -38,7 +38,6 @@ The API now contains an AES-256-GCM envelope-encryption implementation and a ten
 
 This document defines the intended baseline; it is not evidence that encryption or key recovery has already been implemented.
 
-
 ## Implemented code
 
 The implementation is in `apps/api/src/security/integration-credential-crypto.ts`.

@@ -16,7 +16,10 @@ const context = {
 };
 
 test('integration credentials round-trip through an authenticated envelope', () => {
-  const plaintext = JSON.stringify({ accessToken: 'access-secret', refreshToken: 'refresh-secret' });
+  const plaintext = JSON.stringify({
+    accessToken: 'access-secret',
+    refreshToken: 'refresh-secret',
+  });
   const envelope = encryptIntegrationCredentials(plaintext, context, ring);
   assert.equal(envelope.formatVersion, 1);
   assert.equal(decryptIntegrationCredentials(envelope, context, ring), plaintext);

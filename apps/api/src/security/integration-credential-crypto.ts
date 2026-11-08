@@ -155,11 +155,7 @@ export function decryptIntegrationCredentials(
   ]);
 
   try {
-    const decipher = createDecipheriv(
-      'aes-256-gcm',
-      dek,
-      Buffer.from(envelope.nonce, 'base64'),
-    );
+    const decipher = createDecipheriv('aes-256-gcm', dek, Buffer.from(envelope.nonce, 'base64'));
     decipher.setAAD(credentialAad(context));
     decipher.setAuthTag(Buffer.from(envelope.authTag, 'base64'));
     return Buffer.concat([
