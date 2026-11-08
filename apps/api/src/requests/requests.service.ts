@@ -13,17 +13,17 @@ import {
 type RequestSource = 'twitch_reward' | 'dashboard' | 'moderator' | 'api';
 type IntakeInput = {
   workspace: WorkspaceRequestContext;
-  actor?: AuthenticatedUser;
+  actor?: AuthenticatedUser | undefined;
   source: RequestSource;
   title: string;
-  artist?: string;
-  mediaUrl?: string;
-  provider?: string;
-  mediaId?: string;
-  requesterTwitchUserId?: string;
-  requesterDisplayName?: string;
-  sourceEventId?: string;
-  metadata?: Record<string, unknown>;
+  artist?: string | undefined;
+  mediaUrl?: string | undefined;
+  provider?: string | undefined;
+  mediaId?: string | undefined;
+  requesterTwitchUserId?: string | undefined;
+  requesterDisplayName?: string | undefined;
+  sourceEventId?: string | undefined;
+  metadata?: Record<string, unknown> | undefined;
 };
 
 @Injectable()
@@ -42,7 +42,10 @@ export class RequestsService {
       throw new ConflictException('Media URL must use HTTP or HTTPS.');
     }
     return this.database.transaction(
-      { userId: input.actor?.id, verifiedWorkspaceId: input.workspace.id },
+      {
+        ...(input.actor ? { userId: input.actor.id } : {}),
+        verifiedWorkspaceId: input.workspace.id,
+      },
       async (client) => {
         await client.query(
           'INSERT INTO workspace_request_settings (workspace_id) VALUES ($1) ON CONFLICT DO NOTHING',
@@ -326,7 +329,7 @@ export class RequestsService {
           eventType: 'request.cancelled',
           aggregateType: 'media_request',
           aggregateId: requestId,
-          idempotencyKey: 'request.cancelled:' + requestId + ':' + current.status,
+          idempotencyKey: `request.cancelled:${requestId}:${current.status}`,
           payload: { requestId, actorUserId: actor.id },
         });
         return { id: requestId, status: 'cancelled' };
