@@ -60,11 +60,15 @@ test('reconciles linked rewards as synced, attention-required, or deleted withou
   assert.equal(remote.length, 2);
   assert.equal(updates.length, 3);
   assert.deepEqual(
-    updates.map((entry) => entry.values[2]),
+    updates.map((entry) => {
+      const parameterizedState = entry.values[2];
+      const literalState = entry.sql.match(/sync_state = '([^']+)'/)?.[1];
+      return parameterizedState ?? literalState;
+    }),
     ['synced', 'attention_required', 'deleted_on_twitch'],
   );
   assert.equal(updates[1].values[3], 'reward_metadata_changed');
-  assert.equal(updates[2].values[3], 'reward_missing_on_twitch');
+  assert.match(updates[2].sql, /last_sync_error_code = 'reward_missing_on_twitch'/);
   assert.match(updates[2].sql, /enabled = false/);
 });
 
