@@ -25,6 +25,8 @@ type IntakeInput = {
   requesterTwitchUserId?: string | undefined;
   requesterDisplayName?: string | undefined;
   sourceEventId?: string | undefined;
+  serviceActorUserId?: string | undefined;
+  priority?: number | undefined;
   metadata?: Record<string, unknown> | undefined;
 };
 
@@ -45,7 +47,9 @@ export class RequestsService {
     }
     return this.database.transaction(
       {
-        ...(input.actor ? { userId: input.actor.id } : {}),
+        ...((input.actor?.id ?? input.serviceActorUserId)
+          ? { userId: input.actor?.id ?? input.serviceActorUserId }
+          : {}),
         verifiedWorkspaceId: input.workspace.id,
       },
       async (client) => {
@@ -124,8 +128,8 @@ export class RequestsService {
         const inserted = await client.query<{ id: string; status: RequestStatus }>(
           `INSERT INTO media_requests
             (workspace_id, source, source_event_id, submitted_by_user_id, requester_twitch_user_id,
-             requester_display_name, provider, media_id, media_url, title, artist, metadata, status, status_reason)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,'submitted',NULL)
+             requester_display_name, provider, media_id, media_url, title, artist, metadata, priority, status, status_reason)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13,'submitted',NULL)
            RETURNING id, status`,
           [
             input.workspace.id,
@@ -140,6 +144,7 @@ export class RequestsService {
             title,
             input.artist ?? null,
             JSON.stringify(input.metadata ?? {}),
+            input.priority ?? 0,
           ],
         );
         const created = inserted.rows[0];
@@ -174,7 +179,7 @@ export class RequestsService {
         let finalStatus: RequestStatus = decision;
         if (decision === 'approved') {
           finalStatus = 'queued';
-          await this.enqueue(client, input.workspace.id, created.id, 0, input.actor?.id);
+          await this.enqueue(client, input.workspace.id, created.id, input.priority ?? 0, input.actor?.id);
           await client.query(
             "UPDATE media_requests SET status = 'queued', updated_at = now() WHERE id = $1",
             [created.id],
