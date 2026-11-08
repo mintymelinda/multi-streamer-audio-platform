@@ -5,6 +5,7 @@ import type { PoolClient } from 'pg';
 import { DatabaseService } from '../database/database.service.js';
 import type { AuthenticatedUser, WorkspaceRequestContext } from '../identity/http.types.js';
 import { OutboxService } from '../outbox/outbox.service.js';
+import { isExactQueuePermutation, moveQueueItem } from './queue-ordering.js';
 import {
   assertRequestTransition,
   classifyModeration,
@@ -341,7 +342,8 @@ export class RequestsService {
         if (!currentIds.includes(requestId)) {
           throw new NotFoundException('Queued request not found.');
         }
-        const nextIds = [requestId, ...currentIds.filter((id) => id !== requestId)];
+        const nextIds = moveQueueItem(currentIds, requestId, 'front');
+        if (!nextIds) throw new NotFoundException('Queued request not found.');
         await this.rewriteQueueOrder(client, workspace.id, nextIds);
         await this.outbox.append(client, {
           workspaceId: workspace.id as VerifiedWorkspaceId,
@@ -370,9 +372,8 @@ export class RequestsService {
         if (!currentIds.includes(requestId)) {
           throw new NotFoundException('Queued request not found.');
         }
-        const remaining = currentIds.filter((id) => id !== requestId);
-        const nextIds =
-          position === 'front' ? [requestId, ...remaining] : [...remaining, requestId];
+        const nextIds = moveQueueItem(currentIds, requestId, position);
+        if (!nextIds) throw new NotFoundException('Queued request not found.');
         await this.rewriteQueueOrder(client, workspace.id, nextIds);
         await this.outbox.append(client, {
           workspaceId: workspace.id as VerifiedWorkspaceId,
@@ -412,11 +413,7 @@ export class RequestsService {
   }
 
   private assertQueuePermutation(currentIds: string[], requestedIds: string[]) {
-    if (
-      requestedIds.length !== currentIds.length ||
-      new Set(requestedIds).size !== requestedIds.length ||
-      requestedIds.some((id) => !currentIds.includes(id))
-    ) {
+    if (!isExactQueuePermutation(currentIds, requestedIds)) {
       throw new ConflictException(
         'Queue order must contain every currently queued request exactly once.',
       );
