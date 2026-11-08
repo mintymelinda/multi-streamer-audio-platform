@@ -1,7 +1,7 @@
 import {
-  Controller, Get, Post, Query, Req, Res, UnauthorizedException, UseGuards,
+  Controller, Get, Inject, Post, Query, Req, Res, UnauthorizedException, UseGuards,
 } from '@nestjs/common';
-import { AuthService } from './auth.service.js';
+import type { AuthService } from './auth.service.js';
 import { CsrfGuard } from './csrf.guard.js';
 import type { HttpReply, HttpRequest } from './http.types.js';
 import { SessionGuard } from './session.guard.js';
@@ -9,7 +9,7 @@ import { clearSessionCookies, serializeSessionCookies } from './security.js';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly auth: AuthService) {}
+  constructor(@Inject(AuthService) private readonly auth: AuthService) {}
 
   @Get('twitch/start')
   async startTwitchLogin(
@@ -38,13 +38,17 @@ export class AuthController {
   @Get('me')
   @UseGuards(SessionGuard)
   getCurrentAccount(@Req() request: HttpRequest) {
-    return { user: { id: request.user!.id, twitchUserId: request.user!.twitchUserId } };
+    const user = request.user;
+    if (!user) throw new UnauthorizedException('Sign-in is required.');
+    return { user: { id: user.id, twitchUserId: user.twitchUserId } };
   }
 
   @Post('logout')
   @UseGuards(SessionGuard, CsrfGuard)
   async logout(@Req() request: HttpRequest, @Res() reply: HttpReply): Promise<HttpReply> {
-    await this.auth.revokeSession(request.user!.sessionId);
+    const user = request.user;
+    if (!user) throw new UnauthorizedException('Sign-in is required.');
+    await this.auth.revokeSession(user.sessionId);
     reply.header('Set-Cookie', clearSessionCookies());
     return reply.code(204);
   }
