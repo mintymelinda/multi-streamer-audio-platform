@@ -131,6 +131,46 @@ export class RequestsController {
     return this.requests.queue(workspace(request), user(request).id);
   }
 
+  @Patch('queue/order')
+  @UseGuards(CsrfGuard)
+  @RequireWorkspacePermission('queue:manage')
+  reorderQueue(@Req() request: HttpRequest, @Body() body: unknown) {
+    const requestIds = record(body).requestIds;
+    if (
+      !Array.isArray(requestIds) ||
+      requestIds.length > 500 ||
+      requestIds.some((id) => typeof id !== 'string' || id.length > 64)
+    ) {
+      throw new BadRequestException('requestIds must be an array of up to 500 request IDs.');
+    }
+    return this.requests.reorderQueue(workspace(request), user(request), requestIds);
+  }
+
+  @Post('queue/:requestId/promote')
+  @UseGuards(CsrfGuard)
+  @RequireWorkspacePermission('queue:manage')
+  promoteQueueRequest(@Req() request: HttpRequest, @Param('requestId') requestId: string) {
+    return this.requests.promoteQueueRequest(workspace(request), user(request), requestId);
+  }
+
+  @Post('queue/insert')
+  @UseGuards(CsrfGuard)
+  @RequireWorkspacePermission('queue:manage')
+  specialInsertQueueRequest(@Req() request: HttpRequest, @Body() body: unknown) {
+    const data = record(body);
+    const requestId = optionalString(data.requestId, 'requestId', 64);
+    const position = data.position;
+    if (!requestId || (position !== 'front' && position !== 'back')) {
+      throw new BadRequestException('requestId and a front/back position are required.');
+    }
+    return this.requests.specialInsertQueueRequest(
+      workspace(request),
+      user(request),
+      requestId,
+      position,
+    );
+  }
+
   @Patch('requests/:requestId/moderation')
   @UseGuards(CsrfGuard)
   @RequireWorkspacePermission('request:moderate')
