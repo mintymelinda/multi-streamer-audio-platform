@@ -16,15 +16,16 @@
 
 ## Errors
 
-- Return stable, documented error codes and safe messages from public APIs.
-- Keep stack traces, SQL details, provider credentials, and internal infrastructure details in access-controlled server logs only.
-- Distinguish validation, authorization, dependency-unavailable, conflict, and unexpected internal errors.
+- The API's global exception filter maps HTTP failures to stable public error codes and safe messages.
+- Unexpected server errors return a generic response with a request ID; stack traces and internal details remain in server logs only.
+- Distinguish validation, authentication, authorization, not-found, conflict, rate-limit, dependency-unavailable, and unexpected internal errors.
 - Do not retry non-retryable validation or authorization failures. Durable jobs must use bounded retries and idempotency.
+- Provider-specific and domain-specific error codes are added by the owning modules without leaking provider payloads or secrets.
 
 ## Metrics and alerts
 
 - Start with built-in health, structured logs, and application-level metrics; do not introduce Prometheus/Grafana as a deployment dependency in the initial release.
-- Instrument request latency/error counts, queue depth/age, worker failures/retries, provider health, playback transitions, and outbox lag.
+- Instrument request latency/error counts, queue depth/age, worker failures/retries, provider health, playback transitions, and outbox lag as those features are introduced.
 - Use bounded metric dimensions such as process, operation, provider type, and outcome. Keep tenant-specific diagnostics in authorized logs rather than metric labels.
 - Alert on service health and sustained user-visible failures, not isolated transient events.
 

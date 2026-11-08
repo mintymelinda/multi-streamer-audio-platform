@@ -14,7 +14,7 @@
     "format": "biome format --write .",
     "format:check": "biome format .",
     "typecheck": "pnpm -r --if-present typecheck",
-    "test": "node --test packages/contracts/test/*.test.mjs",
+    "test": "node --test packages/contracts/test/*.test.mjs apps/api/test/*.test.mjs",
     "build": "pnpm -r --if-present build",
     "db:migrations:check": "node scripts/check-migrations.mjs"
   },

@@ -5,6 +5,7 @@ import type { IncomingMessage } from 'node:http';
 import type { Http2ServerRequest } from 'node:http2';
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
+import { ApiExceptionFilter } from './api-exception.filter.js';
 import { AppModule } from './app.module.js';
 
 async function bootstrap(): Promise<void> {
@@ -23,6 +24,7 @@ async function bootstrap(): Promise<void> {
     { logger: new ConsoleLogger({ json: true }) },
   );
 
+  app.useGlobalFilters(new ApiExceptionFilter());
   app.enableShutdownHooks();
   await app.listen(Number(process.env.API_PORT ?? 3000), '0.0.0.0');
 }
