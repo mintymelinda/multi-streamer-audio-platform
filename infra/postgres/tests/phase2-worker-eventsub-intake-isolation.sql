@@ -24,14 +24,14 @@ END;
 $$;
 SET LOCAL ROLE platform_worker;
 DO $$
-DECLARE delivery_id uuid; workspace_id uuid;
+DECLARE v_delivery_id uuid; v_workspace_id uuid;
 BEGIN
-  SELECT id, d.workspace_id INTO delivery_id, workspace_id
+  SELECT id, d.workspace_id INTO v_delivery_id, v_workspace_id
     FROM twitch_eventsub_deliveries d WHERE message_id = 'worker-intake-message';
   INSERT INTO twitch_eventsub_intake
     (workspace_id, delivery_id, subscription_id, message_id, message_type,
      event_type, event_version, event_id, event_payload)
-  VALUES (workspace_id, delivery_id, 'worker-intake-subscription',
+  VALUES (v_workspace_id, v_delivery_id, 'worker-intake-subscription',
     'worker-intake-message', 'notification',
     'channel.channel_points_custom_reward_redemption.add', '1',
     'redemption-123', '{"id":"redemption-123"}'::jsonb)
@@ -44,6 +44,13 @@ BEGIN
     THEN RAISE EXCEPTION 'worker unexpectedly has subscription-secret access'; END IF;
   IF has_column_privilege('platform_worker', 'twitch_eventsub_deliveries', 'payload', 'UPDATE')
     THEN RAISE EXCEPTION 'worker unexpectedly can rewrite EventSub payloads'; END IF;
+
+  -- Terminal failure state is writable without granting payload or secret access.
+  UPDATE twitch_eventsub_deliveries
+     SET status = 'failed', last_error = 'eventsub_processing_exhausted'
+   WHERE id = v_delivery_id AND workspace_id = v_workspace_id;
+  IF (SELECT status FROM twitch_eventsub_deliveries WHERE id = v_delivery_id) <> 'failed'
+    THEN RAISE EXCEPTION 'worker could not persist terminal EventSub failure'; END IF;
 END;
 $$;
 ROLLBACK;
