@@ -1,9 +1,4 @@
-import {
-  ForbiddenException,
-  Inject,
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { DatabaseService } from '../database/database.service.js';
