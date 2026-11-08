@@ -13,7 +13,7 @@ import { newOpaqueToken, sha256 } from '../identity/security.js';
 import type { WorkspaceRole } from './workspace-permissions.js';
 import { TwitchDirectoryService } from './twitch-directory.service.js';
 
-interface InvitationRecord {
+export interface InvitationRecord {
   id: string;
   workspace_id: string;
   assigned_role: Exclude<WorkspaceRole, 'owner'>;
