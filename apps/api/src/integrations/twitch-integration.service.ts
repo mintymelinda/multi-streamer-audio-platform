@@ -65,16 +65,26 @@ export class TwitchIntegrationService {
         const result = await client.query<{
           owner_user_id: string;
           broadcaster_twitch_user_id: string;
-        }>('SELECT owner_user_id, broadcaster_twitch_user_id FROM workspaces WHERE id = $1', [
-          workspace.id,
-        ]);
+          workspace_status: string;
+          membership_role: string;
+        }>(
+          `SELECT w.owner_user_id, w.broadcaster_twitch_user_id,
+                  w.status AS workspace_status, m.role AS membership_role
+             FROM workspaces w
+             JOIN workspace_memberships m
+               ON m.workspace_id = w.id AND m.user_id = $2 AND m.status = 'active'
+            WHERE w.id = $1`,
+          [workspace.id, actor.id],
+        );
         return result.rows[0];
       },
     );
     if (
       !broadcaster ||
       broadcaster.owner_user_id !== actor.id ||
-      broadcaster.broadcaster_twitch_user_id !== actor.twitchUserId
+      broadcaster.broadcaster_twitch_user_id !== actor.twitchUserId ||
+      broadcaster.workspace_status !== 'active' ||
+      broadcaster.membership_role !== 'owner'
     ) {
       throw new ForbiddenException(
         'The signed-in Twitch account is not this workspace broadcaster.',
@@ -125,16 +135,26 @@ export class TwitchIntegrationService {
         const result = await client.query<{
           owner_user_id: string;
           broadcaster_twitch_user_id: string;
-        }>('SELECT owner_user_id, broadcaster_twitch_user_id FROM workspaces WHERE id = $1', [
-          workspaceId,
-        ]);
+          workspace_status: string;
+          membership_role: string;
+        }>(
+          `SELECT w.owner_user_id, w.broadcaster_twitch_user_id,
+                  w.status AS workspace_status, m.role AS membership_role
+             FROM workspaces w
+             JOIN workspace_memberships m
+               ON m.workspace_id = w.id AND m.user_id = $2 AND m.status = 'active'
+            WHERE w.id = $1`,
+          [workspaceId, actor.id],
+        );
         return result.rows[0];
       },
     );
     if (
       !broadcaster ||
       broadcaster.owner_user_id !== actor.id ||
-      broadcaster.broadcaster_twitch_user_id !== actor.twitchUserId
+      broadcaster.broadcaster_twitch_user_id !== actor.twitchUserId ||
+      broadcaster.workspace_status !== 'active' ||
+      broadcaster.membership_role !== 'owner'
     ) {
       throw new ForbiddenException(
         'The signed-in Twitch account is not this workspace broadcaster.',
