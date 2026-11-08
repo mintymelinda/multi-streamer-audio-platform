@@ -126,7 +126,7 @@ BEGIN
       allowed_transitions := ARRAY[]::request_status[];
   END CASE;
 
-  IF NOT NEW.status = ANY(allowed_transitions) THEN
+  IF NOT (NEW.status = ANY(allowed_transitions)) THEN
     RAISE EXCEPTION 'invalid request status transition: % -> %', OLD.status, NEW.status
       USING ERRCODE = '23514';
   END IF;
