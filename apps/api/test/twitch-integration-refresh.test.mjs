@@ -20,10 +20,12 @@ function setupCredential(tokenExpiresAt) {
   const previous = {
     kek: process.env.INTEGRATION_KEK_RING_FILE,
     clientId: process.env.TWITCH_CLIENT_ID,
+    redirectUri: process.env.TWITCH_REDIRECT_URI,
     secretFile: process.env.TWITCH_CLIENT_SECRET_FILE,
   };
   process.env.INTEGRATION_KEK_RING_FILE = keyRingPath;
   process.env.TWITCH_CLIENT_ID = 'test-client-id';
+  process.env.TWITCH_REDIRECT_URI = 'https://example.test/auth/twitch/callback';
   process.env.TWITCH_CLIENT_SECRET_FILE = secretPath;
   const credentials = {
     accessToken: 'old-access-token',
@@ -77,6 +79,7 @@ function setupCredential(tokenExpiresAt) {
       for (const [name, value] of Object.entries({
         INTEGRATION_KEK_RING_FILE: previous.kek,
         TWITCH_CLIENT_ID: previous.clientId,
+        TWITCH_REDIRECT_URI: previous.redirectUri,
         TWITCH_CLIENT_SECRET_FILE: previous.secretFile,
       })) {
         if (value === undefined) delete process.env[name];
