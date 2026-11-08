@@ -59,13 +59,22 @@ export class TeamController {
   }
 
   @Post('invitations')
-  createInvitation(@Req() request: HttpRequest, @Body() body: unknown) {
+  createInvitation(
+    @Req() request: HttpRequest,
+    @Body() body: unknown,
+  ) {
     const value = typeof body === 'object' && body !== null ? body : {};
     const username = 'twitchUsername' in value ? value.twitchUsername : undefined;
     const role = 'role' in value ? value.role : undefined;
     const user = requireAuthenticatedUser(request);
     const workspace = requireWorkspaceContext(request);
-    return this.team.createInvitation(user, workspace.id, username, role, workspace.role);
+    return this.team.createInvitation(
+      user,
+      workspace.id,
+      username,
+      role,
+      workspace.role,
+    );
   }
 
   @Delete('invitations/:invitationId')
@@ -88,7 +97,13 @@ export class TeamController {
       typeof body === 'object' && body !== null && 'role' in body ? body.role : undefined;
     const user = requireAuthenticatedUser(request);
     const workspace = requireWorkspaceContext(request);
-    return this.team.changeMemberRole(user, workspace.id, memberUserId, role, workspace.role);
+    return this.team.changeMemberRole(
+      user,
+      workspace.id,
+      memberUserId,
+      role,
+      workspace.role,
+    );
   }
 
   @Delete('members/:memberUserId')
