@@ -36,6 +36,7 @@ CREATE POLICY twitch_eventsub_intake_api_router
 GRANT SELECT, UPDATE (
   routing_status,
   routing_attempts,
+  routing_next_attempt_at,
   routing_locked_at,
   routing_lock_token,
   routed_request_id,
