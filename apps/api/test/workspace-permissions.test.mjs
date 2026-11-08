@@ -4,7 +4,11 @@ import { hasWorkspacePermission } from '../src/workspaces/workspace-permissions.
 
 test('owner has all initial workspace and team permissions', () => {
   for (const permission of [
-    'workspace:read', 'workspace:manage', 'team:manage', 'team:assign_admin', 'team:revoke',
+    'workspace:read',
+    'workspace:manage',
+    'team:manage',
+    'team:assign_admin',
+    'team:revoke',
   ]) {
     assert.equal(hasWorkspacePermission('owner', permission), true);
   }
