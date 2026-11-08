@@ -9,6 +9,7 @@ import {
 } from '../identity/twitch-app-config.js';
 import { isSafeLocalReturnPath, newOpaqueToken, sha256 } from '../identity/security.js';
 import {
+  decryptIntegrationCredentials,
   encryptIntegrationCredentials,
   loadIntegrationKeyRing,
 } from '../security/integration-credential-crypto.js';
@@ -243,6 +244,219 @@ export class TwitchIntegrationService {
     );
 
     return isSafeLocalReturnPath(oauthState.return_path);
+  }
+
+  /**
+   * Returns a usable broadcaster access token. Refresh is serialized by locking
+   * the integration row so concurrent API requests cannot race rotating refresh
+   * tokens. The lock is held only for the bounded Twitch calls below.
+   */
+  async getAccessToken(
+    workspace: WorkspaceRequestContext,
+    actor: AuthenticatedUser,
+  ): Promise<string> {
+    return this.database.transaction(
+      { userId: actor.id, verifiedWorkspaceId: workspace.id },
+      async (client) => {
+        const result = await client.query<{
+          id: string;
+          status: TwitchIntegrationStatus['status'];
+          external_account_id: string | null;
+          granted_scopes: string[];
+          credential_ciphertext: Buffer | null;
+          credential_nonce: Buffer | null;
+          credential_auth_tag: Buffer | null;
+          wrapped_dek: Buffer | null;
+          dek_nonce: Buffer | null;
+          dek_auth_tag: Buffer | null;
+          kek_version: string | null;
+          credential_format_version: number | null;
+          token_expires_at: Date | null;
+        }>(
+          `SELECT id, status, external_account_id, granted_scopes,
+                  credential_ciphertext, credential_nonce, credential_auth_tag,
+                  wrapped_dek, dek_nonce, dek_auth_tag, kek_version,
+                  credential_format_version, token_expires_at
+             FROM workspace_integrations
+            WHERE workspace_id = $1 AND provider = 'twitch'
+            FOR UPDATE`,
+          [workspace.id],
+        );
+        const row = result.rows[0];
+        if (!row || row.status !== 'connected' || !row.external_account_id) {
+          throw new UnauthorizedException('The workspace Twitch broadcaster is not connected.');
+        }
+        if (
+          !row.credential_ciphertext || !row.credential_nonce || !row.credential_auth_tag ||
+          !row.wrapped_dek || !row.dek_nonce || !row.dek_auth_tag || !row.kek_version ||
+          row.credential_format_version !== 1
+        ) {
+          await client.query(
+            `UPDATE workspace_integrations
+                SET status = 'reauth_required', last_error_code = 'credential_unavailable', updated_at = now()
+              WHERE workspace_id = $1 AND provider = 'twitch'`,
+            [workspace.id],
+          );
+          throw new UnauthorizedException('The workspace Twitch authorization must be renewed.');
+        }
+
+        const credentialId = row.id;
+        let credentials: {
+          accessToken: string;
+          refreshToken: string;
+          tokenExpiresAt: string;
+          scopes: string[];
+          userId: string;
+        };
+        try {
+          credentials = JSON.parse(decryptIntegrationCredentials(
+            {
+              formatVersion: 1,
+              ciphertext: row.credential_ciphertext.toString('base64'),
+              nonce: row.credential_nonce.toString('base64'),
+              authTag: row.credential_auth_tag.toString('base64'),
+              wrappedDek: row.wrapped_dek.toString('base64'),
+              dekNonce: row.dek_nonce.toString('base64'),
+              dekAuthTag: row.dek_auth_tag.toString('base64'),
+              kekVersion: row.kek_version,
+            },
+            { workspaceId: workspace.id, provider: 'twitch', credentialId },
+            loadIntegrationKeyRing(),
+          )) as typeof credentials;
+        } catch {
+          await client.query(
+            `UPDATE workspace_integrations
+                SET status = 'reauth_required', last_error_code = 'credential_decryption_failed', updated_at = now()
+              WHERE workspace_id = $1 AND provider = 'twitch'`,
+            [workspace.id],
+          );
+          throw new UnauthorizedException('The workspace Twitch authorization must be renewed.');
+        }
+
+        if (
+          !credentials.accessToken || !credentials.refreshToken ||
+          credentials.userId !== row.external_account_id ||
+          !hasRequiredTwitchRewardScopes(credentials.scopes)
+        ) {
+          await client.query(
+            `UPDATE workspace_integrations
+                SET status = 'reauth_required', last_error_code = 'credential_invalid', updated_at = now()
+              WHERE workspace_id = $1 AND provider = 'twitch'`,
+            [workspace.id],
+          );
+          throw new UnauthorizedException('The workspace Twitch authorization must be renewed.');
+        }
+
+        const expiresAt = Date.parse(credentials.tokenExpiresAt);
+        if (!Number.isFinite(expiresAt)) {
+          await client.query(
+            `UPDATE workspace_integrations
+                SET status = 'reauth_required', last_error_code = 'credential_expiry_invalid', updated_at = now()
+              WHERE workspace_id = $1 AND provider = 'twitch'`,
+            [workspace.id],
+          );
+          throw new UnauthorizedException('The workspace Twitch authorization must be renewed.');
+        }
+        if (expiresAt > Date.now() + 5 * 60_000) return credentials.accessToken;
+
+        const refreshed = await this.refreshAndValidate(credentials.refreshToken, row.external_account_id);
+        const nextCredentials = {
+          accessToken: refreshed.accessToken,
+          refreshToken: refreshed.refreshToken,
+          tokenExpiresAt: refreshed.tokenExpiresAt,
+          scopes: refreshed.scopes,
+          userId: refreshed.userId,
+        };
+        const envelope = encryptIntegrationCredentials(
+          JSON.stringify(nextCredentials),
+          { workspaceId: workspace.id, provider: 'twitch', credentialId },
+          loadIntegrationKeyRing(),
+        );
+        await client.query(
+          `UPDATE workspace_integrations
+              SET credential_ciphertext = $3, credential_nonce = $4, credential_auth_tag = $5,
+                  wrapped_dek = $6, dek_nonce = $7, dek_auth_tag = $8,
+                  kek_version = $9, credential_format_version = $10,
+                  granted_scopes = $11, token_expires_at = $12,
+                  last_validated_at = now(), last_error_code = NULL, updated_at = now()
+            WHERE workspace_id = $1 AND provider = 'twitch' AND id = $2`,
+          [
+            workspace.id, credentialId,
+            Buffer.from(envelope.ciphertext, 'base64'), Buffer.from(envelope.nonce, 'base64'),
+            Buffer.from(envelope.authTag, 'base64'), Buffer.from(envelope.wrappedDek, 'base64'),
+            Buffer.from(envelope.dekNonce, 'base64'), Buffer.from(envelope.dekAuthTag, 'base64'),
+            envelope.kekVersion, envelope.formatVersion, refreshed.scopes, refreshed.tokenExpiresAt,
+          ],
+        );
+        return refreshed.accessToken;
+      },
+    );
+  }
+
+  private async refreshAndValidate(
+    refreshToken: string,
+    expectedBroadcasterId: string,
+  ): Promise<{
+    accessToken: string;
+    refreshToken: string;
+    tokenExpiresAt: string;
+    scopes: string[];
+    userId: string;
+  }> {
+    const config = getTwitchAppConfig();
+    const body = new URLSearchParams({
+      client_id: config.clientId,
+      client_secret: config.clientSecret,
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+    });
+    let token: TwitchTokenResponse;
+    try {
+      const response = await fetch('https://id.twitch.tv/oauth2/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body,
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!response.ok) throw new Error('Twitch refresh rejected');
+      token = (await response.json()) as TwitchTokenResponse;
+    } catch {
+      throw new UnauthorizedException('Twitch authorization expired; reconnect the broadcaster account.');
+    }
+    if (
+      !token.access_token || !token.refresh_token ||
+      typeof token.expires_in !== 'number' || !Number.isFinite(token.expires_in) || token.expires_in <= 0
+    ) {
+      throw new UnauthorizedException('Twitch did not return a renewable broadcaster credential.');
+    }
+    let validation: TwitchValidationResponse;
+    try {
+      const response = await fetch('https://id.twitch.tv/oauth2/validate', {
+        headers: { Authorization: `OAuth ${token.access_token}` },
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!response.ok) throw new Error('Twitch validation rejected');
+      validation = (await response.json()) as TwitchValidationResponse;
+    } catch {
+      throw new UnauthorizedException('The refreshed Twitch authorization could not be validated.');
+    }
+    const scopes = Array.isArray(validation.scopes)
+      ? validation.scopes.filter((scope): scope is string => typeof scope === 'string')
+      : [];
+    if (
+      validation.client_id !== config.clientId ||
+      validation.user_id !== expectedBroadcasterId ||
+      !hasRequiredTwitchRewardScopes(scopes)
+    ) {
+      throw new UnauthorizedException('Twitch authorization is missing required broadcaster permissions.');
+    }
+    return {
+      accessToken: token.access_token,
+      refreshToken: token.refresh_token,
+      tokenExpiresAt: new Date(Date.now() + token.expires_in * 1_000).toISOString(),
+      scopes,
+      userId: validation.user_id,
+    };
   }
 
   async getStatus(
