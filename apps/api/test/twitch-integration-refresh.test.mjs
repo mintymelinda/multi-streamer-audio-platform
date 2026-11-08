@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { TwitchIntegrationService } from '../src/integrations/twitch-integration.service.ts';
+import { TwitchIntegrationService } from '../dist/integrations/twitch-integration.service.js';
 import { encryptIntegrationCredentials } from '../src/security/integration-credential-crypto.ts';
 
 const workspaceId = '11111111-1111-4111-8111-111111111111';
