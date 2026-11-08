@@ -5,9 +5,9 @@ import {
   type OnModuleInit,
 } from '@nestjs/common';
 import type { VerifiedWorkspaceId } from '@platform/contracts';
+import type { WorkspaceRequestContext } from '../identity/http.types.js';
 import { DatabaseService } from '../database/database.service.js';
 import { RequestsService } from '../requests/requests.service.js';
-import type { WorkspaceRequestContext } from '../identity/http.types.js';
 import { buildTwitchRedemptionRequest } from './twitch-redemption-routing.js';
 
 interface IntakeRow {
@@ -26,7 +26,10 @@ interface RewardMappingRow {
   id: string;
   twitch_reward_id: string;
   feature_key: string;
-  feature_settings: { inputMode?: 'url_or_search' | 'url_only' | 'text_only'; priority?: number };
+  feature_settings: {
+    inputMode?: 'url_or_search' | 'url_only' | 'text_only';
+    priority?: number;
+  };
   enabled: boolean;
   sync_state: string;
 }
@@ -37,8 +40,8 @@ function httpStatus(error: unknown): number | undefined {
   if (typeof error !== 'object' || error === null || !('getStatus' in error)) {
     return undefined;
   }
-  const getStatus = error.getStatus;
-  return typeof getStatus === 'function' ? getStatus.call(error) : undefined;
+  const getStatus = (error as { getStatus?: unknown }).getStatus;
+  return typeof getStatus === 'function' ? (getStatus as () => number).call(error) : undefined;
 }
 
 @Injectable()
@@ -177,7 +180,12 @@ export class TwitchRedemptionRouterService implements OnModuleInit, OnModuleDest
           priority: mapping.feature_settings.priority ?? 0,
         },
       });
-      await this.finish(row, 'processed', typeof request.id === 'string' ? request.id : null, null);
+      await this.finish(
+        row,
+        'processed',
+        typeof request.id === 'string' ? request.id : null,
+        null,
+      );
     } catch (error) {
       const terminal = row.routing_attempts >= 8;
       const statusCode = httpStatus(error);
@@ -185,7 +193,12 @@ export class TwitchRedemptionRouterService implements OnModuleInit, OnModuleDest
         statusCode === 400 || statusCode === 409
           ? 'request_policy_rejected'
           : 'redemption_routing_failed';
-      await this.finish(row, terminal || code === 'request_policy_rejected' ? 'failed' : 'pending', null, code);
+      await this.finish(
+        row,
+        terminal || code === 'request_policy_rejected' ? 'failed' : 'pending',
+        null,
+        code,
+      );
       if (code === 'redemption_routing_failed') {
         this.logger.warn(`Twitch redemption intake ${row.id} will be retried.`);
       }
