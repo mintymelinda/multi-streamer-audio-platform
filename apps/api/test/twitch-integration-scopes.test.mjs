@@ -1,16 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-
-const REQUIRED_SCOPE = 'channel:manage:redemptions';
-
-function hasRequiredScopes(scopes) {
-  return Array.isArray(scopes) && scopes.includes(REQUIRED_SCOPE);
-}
+import { hasRequiredTwitchRewardScopes } from '../src/integrations/twitch-integration-scopes.ts';
 
 test('Twitch reward management requires the broadcaster manage scope', () => {
-  assert.equal(hasRequiredScopes(['channel:manage:redemptions']), true);
-  assert.equal(hasRequiredScopes(['channel:read:redemptions']), false);
-  assert.equal(hasRequiredScopes(['channel:manage:redemptions', 'user:read:email']), true);
-  assert.equal(hasRequiredScopes([]), false);
-  assert.equal(hasRequiredScopes(undefined), false);
+  assert.equal(hasRequiredTwitchRewardScopes(['channel:manage:redemptions']), true);
+  assert.equal(hasRequiredTwitchRewardScopes(['channel:read:redemptions']), false);
+  assert.equal(
+    hasRequiredTwitchRewardScopes(['channel:manage:redemptions', 'user:read:email']),
+    true,
+  );
+  assert.equal(hasRequiredTwitchRewardScopes([]), false);
+  assert.equal(hasRequiredTwitchRewardScopes(undefined), false);
+  assert.equal(hasRequiredTwitchRewardScopes('channel:manage:redemptions'), false);
 });
