@@ -15,8 +15,7 @@ import {
   loadIntegrationKeyRing,
 } from '../security/integration-credential-crypto.js';
 import { OutboxService } from '../outbox/outbox.service.js';
-
-const REQUIRED_SCOPES = ['channel:manage:redemptions'] as const;
+import { hasRequiredTwitchRewardScopes } from './twitch-integration-scopes.js';
 
 interface TwitchTokenResponse {
   access_token?: string;
@@ -92,7 +91,7 @@ export class TwitchIntegrationService {
     url.searchParams.set('client_id', config.clientId);
     url.searchParams.set('redirect_uri', redirectUri);
     url.searchParams.set('response_type', 'code');
-    url.searchParams.set('scope', REQUIRED_SCOPES.join(' '));
+    url.searchParams.set('scope', 'channel:manage:redemptions');
     url.searchParams.set('state', state);
     return url.toString();
   }
@@ -314,7 +313,7 @@ export class TwitchIntegrationService {
     if (
       validation.client_id !== config.clientId ||
       validation.user_id !== expectedBroadcasterId ||
-      !REQUIRED_SCOPES.every((scope) => scopes.includes(scope))
+      !hasRequiredTwitchRewardScopes(scopes)
     ) {
       throw new ForbiddenException(
         'Authorize the workspace broadcaster account and grant channel:manage:redemptions.',
