@@ -49,11 +49,30 @@ export class TwitchHelixService {
     private readonly integration: TwitchIntegrationService,
   ) {}
 
-  listCustomRewards(
+  async listCustomRewards(
     workspace: WorkspaceRequestContext,
     actor: AuthenticatedUser,
   ): Promise<TwitchCustomReward[]> {
-    return this.request('GET', workspace, actor);
+    const rewards: TwitchCustomReward[] = [];
+    const cursors = new Set<string>();
+    let cursor: string | undefined;
+    do {
+      const page = await this.request<TwitchCustomReward>(
+        'GET',
+        workspace,
+        actor,
+        undefined,
+        undefined,
+        cursor,
+      );
+      rewards.push(...page.data);
+      cursor = page.cursor;
+      if (cursor && cursors.has(cursor)) {
+        throw new BadGatewayException('Twitch returned a repeated reward pagination cursor.');
+      }
+      if (cursor) cursors.add(cursor);
+    } while (cursor);
+    return rewards;
   }
 
   async createCustomReward(
@@ -61,14 +80,14 @@ export class TwitchHelixService {
     actor: AuthenticatedUser,
     input: CreateTwitchCustomReward,
   ): Promise<TwitchCustomReward> {
-    const rewards = await this.request<TwitchCustomReward[]>(
+    const response = await this.request<TwitchCustomReward>(
       'POST',
       workspace,
       actor,
       undefined,
       input,
     );
-    const reward = rewards[0];
+    const reward = response.data[0];
     if (!reward?.id) throw new BadGatewayException('Twitch did not return the created reward.');
     return reward;
   }
@@ -79,7 +98,7 @@ export class TwitchHelixService {
     rewardId: string,
     input: UpdateTwitchCustomReward,
   ): Promise<TwitchCustomReward> {
-    const rewards = await this.request<TwitchCustomReward[]>(
+    const response = await this.request<TwitchCustomReward>(
       'PATCH',
       workspace,
       actor,
@@ -96,7 +115,7 @@ export class TwitchHelixService {
     actor: AuthenticatedUser,
     rewardId: string,
   ): Promise<void> {
-    await this.request<void>('DELETE', workspace, actor, rewardId);
+    await this.request<TwitchCustomReward>('DELETE', workspace, actor, rewardId);
   }
 
   private async request<T>(
@@ -105,12 +124,19 @@ export class TwitchHelixService {
     actor: AuthenticatedUser,
     rewardId?: string,
     body?: CreateTwitchCustomReward | UpdateTwitchCustomReward,
-  ): Promise<T> {
+    cursor?: string,
+  ): Promise<{ data: T[]; cursor?: string }> {
+    const status = await this.integration.getStatus(workspace, actor);
+    if (status.status !== 'connected' || !status.externalAccountId) {
+      throw new UnauthorizedException('The workspace Twitch broadcaster is not connected.');
+    }
     const accessToken = await this.integration.getAccessToken(workspace, actor);
     const { clientId } = getTwitchAppConfig();
     const url = new URL('https://api.twitch.tv/helix/channel_points/custom_rewards');
-    url.searchParams.set('broadcaster_id', actor.twitchUserId);
+    url.searchParams.set('broadcaster_id', status.externalAccountId);
+    if (method === 'GET') url.searchParams.set('first', '50');
     if (rewardId) url.searchParams.set('id', rewardId);
+    if (cursor) url.searchParams.set('after', cursor);
 
     let response: Response;
     try {
@@ -146,7 +172,7 @@ export class TwitchHelixService {
     if (!response.ok) {
       throw new BadGatewayException('Twitch reward operation could not be completed.');
     }
-    if (method === 'DELETE' || response.status === 204) return undefined as T;
+    if (method === 'DELETE' || response.status === 204) return { data: [] };
 
     let payload: unknown;
     try {
@@ -162,6 +188,16 @@ export class TwitchHelixService {
     ) {
       throw new BadGatewayException('Twitch returned an invalid reward response.');
     }
-    return payload.data as T;
+    const pagination =
+      'pagination' in payload &&
+      typeof payload.pagination === 'object' &&
+      payload.pagination !== null
+        ? payload.pagination
+        : undefined;
+    const nextCursor =
+      pagination && 'cursor' in pagination && typeof pagination.cursor === 'string'
+        ? pagination.cursor
+        : undefined;
+    return { data: payload.data as T[], ...(nextCursor ? { cursor: nextCursor } : {}) };
   }
 }
