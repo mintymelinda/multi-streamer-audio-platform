@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { ConsoleLogger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
+import type { Http2ServerRequest } from 'node:http2';
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { AppModule } from './app.module.js';
@@ -12,7 +13,7 @@ async function bootstrap(): Promise<void> {
     new FastifyAdapter({
       logger: { level: process.env.LOG_LEVEL ?? 'info' },
       requestIdHeader: 'x-request-id',
-      genReqId: (request: IncomingMessage) => {
+      genReqId: (request: IncomingMessage | Http2ServerRequest) => {
         const supplied = request.headers['x-request-id'];
         return typeof supplied === 'string' && /^[a-zA-Z0-9._-]{1,128}$/.test(supplied)
           ? supplied
