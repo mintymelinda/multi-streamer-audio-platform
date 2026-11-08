@@ -74,9 +74,11 @@ jobs:
           docker exec "$container_id" psql -U platform_bootstrap -d platform -v ON_ERROR_STOP=1 -f /tmp/001-roles.sql
           runtime_flags="$(docker exec "$container_id" psql -U platform_bootstrap -d platform -Atqc "SELECT rolsuper::text || ':' || rolbypassrls::text FROM pg_roles WHERE rolname='platform_runtime'")"
           migrator_flags="$(docker exec "$container_id" psql -U platform_bootstrap -d platform -Atqc "SELECT rolsuper::text || ':' || rolbypassrls::text FROM pg_roles WHERE rolname='platform_migrator'")"
+          worker_flags="$(docker exec "$container_id" psql -U platform_bootstrap -d platform -Atqc "SELECT rolsuper::text || ':' || rolbypassrls::text FROM pg_roles WHERE rolname='platform_worker'")"
           schema_owner="$(docker exec "$container_id" psql -U platform_bootstrap -d platform -Atqc "SELECT pg_get_userbyid(nspowner) FROM pg_namespace WHERE nspname='public'")"
           test "$runtime_flags" = "false:false"
           test "$migrator_flags" = "false:false"
+          test "$worker_flags" = "false:false"
           test "$schema_owner" = "platform_migrator"
 
       - name: Apply schema migrations as the dedicated migrator
@@ -91,6 +93,12 @@ jobs:
           container_id="$(docker ps --filter 'ancestor=postgres:18.6' --format '{{.ID}}' | head -n 1)"
           docker cp infra/postgres/tests/. "$container_id:/tmp/db-tests/"
           docker exec -e PGPASSWORD=local-runtime-only "$container_id" sh -c 'for test_file in /tmp/db-tests/*.sql; do psql -h 127.0.0.1 -U platform_runtime -d platform -v ON_ERROR_STOP=1 -f "$test_file"; done'
+
+      - name: Verify worker database role isolation
+        run: |
+          container_id="$(docker ps --filter 'ancestor=postgres:18.6' --format '{{.ID}}' | head -n 1)"
+          docker cp infra/postgres/tests/phase2-worker-outbox-isolation.sql "$container_id:/tmp/phase2-worker-outbox-isolation.sql"
+          docker exec -e PGPASSWORD=ci-bootstrap-only "$container_id" psql -h 127.0.0.1 -U platform_bootstrap -d platform -v ON_ERROR_STOP=1 -f /tmp/phase2-worker-outbox-isolation.sql
 
       - name: Lint
         run: pnpm lint
