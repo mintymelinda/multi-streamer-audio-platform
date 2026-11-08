@@ -21,5 +21,6 @@ Start the local services with `pnpm dev:infra`, then apply the role bootstrap an
 
 - `0001_identity_workspaces_authorization.sql` establishes stable Twitch-ID accounts, explicit workspaces, one-owned-workspace enforcement, protected owner membership, team roles/invitations, server-side session records, OAuth state, append-only audit writes, and RLS policies.
 - `0002_integrations_and_outbox.sql` establishes tenant-scoped provider integration records with encrypted credential-envelope columns, plus the transactional outbox table. Both tables use ENABLE and FORCE ROW LEVEL SECURITY and are inaccessible without verified user/workspace context.
+- `0008_twitch_reward_mappings.sql` establishes tenant-scoped Twitch reward links, one explicit feature handler per reward, validated feature settings, synchronization state, and workspace RLS. Manually linked rewards remain pending verification until confirmed through Twitch.
 
 New tenant-owned tables must follow the same pattern. Never put plaintext provider credentials in integration rows, audit details, outbox payloads, logs, or job messages.
