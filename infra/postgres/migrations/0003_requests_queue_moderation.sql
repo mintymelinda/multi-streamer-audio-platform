@@ -90,6 +90,58 @@ CREATE TABLE logical_queue_entries (
 CREATE INDEX logical_queue_order
   ON logical_queue_entries (workspace_id, priority DESC, sequence ASC);
 
+-- Enforce the same lifecycle graph in PostgreSQL so workers and future
+-- adapters cannot bypass application-level transition validation.
+CREATE FUNCTION enforce_request_status_transition()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $
+DECLARE
+  allowed_transitions request_status[];
+BEGIN
+  IF NEW.status = OLD.status THEN
+    RETURN NEW;
+  END IF;
+
+  CASE OLD.status
+    WHEN 'submitted' THEN
+      allowed_transitions := ARRAY['pending','held','approved','rejected','cancelled']::request_status[];
+    WHEN 'pending' THEN
+      allowed_transitions := ARRAY['approved','held','rejected','cancelled']::request_status[];
+    WHEN 'held' THEN
+      allowed_transitions := ARRAY['pending','approved','rejected','cancelled']::request_status[];
+    WHEN 'approved' THEN
+      allowed_transitions := ARRAY['queued','cancelled']::request_status[];
+    WHEN 'queued' THEN
+      allowed_transitions := ARRAY['resolving','cancelled','skipped']::request_status[];
+    WHEN 'resolving' THEN
+      allowed_transitions := ARRAY['ready','failed','queued','skipped']::request_status[];
+    WHEN 'ready' THEN
+      allowed_transitions := ARRAY['playing','failed','queued','skipped']::request_status[];
+    WHEN 'playing' THEN
+      allowed_transitions := ARRAY['completed','failed','skipped']::request_status[];
+    WHEN 'failed' THEN
+      allowed_transitions := ARRAY['queued','cancelled','skipped']::request_status[];
+    ELSE
+      allowed_transitions := ARRAY[]::request_status[];
+  END CASE;
+
+  IF NOT NEW.status = ANY(allowed_transitions) THEN
+    RAISE EXCEPTION 'invalid request status transition: % -> %', OLD.status, NEW.status
+      USING ERRCODE = '23514';
+  END IF;
+
+  IF NEW.status = 'completed' THEN
+    NEW.completed_at := COALESCE(NEW.completed_at, now());
+  END IF;
+  RETURN NEW;
+END;
+$;
+
+CREATE TRIGGER media_requests_status_transition
+BEFORE UPDATE OF status ON media_requests
+FOR EACH ROW EXECUTE FUNCTION enforce_request_status_transition();
+
 -- Every tenant-owned table uses forced RLS. The request/queue API always runs
 -- inside a transaction carrying a guard-verified workspace context.
 DO $$
