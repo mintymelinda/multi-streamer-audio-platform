@@ -46,6 +46,19 @@ function optionalString(value: unknown, field: string, max: number): string | un
   }
   return value;
 }
+function integer(value: unknown, field: string, min: number, max: number): number {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < min || value > max) {
+    throw new BadRequestException(`${field} must be an integer between ${min} and ${max}.`);
+  }
+  return value;
+}
+function stringArray(value: unknown, field: string): string[] {
+  if (!Array.isArray(value) || value.length > 50 ||
+      value.some((item) => typeof item !== 'string' || item.trim().length === 0 || item.length > 100)) {
+    throw new BadRequestException(`${field} must contain up to 50 non-empty strings of at most 100 characters.`);
+  }
+  return value.map((item: string) => item.trim());
+}
 
 @Controller('workspaces/:workspaceId')
 @UseGuards(SessionGuard, WorkspaceAccessGuard, WorkspacePermissionGuard)
@@ -69,6 +82,31 @@ export class RequestsController {
       requesterDisplayName: optionalString(data.requesterDisplayName, 'requesterDisplayName', 100),
       metadata: record(data.metadata),
       sourceEventId: optionalString(data.idempotencyKey, 'idempotencyKey', 200),
+    });
+  }
+
+  @Get('requests/settings')
+  @RequireWorkspacePermission('workspace:read')
+  getSettings(@Req() request: HttpRequest) {
+    return this.requests.getSettings(workspace(request), user(request).id);
+  }
+
+  @Patch('requests/settings')
+  @UseGuards(CsrfGuard)
+  @RequireWorkspacePermission('workspace:manage')
+  updateSettings(@Req() request: HttpRequest, @Body() body: unknown) {
+    const data = record(body);
+    const moderationMode = data.moderationMode;
+    if (moderationMode !== 'automatic' && moderationMode !== 'manual' && moderationMode !== 'filtered') {
+      throw new BadRequestException('moderationMode must be automatic, manual, or filtered.');
+    }
+    return this.requests.updateSettings(workspace(request), user(request), {
+      moderationMode,
+      queueLimit: integer(data.queueLimit, 'queueLimit', 1, 500),
+      perUserLimit: integer(data.perUserLimit, 'perUserLimit', 1, 100),
+      perSourceLimit: integer(data.perSourceLimit, 'perSourceLimit', 1, 500),
+      holdTerms: stringArray(data.holdTerms, 'holdTerms'),
+      rejectTerms: stringArray(data.rejectTerms, 'rejectTerms'),
     });
   }
 
