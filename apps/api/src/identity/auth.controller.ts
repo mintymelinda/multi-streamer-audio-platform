@@ -1,0 +1,51 @@
+import {
+  Controller, Get, Post, Query, Req, Res, UnauthorizedException, UseGuards,
+} from '@nestjs/common';
+import { AuthService } from './auth.service.js';
+import { CsrfGuard } from './csrf.guard.js';
+import type { HttpReply, HttpRequest } from './http.types.js';
+import { SessionGuard } from './session.guard.js';
+import { clearSessionCookies, serializeSessionCookies } from './security.js';
+
+@Controller('auth')
+export class AuthController {
+  constructor(private readonly auth: AuthService) {}
+
+  @Get('twitch/start')
+  async startTwitchLogin(
+    @Query('returnTo') returnTo: string | undefined,
+    @Res() reply: HttpReply,
+  ): Promise<HttpReply> {
+    const url = await this.auth.beginTwitchLogin(returnTo);
+    return reply.code(302).redirect(url);
+  }
+
+  @Get('twitch/callback')
+  async finishTwitchLogin(
+    @Query('code') code: string | undefined,
+    @Query('state') state: string | undefined,
+    @Query('error') error: string | undefined,
+    @Res() reply: HttpReply,
+  ): Promise<HttpReply> {
+    if (error || !code || !state) {
+      throw new UnauthorizedException('Twitch sign-in was cancelled or could not be completed.');
+    }
+    const session = await this.auth.completeTwitchLogin(code, state);
+    reply.header('Set-Cookie', serializeSessionCookies(session.sessionToken, session.csrfToken));
+    return reply.code(302).redirect(session.returnPath);
+  }
+
+  @Get('me')
+  @UseGuards(SessionGuard)
+  getCurrentAccount(@Req() request: HttpRequest) {
+    return { user: { id: request.user!.id, twitchUserId: request.user!.twitchUserId } };
+  }
+
+  @Post('logout')
+  @UseGuards(SessionGuard, CsrfGuard)
+  async logout(@Req() request: HttpRequest, @Res() reply: HttpReply): Promise<HttpReply> {
+    await this.auth.revokeSession(request.user!.sessionId);
+    reply.header('Set-Cookie', clearSessionCookies());
+    return reply.code(204);
+  }
+}
