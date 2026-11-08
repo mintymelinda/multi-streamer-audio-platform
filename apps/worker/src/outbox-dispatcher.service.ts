@@ -1,6 +1,6 @@
 import { Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import { Queue } from 'bullmq';
-import IORedis from 'ioredis';
+import { Redis } from 'ioredis';
 import { readFileSync } from 'node:fs';
 import { Pool } from 'pg';
 
@@ -45,7 +45,7 @@ export class OutboxDispatcherService implements OnModuleInit, OnModuleDestroy {
     idleTimeoutMillis: 30_000,
     application_name: 'multi-streamer-audio-platform-outbox-dispatcher',
   });
-  private readonly redis = new IORedis(readRequiredSetting('REDIS_URL_FILE', 'REDIS_URL'), {
+  private readonly redis = new Redis(readRequiredSetting('REDIS_URL_FILE', 'REDIS_URL'), {
     maxRetriesPerRequest: null,
     enableReadyCheck: true,
   });
