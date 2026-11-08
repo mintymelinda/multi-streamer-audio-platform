@@ -29,11 +29,14 @@ CREATE TABLE twitch_reward_mappings (
   CHECK (
     feature_key <> 'media_request'
     OR (
-      feature_settings - ARRAY['inputMode', 'priority']::text[] = '{}'::jsonb
-      AND feature_settings->>'inputMode' IN ('url_or_search', 'url_only', 'text_only')
-      AND jsonb_typeof(feature_settings->'priority') = 'number'
-      AND (feature_settings->>'priority')::integer BETWEEN 0 AND 100
-      AND (feature_settings->>'priority')::numeric = (feature_settings->>'priority')::integer
+      (feature_settings - ARRAY['inputMode', 'priority']::text[]) = '{}'::jsonb
+      AND COALESCE(feature_settings->>'inputMode' IN ('url_or_search', 'url_only', 'text_only'), false)
+      AND COALESCE(jsonb_typeof(feature_settings->'priority') = 'number', false)
+      AND COALESCE((feature_settings->>'priority')::integer BETWEEN 0 AND 100, false)
+      AND COALESCE(
+        (feature_settings->>'priority')::numeric = (feature_settings->>'priority')::integer,
+        false
+      )
     )
   )
 );
