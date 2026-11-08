@@ -12,10 +12,17 @@ import {
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
-import type { AuthenticatedUser, HttpRequest, WorkspaceRequestContext } from '../identity/http.types.js';
+import type {
+  AuthenticatedUser,
+  HttpRequest,
+  WorkspaceRequestContext,
+} from '../identity/http.types.js';
 import { CsrfGuard } from '../identity/csrf.guard.js';
 import { SessionGuard } from '../identity/session.guard.js';
-import { RequireWorkspacePermission, WorkspacePermissionGuard } from '../workspaces/workspace-permission.guard.js';
+import {
+  RequireWorkspacePermission,
+  WorkspacePermissionGuard,
+} from '../workspaces/workspace-permission.guard.js';
 import { WorkspaceAccessGuard } from '../workspaces/workspace-access.guard.js';
 import { RequestsService } from './requests.service.js';
 
@@ -29,7 +36,7 @@ function workspace(request: HttpRequest): WorkspaceRequestContext {
 }
 function record(value: unknown): Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
+    ? (value as Record<string, unknown>)
     : {};
 }
 function optionalString(value: unknown, field: string, max: number): string | undefined {
@@ -80,7 +87,11 @@ export class RequestsController {
   @Patch('requests/:requestId/moderation')
   @UseGuards(CsrfGuard)
   @RequireWorkspacePermission('request:moderate')
-  moderate(@Req() request: HttpRequest, @Param('requestId') requestId: string, @Body() body: unknown) {
+  moderate(
+    @Req() request: HttpRequest,
+    @Param('requestId') requestId: string,
+    @Body() body: unknown,
+  ) {
     const action = record(body).action;
     if (action !== 'approve' && action !== 'reject' && action !== 'hold') {
       throw new BadRequestException('action must be approve, reject, or hold.');
