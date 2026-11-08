@@ -39,6 +39,9 @@ export class RequestsService {
 
   async submit(input: IntakeInput) {
     const title = input.title.trim();
+    if (input.priority !== undefined && (!Number.isInteger(input.priority) || input.priority < 0 || input.priority > 100)) {
+      throw new ConflictException('Request priority must be an integer between 0 and 100.');
+    }
     if (!title || title.length > 500) {
       throw new ConflictException('A valid media title is required.');
     }
