@@ -27,15 +27,16 @@ Persistent named volumes are retained by the down command. Use `docker compose .
 ## Install and verify
 
 ```sh
-pnpm install
+pnpm install --frozen-lockfile
 pnpm lint
 pnpm format:check
 pnpm typecheck
+pnpm db:migrations:check
 pnpm test
 pnpm build
 ```
 
-The root scripts are the canonical local equivalents of CI quality gates. Exact direct dependency versions are pinned in workspace manifests. The pnpm lockfile must be generated and committed from a network-enabled environment before Phase 0 is merged; CI currently bootstraps it without frozen-lockfile enforcement.
+The committed pnpm lockfile and root scripts are the canonical reproducible local workflow and the local equivalents of CI quality gates.
 
 ## Configuration policy
 
