@@ -268,7 +268,7 @@ export class TeamService {
 
   private async audit(
     client: PoolClient,
-    workspaceId: VerifiedWorkspaceId,
+    workspaceId: string,
     actorId: string,
     eventType: string,
     targetType: string,
