@@ -210,6 +210,24 @@ FOR EACH ROW EXECUTE FUNCTION protect_workspace_owner_membership();
 
 -- Audit records are append-only. Workspace deletion cascades as required by
 -- the approved workspace-deletion policy; ordinary runtime mutation is denied.
+-- Twitch numeric identity is immutable after account creation.
+CREATE FUNCTION prevent_twitch_identity_change()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $
+BEGIN
+  IF NEW.twitch_user_id <> OLD.twitch_user_id THEN
+    RAISE EXCEPTION 'Twitch numeric identity is immutable'
+      USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
+END;
+$;
+
+CREATE TRIGGER platform_users_twitch_identity_immutable
+BEFORE UPDATE OF twitch_user_id ON platform_users
+FOR EACH ROW EXECUTE FUNCTION prevent_twitch_identity_change();
+
 -- Updated timestamps are maintained by the application; the database remains
 -- the authority for created_at and all security-sensitive state transitions.
 
@@ -296,18 +314,17 @@ ALTER DEFAULT PRIVILEGES FOR ROLE platform_migrator IN SCHEMA public
   GRANT USAGE, SELECT ON SEQUENCES TO platform_runtime;
 
 -- Keep auth state and sessions bounded even if an application cleanup job is delayed.
-CREATE FUNCTION cleanup_expired_auth_state()
+CREATE FUNCTION cleanup_expired_oauth_state()
 RETURNS integer
 LANGUAGE plpgsql
-AS $$
+AS $
 DECLARE
   removed_count integer;
 BEGIN
   DELETE FROM twitch_oauth_states WHERE expires_at < now() OR consumed_at < now() - interval '1 day';
   GET DIAGNOSTICS removed_count = ROW_COUNT;
-  DELETE FROM user_sessions WHERE expires_at < now() OR revoked_at < now() - interval '30 days';
   RETURN removed_count;
 END;
-$$;
+$;
 
-GRANT EXECUTE ON FUNCTION cleanup_expired_auth_state() TO platform_runtime;
+GRANT EXECUTE ON FUNCTION cleanup_expired_oauth_state() TO platform_runtime;
