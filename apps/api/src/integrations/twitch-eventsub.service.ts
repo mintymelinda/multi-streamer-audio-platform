@@ -15,6 +15,8 @@ type SubscriptionRecord = {
   workspace_id: VerifiedWorkspaceId;
   subscription_id: string;
   status: 'pending_verification' | 'enabled' | 'revoked' | 'disabled';
+  event_type: string;
+  event_version: string;
   secret_envelope: EncryptedCredentialEnvelope;
 };
 
@@ -146,13 +148,19 @@ export class TwitchEventSubService {
       { twitchLookupId: subscriptionId },
       async (client) => {
         const result = await client.query<SubscriptionRecord>(
-          'SELECT workspace_id, subscription_id, status, secret_envelope FROM twitch_eventsub_subscriptions WHERE subscription_id = $1',
+          'SELECT workspace_id, subscription_id, status, event_type, event_version, secret_envelope FROM twitch_eventsub_subscriptions WHERE subscription_id = $1',
           [subscriptionId],
         );
         return result.rows[0];
       },
     );
     if (!record) throw new UnauthorizedException('Unknown Twitch EventSub subscription.');
+    if (
+      subscription?.type !== record.event_type ||
+      subscription.version !== record.event_version
+    ) {
+      throw new UnauthorizedException('Twitch EventSub subscription metadata does not match.');
+    }
 
     let signingSecret: string;
     try {
