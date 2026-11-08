@@ -11,7 +11,10 @@ export interface MediaRequestFeatureSettings {
 export type TwitchRewardFeatureSettings = MediaRequestFeatureSettings;
 
 export function isTwitchRewardFeatureKey(value: unknown): value is TwitchRewardFeatureKey {
-  return typeof value === 'string' && TWITCH_REWARD_FEATURE_KEYS.includes(value as TwitchRewardFeatureKey);
+  return (
+    typeof value === 'string' &&
+    TWITCH_REWARD_FEATURE_KEYS.includes(value as TwitchRewardFeatureKey)
+  );
 }
 
 export function normalizeTwitchRewardFeatureSettings(
@@ -34,11 +37,7 @@ export function normalizeTwitchRewardFeatureSettings(
 
   const inputMode = settings.inputMode ?? 'url_or_search';
   const priority = settings.priority ?? 0;
-  if (
-    inputMode !== 'url_or_search' &&
-    inputMode !== 'url_only' &&
-    inputMode !== 'text_only'
-  ) {
+  if (inputMode !== 'url_or_search' && inputMode !== 'url_only' && inputMode !== 'text_only') {
     throw new Error('inputMode must be url_or_search, url_only, or text_only.');
   }
   if (
