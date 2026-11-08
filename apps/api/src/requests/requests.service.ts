@@ -101,19 +101,20 @@ export class RequestsService {
           `INSERT INTO media_requests
             (workspace_id, source, source_event_id, submitted_by_user_id, requester_twitch_user_id,
              requester_display_name, provider, media_id, media_url, title, artist, metadata, status, status_reason)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13,$14)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,'submitted',NULL)
            RETURNING id, status`,
           [
             input.workspace.id, input.source, input.sourceEventId ?? null, input.actor?.id ?? null,
             requesterId ?? null, input.requesterDisplayName ?? null, input.provider ?? null,
             input.mediaId ?? null, input.mediaUrl ?? null, title, input.artist ?? null,
-            JSON.stringify(input.metadata ?? {}), decision,
-            decision === 'rejected' ? 'Matched a configured reject filter.' : null,
+            JSON.stringify(input.metadata ?? {}),
           ],
         );
         const created = inserted.rows[0];
         if (!created) throw new Error('Request insert did not return a row.');
-        await this.recordTransition(client, input.workspace.id, created.id, null, decision, input.actor?.id, input.source === 'twitch_reward' ? 'twitch' : 'user');
+        await this.recordTransition(client, input.workspace.id, created.id, null, 'submitted', input.actor?.id, input.source === 'twitch_reward' ? 'twitch' : 'user');
+        await client.query('UPDATE media_requests SET status = $1, status_reason = $2, updated_at = now() WHERE id = $3', [decision, decision === 'rejected' ? 'Matched a configured reject filter.' : null, created.id]);
+        await this.recordTransition(client, input.workspace.id, created.id, 'submitted', decision, input.actor?.id, 'system', decision === 'rejected' ? 'Matched a configured reject filter.' : undefined);
         let finalStatus: RequestStatus = decision;
         if (decision === 'approved') {
           finalStatus = 'queued';
