@@ -32,6 +32,9 @@ BEGIN
   IF has_table_privilege('platform_worker', 'media_requests', 'SELECT') THEN
     RAISE EXCEPTION 'worker unexpectedly has access to media_requests';
   END IF;
+  IF has_column_privilege('platform_worker', 'outbox_events', 'payload', 'UPDATE') THEN
+    RAISE EXCEPTION 'worker unexpectedly has permission to rewrite outbox payloads';
+  END IF;
   IF (SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname = 'platform_worker') THEN
     RAISE EXCEPTION 'worker role must not be superuser or bypass RLS';
   END IF;

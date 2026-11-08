@@ -8,4 +8,6 @@ CREATE POLICY outbox_events_worker_dispatch ON outbox_events
   USING (current_user = 'platform_worker')
   WITH CHECK (current_user = 'platform_worker');
 
-GRANT SELECT, UPDATE ON outbox_events TO platform_worker;
+GRANT SELECT ON outbox_events TO platform_worker;
+GRANT UPDATE (available_at, attempt_count, locked_at, lock_token, published_at, last_error_code)
+  ON outbox_events TO platform_worker;
