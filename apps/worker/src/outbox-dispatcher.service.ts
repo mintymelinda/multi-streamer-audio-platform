@@ -181,10 +181,7 @@ export class OutboxDispatcherService implements OnModuleInit, OnModuleDestroy {
         {
           deliveryId: row.id,
           workspaceId: row.workspace_id,
-          subscriptionId: row.subscription_id,
           messageId: row.message_id,
-          messageType: row.message_type,
-          payload: row.payload,
         },
         {
           jobId: `eventsub-${row.id}`,
