@@ -1,5 +1,11 @@
 import type { VerifiedWorkspaceId } from '@platform/contracts';
-import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import type { PoolClient } from 'pg';
 import { randomUUID } from 'node:crypto';
 import { DatabaseService } from '../database/database.service.js';
@@ -9,6 +15,12 @@ import type {
   TwitchRewardFeatureKey,
   TwitchRewardFeatureSettings,
 } from './twitch-reward-features.js';
+import {
+  TwitchHelixService,
+  type CreateTwitchCustomReward,
+  type TwitchCustomReward,
+  type UpdateTwitchCustomReward,
+} from './twitch-helix.service.js';
 
 export type TwitchRewardSyncState =
   | 'pending_verification'
@@ -36,9 +48,6 @@ export interface TwitchRewardMapping {
 
 export interface NewTwitchRewardMapping {
   rewardId: string;
-  rewardTitle: string;
-  rewardPrompt?: string;
-  rewardCost: number;
   featureKey: TwitchRewardFeatureKey;
   featureSettings: TwitchRewardFeatureSettings;
 }
@@ -58,7 +67,187 @@ export class TwitchRewardsService {
   constructor(
     @Inject(DatabaseService) private readonly database: DatabaseService,
     @Inject(OutboxService) private readonly outbox: OutboxService,
+    @Inject(TwitchHelixService) private readonly helix: TwitchHelixService,
   ) {}
+
+
+  async listRemoteRewards(
+    workspace: WorkspaceRequestContext,
+    actor: AuthenticatedUser,
+  ): Promise<TwitchCustomReward[]> {
+    try {
+      const rewards = await this.helix.listCustomRewards(workspace, actor);
+      await this.reconcileMappings(workspace, actor, rewards);
+      return rewards;
+    } catch (error) {
+      if (error instanceof ServiceUnavailableException) {
+        await this.markSyncUnknown(workspace, actor);
+      }
+      throw error;
+    }
+  }
+
+  async createReward(
+    workspace: WorkspaceRequestContext,
+    actor: AuthenticatedUser,
+    reward: CreateTwitchCustomReward,
+    featureKey: TwitchRewardFeatureKey,
+    featureSettings: TwitchRewardFeatureSettings,
+  ): Promise<TwitchRewardMapping> {
+    const created = await this.helix.createCustomReward(workspace, actor, reward);
+    try {
+      return await this.linkExistingReward(workspace, actor, {
+        rewardId: created.id,
+        featureKey,
+        featureSettings,
+      });
+    } catch (error) {
+      try {
+        await this.helix.deleteCustomReward(workspace, actor, created.id);
+      } catch {
+        throw new ServiceUnavailableException(
+          'The Twitch reward was created, but its platform mapping could not be saved or compensated. Reconcile rewards before retrying.',
+        );
+      }
+      throw error;
+    }
+  }
+
+  async updateRemoteReward(
+    workspace: WorkspaceRequestContext,
+    actor: AuthenticatedUser,
+    rewardId: string,
+    input: UpdateTwitchCustomReward,
+  ): Promise<TwitchCustomReward> {
+    const reward = await this.helix.updateCustomReward(workspace, actor, rewardId, input);
+    try {
+      await this.database.transaction(
+        { userId: actor.id, verifiedWorkspaceId: workspace.id },
+        (client) =>
+          client.query(
+            `UPDATE twitch_reward_mappings
+                SET reward_title = $3, reward_prompt = $4, reward_cost = $5,
+                    sync_state = 'synced', last_synced_at = now(),
+                    last_sync_error_code = NULL, updated_at = now()
+              WHERE workspace_id = $1 AND twitch_reward_id = $2`,
+            [workspace.id, reward.id, reward.title, reward.prompt || null, reward.cost],
+          ),
+      );
+    } catch {
+      await this.markRewardSyncUnknown(workspace, actor, rewardId);
+      throw new ServiceUnavailableException(
+        'Twitch updated the reward, but the local mapping could not be synchronized.',
+      );
+    }
+    return reward;
+  }
+
+  async deleteRemoteReward(
+    workspace: WorkspaceRequestContext,
+    actor: AuthenticatedUser,
+    rewardId: string,
+  ): Promise<void> {
+    await this.helix.deleteCustomReward(workspace, actor, rewardId);
+    await this.database.transaction(
+      { userId: actor.id, verifiedWorkspaceId: workspace.id },
+      (client) =>
+        client.query(
+          `UPDATE twitch_reward_mappings
+              SET enabled = false, sync_state = 'deleted_on_twitch',
+                  last_synced_at = now(), last_sync_error_code = NULL, updated_at = now()
+            WHERE workspace_id = $1 AND twitch_reward_id = $2`,
+          [workspace.id, rewardId],
+        ),
+    );
+  }
+
+  private async reconcileMappings(
+    workspace: WorkspaceRequestContext,
+    actor: AuthenticatedUser,
+    rewards: TwitchCustomReward[],
+  ): Promise<void> {
+    const remoteById = new Map(rewards.map((reward) => [reward.id, reward]));
+    await this.database.transaction(
+      { userId: actor.id, verifiedWorkspaceId: workspace.id },
+      async (client) => {
+        const result = await client.query<Pick<
+          TwitchRewardMapping,
+          'id' | 'twitch_reward_id' | 'reward_title' | 'reward_prompt' | 'reward_cost'
+        >>(
+          `SELECT id, twitch_reward_id, reward_title, reward_prompt, reward_cost
+             FROM twitch_reward_mappings
+            WHERE workspace_id = $1
+            FOR UPDATE`,
+          [workspace.id],
+        );
+        for (const mapping of result.rows) {
+          const remote = remoteById.get(mapping.twitch_reward_id);
+          if (!remote) {
+            await client.query(
+              `UPDATE twitch_reward_mappings
+                  SET enabled = false, sync_state = 'deleted_on_twitch',
+                      last_synced_at = now(), last_sync_error_code = 'reward_missing_on_twitch',
+                      updated_at = now()
+                WHERE workspace_id = $1 AND id = $2`,
+              [workspace.id, mapping.id],
+            );
+            continue;
+          }
+          const metadataMatches =
+            mapping.reward_title === remote.title &&
+            (mapping.reward_prompt ?? '') === (remote.prompt ?? '') &&
+            mapping.reward_cost === remote.cost;
+          await client.query(
+            `UPDATE twitch_reward_mappings
+                SET sync_state = $3, last_synced_at = now(),
+                    last_sync_error_code = $4, updated_at = now()
+              WHERE workspace_id = $1 AND id = $2`,
+            [
+              workspace.id,
+              mapping.id,
+              metadataMatches ? 'synced' : 'attention_required',
+              metadataMatches ? null : 'reward_metadata_changed',
+            ],
+          );
+        }
+      },
+    );
+  }
+
+  private async markSyncUnknown(
+    workspace: WorkspaceRequestContext,
+    actor: AuthenticatedUser,
+  ): Promise<void> {
+    await this.database.transaction(
+      { userId: actor.id, verifiedWorkspaceId: workspace.id },
+      (client) =>
+        client.query(
+          `UPDATE twitch_reward_mappings
+              SET sync_state = 'sync_unknown', last_sync_error_code = 'twitch_unavailable',
+                  updated_at = now()
+            WHERE workspace_id = $1 AND sync_state <> 'deleted_on_twitch'`,
+          [workspace.id],
+        ),
+    );
+  }
+
+  private async markRewardSyncUnknown(
+    workspace: WorkspaceRequestContext,
+    actor: AuthenticatedUser,
+    rewardId: string,
+  ): Promise<void> {
+    await this.database.transaction(
+      { userId: actor.id, verifiedWorkspaceId: workspace.id },
+      (client) =>
+        client.query(
+          `UPDATE twitch_reward_mappings
+              SET sync_state = 'sync_unknown', last_sync_error_code = 'local_sync_failed',
+                  updated_at = now()
+            WHERE workspace_id = $1 AND twitch_reward_id = $2`,
+          [workspace.id, rewardId],
+        ),
+    );
+  }
 
   async listMappings(
     workspace: WorkspaceRequestContext,
@@ -80,6 +269,10 @@ export class TwitchRewardsService {
     actor: AuthenticatedUser,
     input: NewTwitchRewardMapping,
   ): Promise<TwitchRewardMapping> {
+    const remote = (await this.helix.listCustomRewards(workspace, actor)).find(
+      (reward) => reward.id === input.rewardId,
+    );
+    if (!remote) throw new NotFoundException('The Twitch reward does not exist for this broadcaster.');
     try {
       return await this.database.transaction(
         { userId: actor.id, verifiedWorkspaceId: workspace.id },
@@ -88,16 +281,16 @@ export class TwitchRewardsService {
             `INSERT INTO twitch_reward_mappings
               (workspace_id, twitch_reward_id, reward_title, reward_prompt, reward_cost,
                feature_key, feature_settings, enabled, sync_state, created_by_user_id, updated_by_user_id)
-             VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,true,'pending_verification',$8,$8)
+             VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,true,'synced',$8,$8)
              RETURNING id, workspace_id, twitch_reward_id, reward_title, reward_prompt, reward_cost,
                feature_key, feature_settings, enabled, sync_state, last_synced_at,
                last_sync_error_code, created_at, updated_at`,
             [
               workspace.id,
               input.rewardId,
-              input.rewardTitle,
-              input.rewardPrompt ?? null,
-              input.rewardCost,
+              remote.title,
+              remote.prompt || null,
+              remote.cost,
               input.featureKey,
               JSON.stringify(input.featureSettings),
               actor.id,
