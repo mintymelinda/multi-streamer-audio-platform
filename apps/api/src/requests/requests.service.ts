@@ -111,9 +111,17 @@ export class RequestsService {
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,'submitted',NULL)
            RETURNING id, status`,
           [
-            input.workspace.id, input.source, input.sourceEventId ?? null, input.actor?.id ?? null,
-            requesterId ?? null, input.requesterDisplayName ?? null, input.provider ?? null,
-            input.mediaId ?? null, input.mediaUrl ?? null, title, input.artist ?? null,
+            input.workspace.id,
+            input.source,
+            input.sourceEventId ?? null,
+            input.actor?.id ?? null,
+            requesterId ?? null,
+            input.requesterDisplayName ?? null,
+            input.provider ?? null,
+            input.mediaId ?? null,
+            input.mediaUrl ?? null,
+            title,
+            input.artist ?? null,
             JSON.stringify(input.metadata ?? {}),
           ],
         );
