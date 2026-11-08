@@ -22,16 +22,20 @@ export class WorkspaceAccessGuard implements CanActivate {
     if (typeof workspaceId !== 'string' || !UUID_PATTERN.test(workspaceId) || !user) {
       throw new NotFoundException('Workspace not found.');
     }
-    const userId = user.id;
-    const result = await this.database.transaction({ userId, workspaceId }, (client) =>
+
+    // Establish only the authenticated user context for this lookup. The
+    // database's membership RLS policy permits this self-scoped lookup without
+    // trusting a workspace ID supplied by the request.
+    const result = await this.database.transaction({ userId: user.id }, (client) =>
       client.query<{
         role: WorkspaceRequestContext['role'];
         status: WorkspaceRequestContext['status'];
       }>(
         "SELECT m.role, w.status FROM workspace_memberships m JOIN workspaces w ON w.id = m.workspace_id WHERE m.workspace_id = $1 AND m.user_id = $2 AND m.status = 'active' LIMIT 1",
-        [workspaceId, userId],
+        [workspaceId, user.id],
       ),
     );
+
     const membership = result.rows[0];
     if (!membership || membership.status === 'suspended') {
       throw new NotFoundException('Workspace not found.');
@@ -42,6 +46,9 @@ export class WorkspaceAccessGuard implements CanActivate {
     ) {
       throw new ForbiddenException('This workspace is currently restricted to read-only access.');
     }
+
+    // Controllers/services may now establish workspace context using this
+    // verified request context; the guard never trusts an unverified tenant ID.
     request.workspace = { id: workspaceId, role: membership.role, status: membership.status };
     return true;
   }
