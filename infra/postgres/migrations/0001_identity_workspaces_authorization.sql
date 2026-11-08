@@ -232,7 +232,16 @@ FOR EACH ROW EXECUTE FUNCTION prevent_twitch_identity_change();
 ALTER TABLE platform_users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE platform_users FORCE ROW LEVEL SECURITY;
 CREATE POLICY platform_users_self_access ON platform_users
-  USING (id = nullif(current_setting('app.user_id', true), '')::uuid)
+  USING (
+    id = nullif(current_setting('app.user_id', true), '')::uuid
+    OR twitch_user_id = nullif(current_setting('app.twitch_lookup_id', true), '')
+    OR id IN (
+      SELECT m.user_id
+        FROM workspace_memberships m
+       WHERE m.workspace_id = nullif(current_setting('app.workspace_id', true), '')::uuid
+         AND m.status = 'active'
+    )
+  )
   WITH CHECK (id = nullif(current_setting('app.user_id', true), '')::uuid);
 
 ALTER TABLE workspaces ENABLE ROW LEVEL SECURITY;
@@ -245,6 +254,14 @@ CREATE POLICY workspaces_context_access ON workspaces
         FROM workspace_memberships m
        WHERE m.user_id = nullif(current_setting('app.user_id', true), '')::uuid
          AND m.status = 'active'
+    )
+    OR id IN (
+      SELECT i.workspace_id
+        FROM workspace_invitations i
+        JOIN platform_users u ON u.twitch_user_id = i.invited_twitch_user_id
+       WHERE u.id = nullif(current_setting('app.user_id', true), '')::uuid
+         AND i.status = 'pending'
+         AND i.expires_at > now()
     )
   )
   WITH CHECK (
