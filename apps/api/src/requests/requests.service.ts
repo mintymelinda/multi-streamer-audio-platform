@@ -66,6 +66,7 @@ export class RequestsService {
         const policy = settings.rows[0];
         if (!policy) throw new Error('Workspace request settings could not be initialized.');
 
+        const requesterId = input.requesterTwitchUserId ?? input.actor?.twitchUserId;
         if (input.sourceEventId) {
           const duplicate = await client.query(
             'SELECT * FROM media_requests WHERE workspace_id = $1 AND source = $2 AND source_event_id = $3',
@@ -95,7 +96,6 @@ export class RequestsService {
         if (Number(queueCount.rows[0]?.count ?? 0) >= policy.queue_limit) {
           throw new ConflictException('The workspace request limit has been reached.');
         }
-        const requesterId = input.requesterTwitchUserId ?? input.actor?.twitchUserId;
         if (requesterId) {
           const userCount = await client.query<{ count: string }>(
             `SELECT count(*)::text AS count FROM media_requests WHERE workspace_id = $1 AND requester_twitch_user_id = $2 AND ${active}`,
