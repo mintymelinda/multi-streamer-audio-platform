@@ -136,7 +136,9 @@ export class TwitchIntegrationService {
       broadcaster.owner_user_id !== actor.id ||
       broadcaster.broadcaster_twitch_user_id !== actor.twitchUserId
     ) {
-      throw new ForbiddenException('The signed-in Twitch account is not this workspace broadcaster.');
+      throw new ForbiddenException(
+        'The signed-in Twitch account is not this workspace broadcaster.',
+      );
     }
 
     const credentials = await this.exchangeAndValidate(
