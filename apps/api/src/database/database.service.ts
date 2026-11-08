@@ -35,7 +35,12 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
     await this.pool.end();
   }
 
-  query<T extends QueryResultRow = QueryResultRow>(
+  /**
+   * Executes only pre-authentication or session-infrastructure SQL against
+   * tables that intentionally do not use tenant RLS. Tenant-owned business
+   * data must always use transaction() with a verified DatabaseContext.
+   */
+  queryInfrastructure<T extends QueryResultRow = QueryResultRow>(
     sql: string,
     values?: unknown[],
   ): Promise<QueryResult<T>> {
