@@ -29,14 +29,17 @@ const errorsByStatus: Record<number, PublicApiError> = {
 };
 
 export function mapPublicError(statusCode: number): PublicApiError {
+  const knownError = errorsByStatus[statusCode];
+  if (knownError) {
+    return knownError;
+  }
+
   if (statusCode >= 500) {
     return { code: 'INTERNAL_ERROR', message: 'An unexpected error occurred.' };
   }
 
-  return (
-    errorsByStatus[statusCode] ?? {
-      code: 'REQUEST_FAILED',
-      message: 'The request could not be completed.',
-    }
-  );
+  return {
+    code: 'REQUEST_FAILED',
+    message: 'The request could not be completed.',
+  };
 }
