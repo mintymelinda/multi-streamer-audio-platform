@@ -1,8 +1,9 @@
+import type { VerifiedWorkspaceId } from '@platform/contracts';
 import { Injectable } from '@nestjs/common';
 import type { PoolClient } from 'pg';
 
 export interface NewOutboxEvent {
-  workspaceId: string;
+  workspaceId: VerifiedWorkspaceId;
   eventType: string;
   aggregateType: string;
   aggregateId: string;
