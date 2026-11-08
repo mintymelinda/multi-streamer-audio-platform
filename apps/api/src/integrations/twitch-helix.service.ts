@@ -105,7 +105,7 @@ export class TwitchHelixService {
       rewardId,
       input,
     );
-    const reward = rewards[0];
+    const reward = response.data[0];
     if (!reward?.id) throw new BadGatewayException('Twitch did not return the updated reward.');
     return reward;
   }
