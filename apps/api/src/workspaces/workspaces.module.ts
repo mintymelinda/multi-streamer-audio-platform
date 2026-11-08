@@ -13,8 +13,11 @@ import { WorkspacesService } from './workspaces.service.js';
   imports: [DatabaseModule, IdentityModule],
   controllers: [WorkspacesController, TeamController, MyInvitationsController],
   providers: [
-    WorkspacesService, TeamService, TwitchDirectoryService,
-    WorkspaceAccessGuard, WorkspacePermissionGuard,
+    WorkspacesService,
+    TeamService,
+    TwitchDirectoryService,
+    WorkspaceAccessGuard,
+    WorkspacePermissionGuard,
   ],
 })
 export class WorkspacesModule {}
