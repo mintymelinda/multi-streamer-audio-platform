@@ -30,7 +30,10 @@ export function parseCookies(header: string | string[] | undefined): Map<string,
 export function isSafeLocalReturnPath(value: string | undefined): string {
   if (!value || value.length > 2_048) return '/';
   if (!value.startsWith('/') || value.startsWith('//') || value.includes('\\')) return '/';
-  if (/[\u0000-\u001f\u007f]/.test(value)) return '/';
+  for (const character of value) {
+    const codePoint = character.codePointAt(0);
+    if (codePoint !== undefined && (codePoint <= 0x1f || codePoint === 0x7f)) return '/';
+  }
   return value;
 }
 
