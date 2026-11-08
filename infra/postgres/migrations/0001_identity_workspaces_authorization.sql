@@ -239,8 +239,13 @@ ALTER TABLE workspaces ENABLE ROW LEVEL SECURITY;
 ALTER TABLE workspaces FORCE ROW LEVEL SECURITY;
 CREATE POLICY workspaces_context_access ON workspaces
   USING (
-    id = nullif(current_setting('app.workspace_id', true), '')::uuid
-    OR owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid
+    owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid
+    OR id IN (
+      SELECT m.workspace_id
+        FROM workspace_memberships m
+       WHERE m.user_id = nullif(current_setting('app.user_id', true), '')::uuid
+         AND m.status = 'active'
+    )
   )
   WITH CHECK (
     owner_user_id = nullif(current_setting('app.user_id', true), '')::uuid
@@ -262,35 +267,67 @@ ALTER TABLE workspace_invitations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE workspace_invitations FORCE ROW LEVEL SECURITY;
 CREATE POLICY workspace_invitations_context_access ON workspace_invitations
   USING (
-    workspace_id = nullif(current_setting('app.workspace_id', true), '')::uuid
+    (
+      workspace_id = nullif(current_setting('app.workspace_id', true), '')::uuid
+      AND EXISTS (
+        SELECT 1 FROM workspace_memberships m
+         WHERE m.workspace_id = workspace_invitations.workspace_id
+           AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid
+           AND m.status = 'active'
+      )
+    )
     OR invited_twitch_user_id = (
       SELECT u.twitch_user_id FROM platform_users u
        WHERE u.id = nullif(current_setting('app.user_id', true), '')::uuid
     )
   )
   WITH CHECK (
-    workspace_id = nullif(current_setting('app.workspace_id', true), '')::uuid
+    (
+      workspace_id = nullif(current_setting('app.workspace_id', true), '')::uuid
+      AND EXISTS (
+        SELECT 1 FROM workspace_memberships m
+         WHERE m.workspace_id = workspace_invitations.workspace_id
+           AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid
+           AND m.status = 'active'
+      )
+    )
     OR invited_twitch_user_id = (
       SELECT u.twitch_user_id FROM platform_users u
        WHERE u.id = nullif(current_setting('app.user_id', true), '')::uuid
     )
   );
 
-ALTER TABLE user_sessions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE user_sessions FORCE ROW LEVEL SECURITY;
-CREATE POLICY user_sessions_self_access ON user_sessions
-  USING (user_id = nullif(current_setting('app.user_id', true), '')::uuid)
-  WITH CHECK (user_id = nullif(current_setting('app.user_id', true), '')::uuid);
+-- Sessions are authentication infrastructure, not workspace-owned records.
+-- The API can resolve a random opaque token hash before it knows the user ID;
+-- the application never exposes this table or session metadata to clients.
 
 ALTER TABLE audit_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_events FORCE ROW LEVEL SECURITY;
 CREATE POLICY audit_events_context_access ON audit_events
   USING (
-    (workspace_id IS NOT NULL AND workspace_id = nullif(current_setting('app.workspace_id', true), '')::uuid)
+    (
+      workspace_id IS NOT NULL
+      AND workspace_id = nullif(current_setting('app.workspace_id', true), '')::uuid
+      AND EXISTS (
+        SELECT 1 FROM workspace_memberships m
+         WHERE m.workspace_id = audit_events.workspace_id
+           AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid
+           AND m.status = 'active'
+      )
+    )
     OR (workspace_id IS NULL AND actor_user_id = nullif(current_setting('app.user_id', true), '')::uuid)
   )
   WITH CHECK (
-    (workspace_id IS NOT NULL AND workspace_id = nullif(current_setting('app.workspace_id', true), '')::uuid)
+    (
+      workspace_id IS NOT NULL
+      AND workspace_id = nullif(current_setting('app.workspace_id', true), '')::uuid
+      AND EXISTS (
+        SELECT 1 FROM workspace_memberships m
+         WHERE m.workspace_id = audit_events.workspace_id
+           AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid
+           AND m.status = 'active'
+      )
+    )
     OR (workspace_id IS NULL AND actor_user_id = nullif(current_setting('app.user_id', true), '')::uuid)
   );
 
