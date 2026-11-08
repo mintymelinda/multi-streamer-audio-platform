@@ -38,4 +38,3 @@ A transient outage must never set reauth_required or automatically pause/resume 
 ## Security and tests
 
 All reads/writes must run under verified workspace RLS context. Tests must cover tenant isolation, concurrent pause/recovery, duplicate signals, preservation of durable request state, and no resume before reconciliation.
-
