@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { VerifiedWorkspaceId } from '@platform/contracts';
 import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import type { PoolClient } from 'pg';
@@ -199,6 +200,75 @@ export class RequestsService {
           created.id,
         ]);
         return result.rows[0];
+      },
+    );
+  }
+
+  async getSettings(workspace: WorkspaceRequestContext, userId: string) {
+    return this.database.transaction(
+      { userId, verifiedWorkspaceId: workspace.id },
+      async (client) => {
+        await client.query(
+          'INSERT INTO workspace_request_settings (workspace_id) VALUES ($1) ON CONFLICT DO NOTHING',
+          [workspace.id],
+        );
+        const result = await client.query(
+          'SELECT moderation_mode, queue_limit, per_user_limit, per_source_limit, hold_terms, reject_terms, updated_at FROM workspace_request_settings WHERE workspace_id = $1',
+          [workspace.id],
+        );
+        return result.rows[0];
+      },
+    );
+  }
+
+  async updateSettings(
+    workspace: WorkspaceRequestContext,
+    actor: AuthenticatedUser,
+    settings: {
+      moderationMode: 'automatic' | 'manual' | 'filtered';
+      queueLimit: number;
+      perUserLimit: number;
+      perSourceLimit: number;
+      holdTerms: string[];
+      rejectTerms: string[];
+    },
+  ) {
+    return this.database.transaction(
+      { userId: actor.id, verifiedWorkspaceId: workspace.id },
+      async (client) => {
+        await client.query(
+          'INSERT INTO workspace_request_settings (workspace_id) VALUES ($1) ON CONFLICT DO NOTHING',
+          [workspace.id],
+        );
+        const result = await client.query(
+          `UPDATE workspace_request_settings
+              SET moderation_mode = $2, queue_limit = $3, per_user_limit = $4,
+                  per_source_limit = $5, hold_terms = $6::text[], reject_terms = $7::text[],
+                  updated_at = now()
+            WHERE workspace_id = $1
+            RETURNING moderation_mode, queue_limit, per_user_limit, per_source_limit,
+                      hold_terms, reject_terms, updated_at`,
+          [
+            workspace.id,
+            settings.moderationMode,
+            settings.queueLimit,
+            settings.perUserLimit,
+            settings.perSourceLimit,
+            settings.holdTerms,
+            settings.rejectTerms,
+          ],
+        );
+        const updated = result.rows[0];
+        if (!updated) throw new Error('Workspace request settings could not be updated.');
+        await this.outbox.append(client, {
+          workspaceId: workspace.id as VerifiedWorkspaceId,
+          eventType: 'request.settings.updated',
+          aggregateType: 'workspace_request_settings',
+          aggregateId: workspace.id,
+          idempotencyKey: `request.settings.updated:${workspace.id}:${randomUUID()}`,
+          payload: { workspaceId: workspace.id, actorUserId: actor.id },
+        });
+        return updated;
       },
     );
   }
