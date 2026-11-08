@@ -1,5 +1,11 @@
 import type { VerifiedWorkspaceId } from '@platform/contracts';
-import { ForbiddenException, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Inject,
+  Injectable,
+  ServiceUnavailableException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { DatabaseService } from '../database/database.service.js';
 import type { AuthenticatedUser, WorkspaceRequestContext } from '../identity/http.types.js';
@@ -425,36 +431,46 @@ export class TwitchIntegrationService {
       grant_type: 'refresh_token',
       refresh_token: refreshToken,
     });
-    let token: TwitchTokenResponse;
+    let tokenResponse: Response;
     try {
-      const response = await fetch('https://id.twitch.tv/oauth2/token', {
+      tokenResponse = await fetch('https://id.twitch.tv/oauth2/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body,
         signal: AbortSignal.timeout(10_000),
       });
-      if (!response.ok) throw new Error('Twitch refresh rejected');
-      token = (await response.json()) as TwitchTokenResponse;
     } catch {
+      throw new ServiceUnavailableException('Twitch token refresh is temporarily unavailable.');
+    }
+    if (tokenResponse.status === 400 || tokenResponse.status === 401) {
       throw new UnauthorizedException('Twitch authorization expired; reconnect the broadcaster account.');
     }
+    if (!tokenResponse.ok) {
+      throw new ServiceUnavailableException('Twitch token refresh is temporarily unavailable.');
+    }
+    const token = (await tokenResponse.json()) as TwitchTokenResponse;
     if (
       !token.access_token || !token.refresh_token ||
       typeof token.expires_in !== 'number' || !Number.isFinite(token.expires_in) || token.expires_in <= 0
     ) {
       throw new UnauthorizedException('Twitch did not return a renewable broadcaster credential.');
     }
-    let validation: TwitchValidationResponse;
+    let validationResponse: Response;
     try {
-      const response = await fetch('https://id.twitch.tv/oauth2/validate', {
+      validationResponse = await fetch('https://id.twitch.tv/oauth2/validate', {
         headers: { Authorization: `OAuth ${token.access_token}` },
         signal: AbortSignal.timeout(10_000),
       });
-      if (!response.ok) throw new Error('Twitch validation rejected');
-      validation = (await response.json()) as TwitchValidationResponse;
     } catch {
-      throw new UnauthorizedException('The refreshed Twitch authorization could not be validated.');
+      throw new ServiceUnavailableException('Twitch token validation is temporarily unavailable.');
     }
+    if (validationResponse.status === 401) {
+      throw new UnauthorizedException('The refreshed Twitch authorization was rejected.');
+    }
+    if (!validationResponse.ok) {
+      throw new ServiceUnavailableException('Twitch token validation is temporarily unavailable.');
+    }
+    const validation = (await validationResponse.json()) as TwitchValidationResponse;
     const scopes = Array.isArray(validation.scopes)
       ? validation.scopes.filter((scope): scope is string => typeof scope === 'string')
       : [];
