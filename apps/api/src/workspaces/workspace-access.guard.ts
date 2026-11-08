@@ -1,5 +1,6 @@
 import {
-  CanActivate, ExecutionContext, ForbiddenException, Injectable, NotFoundException,
+  ForbiddenException, Injectable, NotFoundException,
+  type CanActivate, type ExecutionContext,
 } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service.js';
 import type { HttpRequest, WorkspaceRequestContext } from '../identity/http.types.js';
@@ -13,17 +14,19 @@ export class WorkspaceAccessGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<HttpRequest>();
     const workspaceId = request.params?.workspaceId;
-    if (typeof workspaceId !== 'string' || !UUID_PATTERN.test(workspaceId) || !request.user) {
+    const user = request.user;
+    if (typeof workspaceId !== 'string' || !UUID_PATTERN.test(workspaceId) || !user) {
       throw new NotFoundException('Workspace not found.');
     }
+    const userId = user.id;
     const result = await this.database.transaction(
-      { userId: request.user.id, workspaceId },
+      { userId, workspaceId },
       (client) => client.query<{
         role: WorkspaceRequestContext['role'];
         status: WorkspaceRequestContext['status'];
       }>(
         'SELECT m.role, w.status FROM workspace_memberships m JOIN workspaces w ON w.id = m.workspace_id WHERE m.workspace_id = $1 AND m.user_id = $2 AND m.status = \'active\' LIMIT 1',
-        [workspaceId, request.user!.id],
+        [workspaceId, userId],
       ),
     );
     const membership = result.rows[0];
