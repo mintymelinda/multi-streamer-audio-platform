@@ -70,7 +70,6 @@ export class TwitchRewardsService {
     @Inject(TwitchHelixService) private readonly helix: TwitchHelixService,
   ) {}
 
-
   async listRemoteRewards(
     workspace: WorkspaceRequestContext,
     actor: AuthenticatedUser,
@@ -280,8 +279,9 @@ export class TwitchRewardsService {
           const inserted = await client.query<TwitchRewardMapping>(
             `INSERT INTO twitch_reward_mappings
               (workspace_id, twitch_reward_id, reward_title, reward_prompt, reward_cost,
-               feature_key, feature_settings, enabled, sync_state, created_by_user_id, updated_by_user_id)
-             VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,true,'synced',$8,$8)
+               feature_key, feature_settings, enabled, sync_state, last_synced_at,
+               created_by_user_id, updated_by_user_id)
+             VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,true,'synced',now(),$8,$8)
              RETURNING id, workspace_id, twitch_reward_id, reward_title, reward_prompt, reward_cost,
                feature_key, feature_settings, enabled, sync_state, last_synced_at,
                last_sync_error_code, created_at, updated_at`,
