@@ -21,11 +21,24 @@ same PostgreSQL transaction. If either write fails, neither may commit.
 
 ## Worker contract
 
-The Phase 2 dispatcher must claim events with bounded leases, recover expired
-leases, increment attempts, and publish using stable event IDs. It must not
-use a database role with `BYPASSRLS`. Event payload reads and state changes
-must occur with verified workspace context. Failed dispatches must remain
-durable and observable; no event may be silently dropped.
+The Phase 2 dispatcher claims events with bounded leases and
+`FOR UPDATE SKIP LOCKED`, then publishes stable event IDs to the BullMQ
+`platform-outbox` queue. It uses the dedicated `platform_worker` database
+role, which is not a superuser and does not have `BYPASSRLS`. The role can
+read/update outbox rows but has no grants on request, workspace, or integration
+business tables.
+
+- Claims recover automatically when a 60-second lease expires.
+- Redis enqueue failures release the claim and schedule bounded exponential
+  retry (5 seconds up to 1 hour).
+- BullMQ job IDs equal the PostgreSQL outbox UUID, making enqueue retries
+  idempotent.
+- Completed BullMQ jobs are retained for 30 days; failed jobs remain available
+  for inspection.
+- An event is marked published only after BullMQ confirms the enqueue.
+- Publishing does not mean a downstream business handler completed. Consumer
+  processing, exhausted-failure recovery, and authorized manual replay remain
+  Phase 2 work.
 
 ## Retention
 
