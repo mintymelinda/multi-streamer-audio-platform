@@ -53,11 +53,12 @@ BEGIN
     RAISE EXCEPTION 'membership isolation failed for Tenant A';
   END IF;
 
-  -- A supplied workspace ID alone is insufficient: the membership table's
-  -- policy only exposes the caller's own membership when establishing context.
-  PERFORM set_config('app.workspace_id', workspace_b::text, true);
-  IF (SELECT count(*) FROM workspaces WHERE id = workspace_b) <> 1 THEN
-    RAISE EXCEPTION 'RLS context policy should expose the selected workspace; API membership verification is mandatory';
+  -- With User A's verified workspace context, Tenant B remains invisible.
+  IF (SELECT count(*) FROM workspaces WHERE id = workspace_b) <> 0 THEN
+    RAISE EXCEPTION 'cross-workspace read was not blocked';
+  END IF;
+  IF (SELECT count(*) FROM workspace_memberships WHERE workspace_id = workspace_b) <> 0 THEN
+    RAISE EXCEPTION 'cross-workspace membership read was not blocked';
   END IF;
 
   -- User A still cannot read User B's account or User B's session rows.

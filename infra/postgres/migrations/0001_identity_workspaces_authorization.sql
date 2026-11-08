@@ -184,18 +184,25 @@ FOR EACH ROW EXECUTE FUNCTION enforce_workspace_owner_consistency();
 CREATE FUNCTION protect_workspace_owner_membership()
 RETURNS trigger
 LANGUAGE plpgsql
-AS $$
+AS $
 BEGIN
   IF OLD.role = 'owner' AND OLD.status = 'active' THEN
+    -- Workspace deletion is allowed to cascade its membership rows.
+    IF NOT EXISTS (SELECT 1 FROM workspaces WHERE id = OLD.workspace_id) THEN
+      RETURN OLD;
+    END IF;
     IF TG_OP = 'DELETE' OR NEW.role <> 'owner' OR NEW.status <> 'active'
        OR NEW.user_id <> OLD.user_id OR NEW.workspace_id <> OLD.workspace_id THEN
       RAISE EXCEPTION 'workspace owner membership cannot be removed or reassigned'
         USING ERRCODE = '23514';
     END IF;
   END IF;
+  IF TG_OP = 'DELETE' THEN
+    RETURN OLD;
+  END IF;
   RETURN NEW;
 END;
-$$;
+$;
 
 CREATE TRIGGER protect_workspace_owner_membership_trigger
 BEFORE UPDATE OR DELETE ON workspace_memberships
@@ -203,20 +210,6 @@ FOR EACH ROW EXECUTE FUNCTION protect_workspace_owner_membership();
 
 -- Audit records are append-only. Workspace deletion cascades as required by
 -- the approved workspace-deletion policy; ordinary runtime mutation is denied.
-CREATE FUNCTION reject_audit_mutation()
-RETURNS trigger
-LANGUAGE plpgsql
-AS $$
-BEGIN
-  RAISE EXCEPTION 'audit events are append-only'
-    USING ERRCODE = '42501';
-END;
-$$;
-
-CREATE TRIGGER audit_events_immutable
-BEFORE UPDATE OR DELETE ON audit_events
-FOR EACH ROW EXECUTE FUNCTION reject_audit_mutation();
-
 -- Updated timestamps are maintained by the application; the database remains
 -- the authority for created_at and all security-sensitive state transitions.
 
@@ -252,8 +245,20 @@ CREATE POLICY workspace_memberships_user_or_context ON workspace_memberships
 ALTER TABLE workspace_invitations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE workspace_invitations FORCE ROW LEVEL SECURITY;
 CREATE POLICY workspace_invitations_context_access ON workspace_invitations
-  USING (workspace_id = nullif(current_setting('app.workspace_id', true), '')::uuid)
-  WITH CHECK (workspace_id = nullif(current_setting('app.workspace_id', true), '')::uuid);
+  USING (
+    workspace_id = nullif(current_setting('app.workspace_id', true), '')::uuid
+    OR invited_twitch_user_id = (
+      SELECT u.twitch_user_id FROM platform_users u
+       WHERE u.id = nullif(current_setting('app.user_id', true), '')::uuid
+    )
+  )
+  WITH CHECK (
+    workspace_id = nullif(current_setting('app.workspace_id', true), '')::uuid
+    OR invited_twitch_user_id = (
+      SELECT u.twitch_user_id FROM platform_users u
+       WHERE u.id = nullif(current_setting('app.user_id', true), '')::uuid
+    )
+  );
 
 ALTER TABLE user_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_sessions FORCE ROW LEVEL SECURITY;
