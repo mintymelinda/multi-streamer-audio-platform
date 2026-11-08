@@ -1,4 +1,9 @@
-import { ForbiddenException, Injectable, type CanActivate, type ExecutionContext } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  type CanActivate,
+  type ExecutionContext,
+} from '@nestjs/common';
 import { parseCookies, safeEqualHex, sha256 } from './security.js';
 import type { HttpRequest } from './http.types.js';
 
