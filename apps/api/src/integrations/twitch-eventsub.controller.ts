@@ -10,9 +10,7 @@ interface WebhookReply {
 
 @Controller('webhooks/twitch/eventsub')
 export class TwitchEventSubController {
-  constructor(
-    @Inject(TwitchEventSubService) private readonly eventSub: TwitchEventSubService,
-  ) {}
+  constructor(@Inject(TwitchEventSubService) private readonly eventSub: TwitchEventSubService) {}
 
   @Post()
   async receive(@Req() request: HttpRequest, @Res() reply: WebhookReply) {
