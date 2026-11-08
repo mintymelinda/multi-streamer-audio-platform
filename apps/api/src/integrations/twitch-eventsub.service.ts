@@ -101,7 +101,9 @@ export class TwitchEventSubService {
           ],
         );
         if (!result.rows[0]) {
-          throw new BadRequestException('Twitch subscription ID is already assigned to another workspace.');
+          throw new BadRequestException(
+            'Twitch subscription ID is already assigned to another workspace.',
+          );
         }
       },
     );
@@ -117,8 +119,16 @@ export class TwitchEventSubService {
     const messageId = header(headers, 'twitch-eventsub-message-id');
     const messageTimestamp = header(headers, 'twitch-eventsub-message-timestamp');
     const messageSignature = header(headers, 'twitch-eventsub-message-signature');
-    const messageType = header(headers, 'twitch-eventsub-message-type') as EventSubMessageType | undefined;
-    if (!messageId || messageId.length > 256 || !messageTimestamp || !messageSignature || !messageType) {
+    const messageType = header(headers, 'twitch-eventsub-message-type') as
+      | EventSubMessageType
+      | undefined;
+    if (
+      !messageId ||
+      messageId.length > 256 ||
+      !messageTimestamp ||
+      !messageSignature ||
+      !messageType
+    ) {
       throw new BadRequestException('Required Twitch EventSub headers are missing.');
     }
     if (
@@ -189,15 +199,12 @@ export class TwitchEventSubService {
       if (typeof challenge !== 'string' || challenge.length > 2048) {
         throw new BadRequestException('Twitch EventSub challenge is invalid.');
       }
-      await this.database.transaction(
-        { twitchLookupId: subscriptionId },
-        async (client) => {
-          await client.query(
-            "UPDATE twitch_eventsub_subscriptions SET status = 'enabled', updated_at = now() WHERE subscription_id = $1",
-            [subscriptionId],
-          );
-        },
-      );
+      await this.database.transaction({ twitchLookupId: subscriptionId }, async (client) => {
+        await client.query(
+          "UPDATE twitch_eventsub_subscriptions SET status = 'enabled', updated_at = now() WHERE subscription_id = $1",
+          [subscriptionId],
+        );
+      });
       return { kind: 'challenge', challenge };
     }
 
@@ -205,10 +212,8 @@ export class TwitchEventSubService {
       throw new UnauthorizedException('Twitch EventSub subscription is not enabled.');
     }
 
-    return this.database.transaction(
-      { twitchLookupId: subscriptionId },
-      async (client) => {
-        const inserted = await client.query<{ id: string }>(
+    return this.database.transaction({ twitchLookupId: subscriptionId }, async (client) => {
+      const inserted = await client.query<{ id: string }>(
           `INSERT INTO twitch_eventsub_deliveries
             (workspace_id, subscription_id, message_id, message_type, payload)
            VALUES ($1, $2, $3, $4, $5::jsonb)
@@ -225,7 +230,6 @@ export class TwitchEventSubService {
           );
         }
         return { kind: 'accepted', duplicate };
-      },
-    );
+    });
   }
 }
