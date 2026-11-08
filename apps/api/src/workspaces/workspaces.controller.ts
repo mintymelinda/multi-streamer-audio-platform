@@ -45,7 +45,8 @@ export class WorkspacesController {
   @Post()
   @UseGuards(CsrfGuard)
   create(@Req() request: HttpRequest, @Body() body: unknown) {
-    const name = typeof body === 'object' && body !== null && 'name' in body ? body.name : undefined;
+    const name =
+      typeof body === 'object' && body !== null && 'name' in body ? body.name : undefined;
     return this.workspaces.create(requireAuthenticatedUser(request).id, name);
   }
 
