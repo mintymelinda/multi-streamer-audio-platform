@@ -39,7 +39,10 @@ export class RequestsService {
 
   async submit(input: IntakeInput) {
     const title = input.title.trim();
-    if (input.priority !== undefined && (!Number.isInteger(input.priority) || input.priority < 0 || input.priority > 100)) {
+    if (
+      input.priority !== undefined &&
+      (!Number.isInteger(input.priority) || input.priority < 0 || input.priority > 100)
+    ) {
       throw new ConflictException('Request priority must be an integer between 0 and 100.');
     }
     if (!title || title.length > 500) {
@@ -182,7 +185,13 @@ export class RequestsService {
         let finalStatus: RequestStatus = decision;
         if (decision === 'approved') {
           finalStatus = 'queued';
-          await this.enqueue(client, input.workspace.id, created.id, input.priority ?? 0, input.actor?.id);
+          await this.enqueue(
+            client,
+            input.workspace.id,
+            created.id,
+            input.priority ?? 0,
+            input.actor?.id,
+          );
           await client.query(
             "UPDATE media_requests SET status = 'queued', updated_at = now() WHERE id = $1",
             [created.id],
