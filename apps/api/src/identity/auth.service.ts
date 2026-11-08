@@ -42,7 +42,7 @@ export class AuthService {
     const config = getTwitchAppConfig();
     const state = newOpaqueToken();
     await this.database.query(
-      'INSERT INTO twitch_oauth_states (state_hash, return_path, expires_at) VALUES ($1, $2, now() + interval \'10 minutes\')',
+      "INSERT INTO twitch_oauth_states (state_hash, return_path, expires_at) VALUES ($1, $2, now() + interval '10 minutes')",
       [sha256(state), isSafeLocalReturnPath(returnTo)],
     );
     const url = new URL('https://id.twitch.tv/oauth2/authorize');
@@ -66,7 +66,9 @@ export class AuthService {
       return result.rows[0]?.return_path;
     });
     if (!oauthState) {
-      throw new UnauthorizedException('Twitch sign-in state is invalid or expired. Please try again.');
+      throw new UnauthorizedException(
+        'Twitch sign-in state is invalid or expired. Please try again.',
+      );
     }
     const twitchUserId = await this.exchangeAndValidateCode(code);
     return this.createPlatformSession(twitchUserId, oauthState);
@@ -179,10 +181,10 @@ export class AuthService {
           userId = user.id;
           await client.query("SELECT set_config('app.user_id', $1, true)", [userId]);
         } else {
-          await client.query(
-            'INSERT INTO platform_users (id, twitch_user_id) VALUES ($1, $2)',
-            [userId, twitchUserId],
-          );
+          await client.query('INSERT INTO platform_users (id, twitch_user_id) VALUES ($1, $2)', [
+            userId,
+            twitchUserId,
+          ]);
         }
         if (user?.status === 'suspended') {
           throw new ForbiddenException('This platform account is suspended.');
@@ -190,7 +192,7 @@ export class AuthService {
 
         const sessionId = randomUUID();
         await client.query(
-          'INSERT INTO user_sessions (id, user_id, session_token_hash, csrf_token_hash, expires_at) VALUES ($1, $2, $3, $4, now() + interval \'7 days\')',
+          "INSERT INTO user_sessions (id, user_id, session_token_hash, csrf_token_hash, expires_at) VALUES ($1, $2, $3, $4, now() + interval '7 days')",
           [sessionId, userId, sha256(sessionToken), sha256(csrfToken)],
         );
         return { userId, twitchUserId, sessionToken, csrfToken, returnPath };
