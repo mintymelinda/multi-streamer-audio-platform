@@ -4,6 +4,7 @@ import {
   Get,
   Inject,
   NotFoundException,
+  BadRequestException,
   Param,
   Patch,
   Post,
@@ -34,7 +35,7 @@ function record(value: unknown): Record<string, unknown> {
 function optionalString(value: unknown, field: string, max: number): string | undefined {
   if (value === undefined || value === null || value === '') return undefined;
   if (typeof value !== 'string' || value.length > max) {
-    throw new Error(`${field} must be a string no longer than ${max} characters.`);
+    throw new BadRequestException(`${field} must be a string no longer than ${max} characters.`);
   }
   return value;
 }
@@ -67,13 +68,13 @@ export class RequestsController {
   @Get('requests')
   @RequireWorkspacePermission('workspace:read')
   list(@Req() request: HttpRequest) {
-    return this.requests.list(workspace(request));
+    return this.requests.list(workspace(request), user(request).id);
   }
 
   @Get('queue')
   @RequireWorkspacePermission('workspace:read')
   queue(@Req() request: HttpRequest) {
-    return this.requests.queue(workspace(request));
+    return this.requests.queue(workspace(request), user(request).id);
   }
 
   @Patch('requests/:requestId/moderation')
@@ -82,7 +83,7 @@ export class RequestsController {
   moderate(@Req() request: HttpRequest, @Param('requestId') requestId: string, @Body() body: unknown) {
     const action = record(body).action;
     if (action !== 'approve' && action !== 'reject' && action !== 'hold') {
-      throw new Error('action must be approve, reject, or hold.');
+      throw new BadRequestException('action must be approve, reject, or hold.');
     }
     const reason = optionalString(record(body).reason, 'reason', 500);
     return this.requests.moderate(workspace(request), user(request), requestId, action, reason);
