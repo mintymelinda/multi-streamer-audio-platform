@@ -371,7 +371,8 @@ export class RequestsService {
           throw new NotFoundException('Queued request not found.');
         }
         const remaining = currentIds.filter((id) => id !== requestId);
-        const nextIds = position === 'front' ? [requestId, ...remaining] : [...remaining, requestId];
+        const nextIds =
+          position === 'front' ? [requestId, ...remaining] : [...remaining, requestId];
         await this.rewriteQueueOrder(client, workspace.id, nextIds);
         await this.outbox.append(client, {
           workspaceId: workspace.id as VerifiedWorkspaceId,
