@@ -169,10 +169,12 @@ export class TwitchRewardsService {
     await this.database.transaction(
       { userId: actor.id, verifiedWorkspaceId: workspace.id },
       async (client) => {
-        const result = await client.query<Pick<
-          TwitchRewardMapping,
-          'id' | 'twitch_reward_id' | 'reward_title' | 'reward_prompt' | 'reward_cost'
-        >>(
+        const result = await client.query<
+          Pick<
+            TwitchRewardMapping,
+            'id' | 'twitch_reward_id' | 'reward_title' | 'reward_prompt' | 'reward_cost'
+          >
+        >(
           `SELECT id, twitch_reward_id, reward_title, reward_prompt, reward_cost
              FROM twitch_reward_mappings
             WHERE workspace_id = $1
@@ -272,7 +274,8 @@ export class TwitchRewardsService {
     const remote = (await this.helix.listCustomRewards(workspace, actor)).find(
       (reward) => reward.id === input.rewardId,
     );
-    if (!remote) throw new NotFoundException('The Twitch reward does not exist for this broadcaster.');
+    if (!remote)
+      throw new NotFoundException('The Twitch reward does not exist for this broadcaster.');
     try {
       return await this.database.transaction(
         { userId: actor.id, verifiedWorkspaceId: workspace.id },
