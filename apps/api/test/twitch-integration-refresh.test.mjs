@@ -141,3 +141,42 @@ test('does not refresh a broadcaster token that remains valid beyond the refresh
     fixture.cleanup();
   }
 });
+
+
+test('marks the integration for reauthorization when Twitch rejects the refreshed broadcaster identity or scope', async () => {
+  const fixture = setupCredential(new Date(Date.now() + 30_000).toISOString());
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    if (String(url).endsWith('/oauth2/token')) {
+      return new Response(JSON.stringify({ access_token: 'new-access-token', refresh_token: 'new-refresh-token', expires_in: 3600 }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ client_id: 'test-client-id', user_id: actor.twitchUserId, scopes: ['channel:read:redemptions'] }), { status: 200 });
+  };
+  try {
+    await assert.rejects(
+      fixture.service.getAccessToken({ id: workspaceId }, actor),
+      (error) => error instanceof Error && 'getStatus' in error && error.getStatus() === 401,
+    );
+    assert.equal(fixture.updates.length, 1);
+    assert.match(fixture.updates[0].sql, /status = 'reauth_required'/);
+  } finally {
+    globalThis.fetch = originalFetch;
+    fixture.cleanup();
+  }
+});
+
+test('does not mark the integration for reauthorization during a transient Twitch outage', async () => {
+  const fixture = setupCredential(new Date(Date.now() + 30_000).toISOString());
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response('temporarily unavailable', { status: 503 });
+  try {
+    await assert.rejects(
+      fixture.service.getAccessToken({ id: workspaceId }, actor),
+      (error) => error instanceof Error && 'getStatus' in error && error.getStatus() === 503,
+    );
+    assert.equal(fixture.updates.length, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+    fixture.cleanup();
+  }
+});
