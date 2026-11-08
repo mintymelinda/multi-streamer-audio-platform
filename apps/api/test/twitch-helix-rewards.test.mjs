@@ -79,7 +79,10 @@ test('lists every Twitch reward page using the connected broadcaster identity', 
   };
   try {
     const rewards = await fixture.service.listCustomRewards(workspace, actor);
-    assert.deepEqual(rewards.map((item) => item.id), ['reward-1', 'reward-2']);
+    assert.deepEqual(
+      rewards.map((item) => item.id),
+      ['reward-1', 'reward-2'],
+    );
     assert.equal(calls.length, 2);
     assert.equal(calls[0].url.searchParams.get('broadcaster_id'), 'broadcaster-123');
     assert.equal(calls[0].url.searchParams.get('first'), '50');
