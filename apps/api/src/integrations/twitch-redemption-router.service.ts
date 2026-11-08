@@ -5,8 +5,8 @@ import {
   type OnModuleInit,
 } from '@nestjs/common';
 import type { VerifiedWorkspaceId } from '@platform/contracts';
-import type { WorkspaceRequestContext } from '../identity/http.types.js';
 import { DatabaseService } from '../database/database.service.js';
+import type { WorkspaceRequestContext } from '../identity/http.types.js';
 import { RequestsService } from '../requests/requests.service.js';
 import { buildTwitchRedemptionRequest } from './twitch-redemption-routing.js';
 
