@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  Logger,
-  type OnModuleDestroy,
-  type OnModuleInit,
-} from '@nestjs/common';
+import { Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import type { VerifiedWorkspaceId } from '@platform/contracts';
 import { DatabaseService } from '../database/database.service.js';
 import type { WorkspaceRequestContext } from '../identity/http.types.js';
@@ -181,12 +176,7 @@ export class TwitchRedemptionRouterService implements OnModuleInit, OnModuleDest
           priority: mapping.feature_settings.priority ?? 0,
         },
       });
-      await this.finish(
-        row,
-        'processed',
-        typeof request.id === 'string' ? request.id : null,
-        null,
-      );
+      await this.finish(row, 'processed', typeof request.id === 'string' ? request.id : null, null);
     } catch (error) {
       const terminal = row.routing_attempts >= 8;
       const statusCode = httpStatus(error);
