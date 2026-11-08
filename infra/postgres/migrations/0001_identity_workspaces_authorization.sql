@@ -182,7 +182,7 @@ FOR EACH ROW EXECUTE FUNCTION enforce_workspace_owner_consistency();
 CREATE FUNCTION protect_workspace_owner_membership()
 RETURNS trigger
 LANGUAGE plpgsql
-AS $
+AS $$
 BEGIN
   IF OLD.role = 'owner' AND OLD.status = 'active' THEN
     -- Workspace deletion is allowed to cascade its membership rows.
@@ -200,7 +200,7 @@ BEGIN
   END IF;
   RETURN NEW;
 END;
-$;
+$$;
 
 CREATE TRIGGER protect_workspace_owner_membership_trigger
 BEFORE UPDATE OR DELETE ON workspace_memberships
@@ -212,7 +212,7 @@ FOR EACH ROW EXECUTE FUNCTION protect_workspace_owner_membership();
 CREATE FUNCTION prevent_twitch_identity_change()
 RETURNS trigger
 LANGUAGE plpgsql
-AS $
+AS $$
 BEGIN
   IF NEW.twitch_user_id <> OLD.twitch_user_id THEN
     RAISE EXCEPTION 'Twitch numeric identity is immutable'
@@ -220,7 +220,7 @@ BEGIN
   END IF;
   RETURN NEW;
 END;
-$;
+$$;
 
 CREATE TRIGGER platform_users_twitch_identity_immutable
 BEFORE UPDATE OF twitch_user_id ON platform_users
@@ -352,7 +352,7 @@ ALTER DEFAULT PRIVILEGES FOR ROLE platform_migrator IN SCHEMA public
 CREATE FUNCTION cleanup_expired_oauth_state()
 RETURNS integer
 LANGUAGE plpgsql
-AS $
+AS $$
 DECLARE
   removed_count integer;
 BEGIN
@@ -360,6 +360,6 @@ BEGIN
   GET DIAGNOSTICS removed_count = ROW_COUNT;
   RETURN removed_count;
 END;
-$;
+$$;
 
 GRANT EXECUTE ON FUNCTION cleanup_expired_oauth_state() TO platform_runtime;
