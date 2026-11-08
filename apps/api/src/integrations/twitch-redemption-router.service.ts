@@ -31,6 +31,11 @@ interface RewardMappingRow {
 
 const REDEMPTION_EVENT = 'channel.channel_points_custom_reward_redemption.add';
 
+function requestId(value: unknown): string | null {
+  if (typeof value !== 'object' || value === null || !('id' in value)) return null;
+  return typeof value.id === 'string' ? value.id : null;
+}
+
 function httpStatus(error: unknown): number | undefined {
   if (typeof error !== 'object' || error === null || !('getStatus' in error)) {
     return undefined;
@@ -176,7 +181,7 @@ export class TwitchRedemptionRouterService implements OnModuleInit, OnModuleDest
           priority: mapping.feature_settings.priority ?? 0,
         },
       });
-      await this.finish(row, 'processed', typeof request.id === 'string' ? request.id : null, null);
+      await this.finish(row, 'processed', requestId(request), null);
     } catch (error) {
       const terminal = row.routing_attempts >= 8;
       const statusCode = httpStatus(error);
