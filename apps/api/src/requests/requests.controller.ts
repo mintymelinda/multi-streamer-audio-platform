@@ -53,9 +53,16 @@ function integer(value: unknown, field: string, min: number, max: number): numbe
   return value;
 }
 function stringArray(value: unknown, field: string): string[] {
-  if (!Array.isArray(value) || value.length > 50 ||
-      value.some((item) => typeof item !== 'string' || item.trim().length === 0 || item.length > 100)) {
-    throw new BadRequestException(`${field} must contain up to 50 non-empty strings of at most 100 characters.`);
+  if (
+    !Array.isArray(value) ||
+    value.length > 50 ||
+    value.some(
+      (item) => typeof item !== 'string' || item.trim().length === 0 || item.length > 100,
+    )
+  ) {
+    throw new BadRequestException(
+      `${field} must contain up to 50 non-empty strings of at most 100 characters.`,
+    );
   }
   return value.map((item: string) => item.trim());
 }
@@ -97,7 +104,11 @@ export class RequestsController {
   updateSettings(@Req() request: HttpRequest, @Body() body: unknown) {
     const data = record(body);
     const moderationMode = data.moderationMode;
-    if (moderationMode !== 'automatic' && moderationMode !== 'manual' && moderationMode !== 'filtered') {
+    if (
+      moderationMode !== 'automatic' &&
+      moderationMode !== 'manual' &&
+      moderationMode !== 'filtered'
+    ) {
       throw new BadRequestException('moderationMode must be automatic, manual, or filtered.');
     }
     return this.requests.updateSettings(workspace(request), user(request), {
