@@ -230,7 +230,14 @@ export class TwitchEventSubService {
          VALUES ($1, $2, $3, $4, $5::jsonb, $6)
          ON CONFLICT (message_id) DO NOTHING
          RETURNING id`,
-        [record.workspace_id, subscriptionId, messageId, messageType, JSON.stringify(payload), record.service_actor_user_id],
+        [
+          record.workspace_id,
+          subscriptionId,
+          messageId,
+          messageType,
+          JSON.stringify(payload),
+          record.service_actor_user_id,
+        ],
       );
       const duplicate = inserted.rows.length === 0;
       if (messageType === 'revocation' && !duplicate) {
