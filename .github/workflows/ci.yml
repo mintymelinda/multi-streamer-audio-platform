@@ -30,16 +30,27 @@ jobs:
         with:
           node-version: 26.13.0
 
-      # The initial lockfile is generated in this network-enabled CI run.
-      # Switch to --frozen-lockfile before merging Phase 0.
+      # Generate the initial lockfile while bootstrapping the empty repository.
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
 
-      - name: Preserve generated lockfile for Phase 0 finalization
+      # Normalize the initial scaffold once; the resulting files are committed
+      # from the review branch after this CI run.
+      - name: Normalize initial workspace formatting
+        run: pnpm format
+
+      - name: Package normalized files for review-branch commit
+        run: |
+          git diff --name-only > /tmp/phase0-files.txt
+          if [ -f pnpm-lock.yaml ]; then echo pnpm-lock.yaml >> /tmp/phase0-files.txt; fi
+          sort -u /tmp/phase0-files.txt -o /tmp/phase0-files.txt
+          tar -czf phase0-normalized.tar.gz -T /tmp/phase0-files.txt
+
+      - name: Preserve normalized files and lockfile
         uses: actions/upload-artifact@v4
         with:
-          name: pnpm-lockfile
-          path: pnpm-lock.yaml
+          name: phase0-normalized-files
+          path: phase0-normalized.tar.gz
           if-no-files-found: error
           retention-days: 7
 
