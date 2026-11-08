@@ -36,4 +36,3 @@ Both actions require server-side permission checks, a reason, audit history, and
 ## Recovery and tests
 
 A reconciler must find due or expired-lease work in PostgreSQL and restore missing BullMQ jobs. Tests must cover Redis loss, worker termination, lease expiry, duplicate jobs, permission failures, repeated recovery actions, and tenant isolation.
-
