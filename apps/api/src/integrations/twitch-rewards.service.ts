@@ -198,8 +198,9 @@ export class TwitchRewardsService {
             mapping.reward_cost === remote.cost;
           await client.query(
             `UPDATE twitch_reward_mappings
-                SET sync_state = $3, last_synced_at = now(),
-                    last_sync_error_code = $4, updated_at = now()
+                SET sync_state = $3,
+                    enabled = CASE WHEN $3 = 'attention_required' THEN false ELSE enabled END,
+                    last_synced_at = now(), last_sync_error_code = $4, updated_at = now()
               WHERE workspace_id = $1 AND id = $2`,
             [
               workspace.id,
@@ -346,6 +347,11 @@ export class TwitchRewardsService {
         );
         const current = currentResult.rows[0];
         if (!current) throw new NotFoundException('Twitch reward mapping not found.');
+        if (input.enabled === true && current.sync_state !== 'synced') {
+          throw new ConflictException(
+            'A Twitch reward mapping must be synchronized before it can be enabled.',
+          );
+        }
 
         const nextFeature = input.featureKey ?? current.feature_key;
         const nextSettings = input.featureSettings ?? current.feature_settings;
