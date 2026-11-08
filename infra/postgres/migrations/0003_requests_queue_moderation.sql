@@ -95,7 +95,7 @@ CREATE INDEX logical_queue_order
 CREATE FUNCTION enforce_request_status_transition()
 RETURNS trigger
 LANGUAGE plpgsql
-AS $
+AS $request_transition$
 DECLARE
   allowed_transitions request_status[];
 BEGIN
@@ -136,7 +136,7 @@ BEGIN
   END IF;
   RETURN NEW;
 END;
-$;
+$request_transition$;
 
 CREATE TRIGGER media_requests_status_transition
 BEFORE UPDATE OF status ON media_requests
