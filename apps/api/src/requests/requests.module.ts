@@ -10,5 +10,6 @@ import { RequestsService } from './requests.service.js';
   imports: [DatabaseModule, IdentityModule, OutboxModule, WorkspacesModule],
   controllers: [RequestsController],
   providers: [RequestsService],
+  exports: [RequestsService],
 })
 export class RequestsModule {}

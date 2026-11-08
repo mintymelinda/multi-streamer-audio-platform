@@ -18,6 +18,7 @@ type SubscriptionRecord = {
   event_type: string;
   event_version: string;
   secret_envelope: EncryptedCredentialEnvelope;
+  service_actor_user_id: string | null;
 };
 
 function header(
@@ -77,15 +78,24 @@ export class TwitchEventSubService {
     await this.database.transaction(
       { userId: input.actorUserId, verifiedWorkspaceId: input.workspaceId },
       async (client) => {
+        const owner = await client.query<{ owner_user_id: string }>(
+          'SELECT owner_user_id FROM workspaces WHERE id = $1',
+          [input.workspaceId],
+        );
+        const serviceActorUserId = owner.rows[0]?.owner_user_id;
+        if (!serviceActorUserId) {
+          throw new BadRequestException('The workspace owner is unavailable for EventSub routing.');
+        }
         const result = await client.query(
           `INSERT INTO twitch_eventsub_subscriptions
-            (subscription_id, workspace_id, event_type, event_version, condition, secret_envelope)
-           VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb)
+            (subscription_id, workspace_id, event_type, event_version, condition, secret_envelope, service_actor_user_id)
+           VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7)
            ON CONFLICT (subscription_id) DO UPDATE
              SET event_type = EXCLUDED.event_type,
                  event_version = EXCLUDED.event_version,
                  condition = EXCLUDED.condition,
                  secret_envelope = EXCLUDED.secret_envelope,
+                 service_actor_user_id = EXCLUDED.service_actor_user_id,
                  status = 'pending_verification',
                  revoked_reason = NULL,
                  updated_at = now()
@@ -98,6 +108,7 @@ export class TwitchEventSubService {
             input.version,
             JSON.stringify(input.condition),
             JSON.stringify(envelope),
+            serviceActorUserId,
           ],
         );
         if (!result.rows[0]) {
@@ -158,7 +169,7 @@ export class TwitchEventSubService {
       { twitchLookupId: subscriptionId },
       async (client) => {
         const result = await client.query<SubscriptionRecord>(
-          'SELECT workspace_id, subscription_id, status, event_type, event_version, secret_envelope FROM twitch_eventsub_subscriptions WHERE subscription_id = $1',
+          'SELECT workspace_id, subscription_id, status, event_type, event_version, secret_envelope, service_actor_user_id FROM twitch_eventsub_subscriptions WHERE subscription_id = $1',
           [subscriptionId],
         );
         return result.rows[0];
@@ -215,11 +226,18 @@ export class TwitchEventSubService {
     return this.database.transaction({ twitchLookupId: subscriptionId }, async (client) => {
       const inserted = await client.query<{ id: string }>(
         `INSERT INTO twitch_eventsub_deliveries
-          (workspace_id, subscription_id, message_id, message_type, payload)
-         VALUES ($1, $2, $3, $4, $5::jsonb)
+          (workspace_id, subscription_id, message_id, message_type, payload, service_actor_user_id)
+         VALUES ($1, $2, $3, $4, $5::jsonb, $6)
          ON CONFLICT (message_id) DO NOTHING
          RETURNING id`,
-        [record.workspace_id, subscriptionId, messageId, messageType, JSON.stringify(payload)],
+        [
+          record.workspace_id,
+          subscriptionId,
+          messageId,
+          messageType,
+          JSON.stringify(payload),
+          record.service_actor_user_id,
+        ],
       );
       const duplicate = inserted.rows.length === 0;
       if (messageType === 'revocation' && !duplicate) {

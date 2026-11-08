@@ -15,6 +15,7 @@ interface DeliveryRow {
   subscription_id: string;
   message_id: string;
   message_type: 'notification' | 'revocation';
+  service_actor_user_id: string | null;
   payload: Record<string, unknown>;
   status: 'accepted' | 'processing' | 'processed' | 'failed';
   attempts: number;
@@ -98,7 +99,7 @@ export class EventSubConsumerService implements OnModuleInit, OnModuleDestroy {
     try {
       await client.query('BEGIN');
       const result = await client.query<DeliveryRow>(
-        'SELECT id, workspace_id, subscription_id, message_id, message_type, payload, status, attempts FROM twitch_eventsub_deliveries WHERE id = $1 AND workspace_id = $2 AND message_id = $3 FOR UPDATE',
+        'SELECT id, workspace_id, subscription_id, message_id, message_type, service_actor_user_id, payload, status, attempts FROM twitch_eventsub_deliveries WHERE id = $1 AND workspace_id = $2 AND message_id = $3 FOR UPDATE',
         [job.data.deliveryId, job.data.workspaceId, job.data.messageId],
       );
       const delivery = result.rows[0];
@@ -126,7 +127,7 @@ export class EventSubConsumerService implements OnModuleInit, OnModuleDestroy {
           : delivery.message_id;
 
       await client.query(
-        'INSERT INTO twitch_eventsub_intake (workspace_id, delivery_id, subscription_id, message_id, message_type, event_type, event_version, event_id, event_payload) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb) ON CONFLICT (workspace_id, event_type, event_id) DO NOTHING',
+        'INSERT INTO twitch_eventsub_intake (workspace_id, delivery_id, subscription_id, message_id, message_type, event_type, event_version, event_id, event_payload, service_actor_user_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10) ON CONFLICT (workspace_id, event_type, event_id) DO NOTHING',
         [
           delivery.workspace_id,
           delivery.id,
@@ -137,6 +138,7 @@ export class EventSubConsumerService implements OnModuleInit, OnModuleDestroy {
           eventVersion,
           eventId,
           JSON.stringify(eventPayload),
+          delivery.service_actor_user_id,
         ],
       );
       await client.query(
