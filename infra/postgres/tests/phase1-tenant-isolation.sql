@@ -57,7 +57,7 @@ BEGIN
 
   -- Invitation recipients can see only invitations addressed to their stable
   -- Twitch identity, even before they have workspace membership.
-  PERFORM set_config('app.workspace_id', '', true);
+  PERFORM set_config('app.workspace_id', workspace_a::text, true);
   PERFORM set_config('app.user_id', user_a::text, true);
   INSERT INTO workspace_invitations (
     workspace_id, invited_twitch_user_id, assigned_role, token_hash,
@@ -68,6 +68,7 @@ BEGIN
   );
 
   PERFORM set_config('app.user_id', user_b::text, true);
+  PERFORM set_config('app.workspace_id', '', true);
   IF (SELECT count(*) FROM workspace_invitations WHERE invited_twitch_user_id = '910000002') <> 1 THEN
     RAISE EXCEPTION 'invitation recipient cannot see their pending invitation';
   END IF;

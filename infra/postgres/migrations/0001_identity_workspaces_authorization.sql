@@ -1,8 +1,6 @@
 -- Phase 1: identity, workspaces, membership, invitations, sessions, and tenant RLS.
 -- Apply only with platform_migrator. The API runtime must use platform_runtime.
 
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
-
 CREATE TYPE workspace_role AS ENUM ('owner', 'admin', 'moderator', 'viewer');
 CREATE TYPE membership_status AS ENUM ('active', 'revoked');
 CREATE TYPE invitation_status AS ENUM ('pending', 'accepted', 'declined', 'cancelled', 'expired');
