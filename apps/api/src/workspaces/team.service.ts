@@ -34,7 +34,7 @@ export class TeamService {
   ) {}
 
   async listMembers(userId: string, workspaceId: string) {
-    const result = await this.database.transaction({ userId, workspaceId }, (client) =>
+    const result = await this.database.transaction({ userId, verifiedWorkspaceId: workspaceId }, (client) =>
       client.query(
         "SELECT m.user_id, u.twitch_user_id, m.role, m.status, m.created_at, m.revoked_at FROM workspace_memberships m JOIN platform_users u ON u.id = m.user_id WHERE m.workspace_id = $1 ORDER BY CASE m.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 WHEN 'moderator' THEN 2 ELSE 3 END, m.created_at ASC",
         [workspaceId],
@@ -44,7 +44,7 @@ export class TeamService {
   }
 
   async listWorkspaceInvitations(userId: string, workspaceId: string) {
-    const result = await this.database.transaction({ userId, workspaceId }, (client) =>
+    const result = await this.database.transaction({ userId, verifiedWorkspaceId: workspaceId }, (client) =>
       client.query<InvitationRecord>(
         "SELECT id, workspace_id, assigned_role, status, created_at, expires_at FROM workspace_invitations WHERE workspace_id = $1 AND status = 'pending' ORDER BY created_at DESC",
         [workspaceId],
@@ -76,7 +76,7 @@ export class TeamService {
     }
 
     try {
-      return await this.database.transaction({ userId: actor.id, workspaceId }, async (client) => {
+      return await this.database.transaction({ userId: actor.id, verifiedWorkspaceId: workspaceId }, async (client) => {
         const existingMembership = await client.query(
           "SELECT 1 FROM workspace_memberships m JOIN platform_users u ON u.id = m.user_id WHERE m.workspace_id = $1 AND u.twitch_user_id = $2 AND m.status = 'active' LIMIT 1",
           [workspaceId, invitedTwitchUserId],
@@ -116,7 +116,7 @@ export class TeamService {
   }
 
   async cancelInvitation(actor: AuthenticatedUser, workspaceId: string, invitationId: string) {
-    return this.database.transaction({ userId: actor.id, workspaceId }, async (client) => {
+    return this.database.transaction({ userId: actor.id, verifiedWorkspaceId: workspaceId }, async (client) => {
       const result = await client.query(
         "UPDATE workspace_invitations SET status = 'cancelled', responded_at = now() WHERE id = $1 AND workspace_id = $2 AND status = 'pending' RETURNING id",
         [invitationId, workspaceId],
@@ -147,7 +147,7 @@ export class TeamService {
     if (roleInput === 'admin' && actorRole !== 'owner') {
       throw new ForbiddenException('Only the workspace owner can assign Admin.');
     }
-    return this.database.transaction({ userId: actor.id, workspaceId }, async (client) => {
+    return this.database.transaction({ userId: actor.id, verifiedWorkspaceId: workspaceId }, async (client) => {
       const result = await client.query(
         "UPDATE workspace_memberships SET role = $1, updated_at = now() WHERE workspace_id = $2 AND user_id = $3 AND status = 'active' AND role <> 'owner' RETURNING user_id",
         [roleInput, workspaceId, memberUserId],
@@ -169,7 +169,7 @@ export class TeamService {
   }
 
   async revokeMember(actor: AuthenticatedUser, workspaceId: string, memberUserId: string) {
-    return this.database.transaction({ userId: actor.id, workspaceId }, async (client) => {
+    return this.database.transaction({ userId: actor.id, verifiedWorkspaceId: workspaceId }, async (client) => {
       const result = await client.query(
         "UPDATE workspace_memberships SET status = 'revoked', revoked_at = now(), updated_at = now() WHERE workspace_id = $1 AND user_id = $2 AND status = 'active' AND role <> 'owner' RETURNING user_id",
         [workspaceId, memberUserId],
