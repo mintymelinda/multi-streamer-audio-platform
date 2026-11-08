@@ -1,13 +1,28 @@
 import {
-  Body, Controller, Delete, Get, NotFoundException, Param, Patch, Post, Req,
-  UnauthorizedException, UseGuards,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Inject,
+  NotFoundException,
+  Param,
+  Patch,
+  Post,
+  Req,
+  UnauthorizedException,
+  UseGuards,
 } from '@nestjs/common';
-import type { AuthenticatedUser, HttpRequest, WorkspaceRequestContext } from '../identity/http.types.js';
+import type {
+  AuthenticatedUser,
+  HttpRequest,
+  WorkspaceRequestContext,
+} from '../identity/http.types.js';
 import { CsrfGuard } from '../identity/csrf.guard.js';
 import { SessionGuard } from '../identity/session.guard.js';
 import { WorkspaceAccessGuard } from './workspace-access.guard.js';
 import {
-  RequireWorkspacePermission, WorkspacePermissionGuard,
+  RequireWorkspacePermission,
+  WorkspacePermissionGuard,
 } from './workspace-permission.guard.js';
 import { TeamService } from './team.service.js';
 
@@ -27,7 +42,7 @@ function requireWorkspaceContext(request: HttpRequest): WorkspaceRequestContext 
 @UseGuards(SessionGuard, WorkspaceAccessGuard, CsrfGuard, WorkspacePermissionGuard)
 @RequireWorkspacePermission('team:manage')
 export class TeamController {
-  constructor(private readonly team: TeamService) {}
+  constructor(@Inject(TeamService) private readonly team: TeamService) {}
 
   @Get('members')
   listMembers(@Req() request: HttpRequest, @Param('workspaceId') workspaceId: string) {
@@ -60,7 +75,9 @@ export class TeamController {
     @Param('invitationId') invitationId: string,
   ) {
     return this.team.cancelInvitation(
-      requireAuthenticatedUser(request), workspaceId, invitationId,
+      requireAuthenticatedUser(request),
+      workspaceId,
+      invitationId,
     );
   }
 
@@ -84,7 +101,9 @@ export class TeamController {
     @Param('memberUserId') memberUserId: string,
   ) {
     return this.team.revokeMember(
-      requireAuthenticatedUser(request), workspaceId, memberUserId,
+      requireAuthenticatedUser(request),
+      workspaceId,
+      memberUserId,
     );
   }
 }
@@ -92,7 +111,7 @@ export class TeamController {
 @Controller('me/invitations')
 @UseGuards(SessionGuard, CsrfGuard)
 export class MyInvitationsController {
-  constructor(private readonly team: TeamService) {}
+  constructor(@Inject(TeamService) private readonly team: TeamService) {}
 
   @Get()
   list(@Req() request: HttpRequest) {
