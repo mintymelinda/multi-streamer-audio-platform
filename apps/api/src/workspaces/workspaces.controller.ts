@@ -4,7 +4,6 @@ import {
   Get,
   Inject,
   NotFoundException,
-  Param,
   Post,
   Req,
   UnauthorizedException,
@@ -52,8 +51,8 @@ export class WorkspacesController {
 
   @Get(':workspaceId')
   @UseGuards(WorkspaceAccessGuard)
-  getCurrentWorkspace(@Param('workspaceId') workspaceId: string, @Req() request: HttpRequest) {
+  getCurrentWorkspace(@Req() request: HttpRequest) {
     const workspace = requireWorkspaceContext(request);
-    return { workspaceId, role: workspace.role, status: workspace.status };
+    return { workspaceId: workspace.id, role: workspace.role, status: workspace.status };
   }
 }
