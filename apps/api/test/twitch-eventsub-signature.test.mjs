@@ -7,7 +7,9 @@ const secret = 'eventsub-test-signing-secret';
 const messageId = 'test-message-001';
 const now = Date.parse('2026-11-08T18:00:00.000Z');
 const timestamp = new Date(now).toISOString();
-const body = Buffer.from(JSON.stringify({ subscription: { id: 'sub-1' }, event: { id: 'event-1' } }));
+const body = Buffer.from(
+  JSON.stringify({ subscription: { id: 'sub-1' }, event: { id: 'event-1' } }),
+);
 
 function signature(rawBody, signedAt = timestamp) {
   const digest = createHmac('sha256', secret)
