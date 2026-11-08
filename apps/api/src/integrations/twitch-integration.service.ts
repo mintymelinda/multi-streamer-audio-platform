@@ -348,7 +348,8 @@ export class TwitchIntegrationService {
           }
 
           if (
-            !credentials.accessToken || !credentials.refreshToken ||
+            !credentials.accessToken ||
+            !credentials.refreshToken ||
             credentials.userId !== row.external_account_id ||
             !hasRequiredTwitchRewardScopes(credentials.scopes)
           ) {
@@ -419,12 +420,13 @@ export class TwitchIntegrationService {
       if (error instanceof UnauthorizedException) {
         await this.database.transaction(
           { userId: actor.id, verifiedWorkspaceId: workspace.id },
-          (client) => client.query(
-            `UPDATE workspace_integrations
-                SET status = 'reauth_required', last_error_code = 'token_refresh_or_validation_failed', updated_at = now()
-              WHERE workspace_id = $1 AND provider = 'twitch' AND status <> 'disconnected'`,
-            [workspace.id],
-          ),
+          (client) =>
+            client.query(
+              `UPDATE workspace_integrations
+                  SET status = 'reauth_required', last_error_code = 'token_refresh_or_validation_failed', updated_at = now()
+                WHERE workspace_id = $1 AND provider = 'twitch' AND status <> 'disconnected'`,
+              [workspace.id],
+            ),
         );
       }
       throw error;
