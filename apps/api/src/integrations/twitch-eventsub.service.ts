@@ -214,22 +214,22 @@ export class TwitchEventSubService {
 
     return this.database.transaction({ twitchLookupId: subscriptionId }, async (client) => {
       const inserted = await client.query<{ id: string }>(
-          `INSERT INTO twitch_eventsub_deliveries
-            (workspace_id, subscription_id, message_id, message_type, payload)
-           VALUES ($1, $2, $3, $4, $5::jsonb)
-           ON CONFLICT (message_id) DO NOTHING
-           RETURNING id`,
-          [record.workspace_id, subscriptionId, messageId, messageType, JSON.stringify(payload)],
+        `INSERT INTO twitch_eventsub_deliveries
+          (workspace_id, subscription_id, message_id, message_type, payload)
+         VALUES ($1, $2, $3, $4, $5::jsonb)
+         ON CONFLICT (message_id) DO NOTHING
+         RETURNING id`,
+        [record.workspace_id, subscriptionId, messageId, messageType, JSON.stringify(payload)],
+      );
+      const duplicate = inserted.rows.length === 0;
+      if (messageType === 'revocation' && !duplicate) {
+        const reason = typeof subscription.status === 'string' ? subscription.status : 'revoked';
+        await client.query(
+          "UPDATE twitch_eventsub_subscriptions SET status = 'revoked', revoked_reason = $2, updated_at = now() WHERE subscription_id = $1",
+          [subscriptionId, reason],
         );
-        const duplicate = inserted.rows.length === 0;
-        if (messageType === 'revocation' && !duplicate) {
-          const reason = typeof subscription.status === 'string' ? subscription.status : 'revoked';
-          await client.query(
-            "UPDATE twitch_eventsub_subscriptions SET status = 'revoked', revoked_reason = $2, updated_at = now() WHERE subscription_id = $1",
-            [subscriptionId, reason],
-          );
-        }
-        return { kind: 'accepted', duplicate };
+      }
+      return { kind: 'accepted', duplicate };
     });
   }
 }
