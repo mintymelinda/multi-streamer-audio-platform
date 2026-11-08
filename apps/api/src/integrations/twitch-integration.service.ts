@@ -294,8 +294,13 @@ export class TwitchIntegrationService {
             throw new UnauthorizedException('The workspace Twitch broadcaster is not connected.');
           }
           if (
-            !row.credential_ciphertext || !row.credential_nonce || !row.credential_auth_tag ||
-            !row.wrapped_dek || !row.dek_nonce || !row.dek_auth_tag || !row.kek_version ||
+            !row.credential_ciphertext ||
+            !row.credential_nonce ||
+            !row.credential_auth_tag ||
+            !row.wrapped_dek ||
+            !row.dek_nonce ||
+            !row.dek_auth_tag ||
+            !row.kek_version ||
             row.credential_format_version !== 1
           ) {
             await client.query(
@@ -306,7 +311,7 @@ export class TwitchIntegrationService {
             );
             throw new UnauthorizedException('The workspace Twitch authorization must be renewed.');
           }
-  
+
           const credentialId = row.id;
           let credentials: {
             accessToken: string;
@@ -316,20 +321,22 @@ export class TwitchIntegrationService {
             userId: string;
           };
           try {
-            credentials = JSON.parse(decryptIntegrationCredentials(
-              {
-                formatVersion: 1,
-                ciphertext: row.credential_ciphertext.toString('base64'),
-                nonce: row.credential_nonce.toString('base64'),
-                authTag: row.credential_auth_tag.toString('base64'),
-                wrappedDek: row.wrapped_dek.toString('base64'),
-                dekNonce: row.dek_nonce.toString('base64'),
-                dekAuthTag: row.dek_auth_tag.toString('base64'),
-                kekVersion: row.kek_version,
-              },
-              { workspaceId: workspace.id, provider: 'twitch', credentialId },
-              loadIntegrationKeyRing(),
-            )) as typeof credentials;
+            credentials = JSON.parse(
+              decryptIntegrationCredentials(
+                {
+                  formatVersion: 1,
+                  ciphertext: row.credential_ciphertext.toString('base64'),
+                  nonce: row.credential_nonce.toString('base64'),
+                  authTag: row.credential_auth_tag.toString('base64'),
+                  wrappedDek: row.wrapped_dek.toString('base64'),
+                  dekNonce: row.dek_nonce.toString('base64'),
+                  dekAuthTag: row.dek_auth_tag.toString('base64'),
+                  kekVersion: row.kek_version,
+                },
+                { workspaceId: workspace.id, provider: 'twitch', credentialId },
+                loadIntegrationKeyRing(),
+              ),
+            ) as typeof credentials;
           } catch {
             await client.query(
               `UPDATE workspace_integrations
@@ -339,7 +346,7 @@ export class TwitchIntegrationService {
             );
             throw new UnauthorizedException('The workspace Twitch authorization must be renewed.');
           }
-  
+
           if (
             !credentials.accessToken || !credentials.refreshToken ||
             credentials.userId !== row.external_account_id ||
@@ -353,7 +360,7 @@ export class TwitchIntegrationService {
             );
             throw new UnauthorizedException('The workspace Twitch authorization must be renewed.');
           }
-  
+
           const expiresAt = Date.parse(credentials.tokenExpiresAt);
           if (!Number.isFinite(expiresAt)) {
             await client.query(
@@ -365,8 +372,11 @@ export class TwitchIntegrationService {
             throw new UnauthorizedException('The workspace Twitch authorization must be renewed.');
           }
           if (expiresAt > Date.now() + 5 * 60_000) return credentials.accessToken;
-  
-          const refreshed = await this.refreshAndValidate(credentials.refreshToken, row.external_account_id);
+
+          const refreshed = await this.refreshAndValidate(
+            credentials.refreshToken,
+            row.external_account_id,
+          );
           const nextCredentials = {
             accessToken: refreshed.accessToken,
             refreshToken: refreshed.refreshToken,
@@ -388,16 +398,23 @@ export class TwitchIntegrationService {
                     last_validated_at = now(), last_error_code = NULL, updated_at = now()
               WHERE workspace_id = $1 AND provider = 'twitch' AND id = $2`,
             [
-              workspace.id, credentialId,
-              Buffer.from(envelope.ciphertext, 'base64'), Buffer.from(envelope.nonce, 'base64'),
-              Buffer.from(envelope.authTag, 'base64'), Buffer.from(envelope.wrappedDek, 'base64'),
-              Buffer.from(envelope.dekNonce, 'base64'), Buffer.from(envelope.dekAuthTag, 'base64'),
-              envelope.kekVersion, envelope.formatVersion, refreshed.scopes, refreshed.tokenExpiresAt,
+              workspace.id,
+              credentialId,
+              Buffer.from(envelope.ciphertext, 'base64'),
+              Buffer.from(envelope.nonce, 'base64'),
+              Buffer.from(envelope.authTag, 'base64'),
+              Buffer.from(envelope.wrappedDek, 'base64'),
+              Buffer.from(envelope.dekNonce, 'base64'),
+              Buffer.from(envelope.dekAuthTag, 'base64'),
+              envelope.kekVersion,
+              envelope.formatVersion,
+              refreshed.scopes,
+              refreshed.tokenExpiresAt,
             ],
           );
           return refreshed.accessToken;
         },
-        );
+      );
     } catch (error) {
       if (error instanceof UnauthorizedException) {
         await this.database.transaction(
@@ -443,15 +460,20 @@ export class TwitchIntegrationService {
       throw new ServiceUnavailableException('Twitch token refresh is temporarily unavailable.');
     }
     if (tokenResponse.status === 400 || tokenResponse.status === 401) {
-      throw new UnauthorizedException('Twitch authorization expired; reconnect the broadcaster account.');
+      throw new UnauthorizedException(
+        'Twitch authorization expired; reconnect the broadcaster account.',
+      );
     }
     if (!tokenResponse.ok) {
       throw new ServiceUnavailableException('Twitch token refresh is temporarily unavailable.');
     }
     const token = (await tokenResponse.json()) as TwitchTokenResponse;
     if (
-      !token.access_token || !token.refresh_token ||
-      typeof token.expires_in !== 'number' || !Number.isFinite(token.expires_in) || token.expires_in <= 0
+      !token.access_token ||
+      !token.refresh_token ||
+      typeof token.expires_in !== 'number' ||
+      !Number.isFinite(token.expires_in) ||
+      token.expires_in <= 0
     ) {
       throw new UnauthorizedException('Twitch did not return a renewable broadcaster credential.');
     }
@@ -479,7 +501,9 @@ export class TwitchIntegrationService {
       validation.user_id !== expectedBroadcasterId ||
       !hasRequiredTwitchRewardScopes(scopes)
     ) {
-      throw new UnauthorizedException('Twitch authorization is missing required broadcaster permissions.');
+      throw new UnauthorizedException(
+        'Twitch authorization is missing required broadcaster permissions.',
+      );
     }
     return {
       accessToken: token.access_token,
