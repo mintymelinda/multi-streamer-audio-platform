@@ -1,6 +1,6 @@
 # Secret encryption and key management baseline
 
-No third-party integration credentials may be persisted until this design is implemented and reviewed.
+The API now contains an AES-256-GCM envelope-encryption implementation and a tenant-scoped integration credential schema. Production credential persistence remains disabled until key provisioning, recovery, rotation, and provider authorization flows have been reviewed and tested.
 
 ## Key hierarchy
 
@@ -37,3 +37,12 @@ No third-party integration credentials may be persisted until this design is imp
 - Test backup restoration, key recovery, rotation interruption, and loss of a KEK before enabling integrations.
 
 This document defines the intended baseline; it is not evidence that encryption or key recovery has already been implemented.
+
+## Implemented code
+
+The implementation is in `apps/api/src/security/integration-credential-crypto.ts`.
+Its version-1 envelope format and key-ring file structure are documented in
+[Integration credential envelope](./integration-credential-encryption.md).
+The primitive must be used with the workspace/provider/credential ID as its
+encryption context. Do not persist credentials before the operational
+key-management prerequisites above are satisfied.

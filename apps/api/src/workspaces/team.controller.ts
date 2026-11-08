@@ -45,59 +45,54 @@ export class TeamController {
   constructor(@Inject(TeamService) private readonly team: TeamService) {}
 
   @Get('members')
-  listMembers(@Req() request: HttpRequest, @Param('workspaceId') workspaceId: string) {
-    return this.team.listMembers(requireAuthenticatedUser(request).id, workspaceId);
+  listMembers(@Req() request: HttpRequest) {
+    const user = requireAuthenticatedUser(request);
+    const workspace = requireWorkspaceContext(request);
+    return this.team.listMembers(user.id, workspace.id);
   }
 
   @Get('invitations')
-  listInvitations(@Req() request: HttpRequest, @Param('workspaceId') workspaceId: string) {
-    return this.team.listWorkspaceInvitations(requireAuthenticatedUser(request).id, workspaceId);
+  listInvitations(@Req() request: HttpRequest) {
+    const user = requireAuthenticatedUser(request);
+    const workspace = requireWorkspaceContext(request);
+    return this.team.listWorkspaceInvitations(user.id, workspace.id);
   }
 
   @Post('invitations')
-  createInvitation(
-    @Req() request: HttpRequest,
-    @Param('workspaceId') workspaceId: string,
-    @Body() body: unknown,
-  ) {
+  createInvitation(@Req() request: HttpRequest, @Body() body: unknown) {
     const value = typeof body === 'object' && body !== null ? body : {};
     const username = 'twitchUsername' in value ? value.twitchUsername : undefined;
     const role = 'role' in value ? value.role : undefined;
     const user = requireAuthenticatedUser(request);
-    const workspaceRole = requireWorkspaceContext(request).role;
-    return this.team.createInvitation(user, workspaceId, username, role, workspaceRole);
+    const workspace = requireWorkspaceContext(request);
+    return this.team.createInvitation(user, workspace.id, username, role, workspace.role);
   }
 
   @Delete('invitations/:invitationId')
-  cancelInvitation(
-    @Req() request: HttpRequest,
-    @Param('workspaceId') workspaceId: string,
-    @Param('invitationId') invitationId: string,
-  ) {
-    return this.team.cancelInvitation(requireAuthenticatedUser(request), workspaceId, invitationId);
+  cancelInvitation(@Req() request: HttpRequest, @Param('invitationId') invitationId: string) {
+    const user = requireAuthenticatedUser(request);
+    const workspace = requireWorkspaceContext(request);
+    return this.team.cancelInvitation(user, workspace.id, invitationId);
   }
 
   @Patch('members/:memberUserId')
   changeMemberRole(
     @Req() request: HttpRequest,
-    @Param('workspaceId') workspaceId: string,
     @Param('memberUserId') memberUserId: string,
     @Body() body: unknown,
   ) {
     const role =
       typeof body === 'object' && body !== null && 'role' in body ? body.role : undefined;
     const user = requireAuthenticatedUser(request);
-    const workspaceRole = requireWorkspaceContext(request).role;
-    return this.team.changeMemberRole(user, workspaceId, memberUserId, role, workspaceRole);
+    const workspace = requireWorkspaceContext(request);
+    return this.team.changeMemberRole(user, workspace.id, memberUserId, role, workspace.role);
   }
 
   @Delete('members/:memberUserId')
-  revokeMember(
-    @Req() request: HttpRequest,
-    @Param('workspaceId') workspaceId: string,
-    @Param('memberUserId') memberUserId: string,
-  ) {
-    return this.team.revokeMember(requireAuthenticatedUser(request), workspaceId, memberUserId);
+  revokeMember(@Req() request: HttpRequest, @Param('memberUserId') memberUserId: string) {
+    const user = requireAuthenticatedUser(request);
+    const workspace = requireWorkspaceContext(request);
+    return this.team.revokeMember(user, workspace.id, memberUserId);
   }
 }
 

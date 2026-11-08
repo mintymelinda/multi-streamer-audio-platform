@@ -1,10 +1,11 @@
+import type { VerifiedWorkspaceId } from '@platform/contracts';
 import { Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import { readFileSync } from 'node:fs';
 import { Pool, type PoolClient, type QueryResult, type QueryResultRow } from 'pg';
 
 export interface DatabaseContext {
   userId?: string;
-  workspaceId?: string;
+  verifiedWorkspaceId?: VerifiedWorkspaceId;
   twitchLookupId?: string;
 }
 
@@ -35,7 +36,12 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
     await this.pool.end();
   }
 
-  query<T extends QueryResultRow = QueryResultRow>(
+  /**
+   * Executes only pre-authentication or session-infrastructure SQL against
+   * tables that intentionally do not use tenant RLS. Tenant-owned business
+   * data must always use transaction() with a verified DatabaseContext.
+   */
+  queryInfrastructure<T extends QueryResultRow = QueryResultRow>(
     sql: string,
     values?: unknown[],
   ): Promise<QueryResult<T>> {
@@ -55,9 +61,9 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
       if (context.userId) {
         await client.query("SELECT set_config('app.user_id', $1, true)", [context.userId]);
       }
-      if (context.workspaceId) {
+      if (context.verifiedWorkspaceId) {
         await client.query("SELECT set_config('app.workspace_id', $1, true)", [
-          context.workspaceId,
+          context.verifiedWorkspaceId,
         ]);
       }
       if (context.twitchLookupId) {

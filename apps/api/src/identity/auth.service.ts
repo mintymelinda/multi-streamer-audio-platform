@@ -36,7 +36,7 @@ export class AuthService {
   async beginTwitchLogin(returnTo?: string): Promise<string> {
     const config = getTwitchAppConfig();
     const state = newOpaqueToken();
-    await this.database.query(
+    await this.database.queryInfrastructure(
       "INSERT INTO twitch_oauth_states (state_hash, return_path, expires_at) VALUES ($1, $2, now() + interval '10 minutes')",
       [sha256(state), isSafeLocalReturnPath(returnTo)],
     );
@@ -70,7 +70,7 @@ export class AuthService {
   }
 
   async resolveSession(sessionToken: string): Promise<SessionIdentity | null> {
-    const sessionResult = await this.database.query<{
+    const sessionResult = await this.database.queryInfrastructure<{
       id: string;
       user_id: string;
       csrf_token_hash: string;
@@ -101,7 +101,7 @@ export class AuthService {
   }
 
   async revokeSession(sessionId: string): Promise<void> {
-    await this.database.query(
+    await this.database.queryInfrastructure(
       'UPDATE user_sessions SET revoked_at = now() WHERE id = $1 AND revoked_at IS NULL',
       [sessionId],
     );

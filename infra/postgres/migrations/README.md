@@ -17,6 +17,9 @@ Schema migrations are immutable, ordered SQL files named `NNNN_short_description
 
 Start the local services with `pnpm dev:infra`, then apply the role bootstrap and migrations using the local-only credentials from the Compose example. Do not reuse those credentials outside local development. The CI workflow is the canonical automated integration check.
 
-## First migration
+## Initial migrations
 
-`0001_identity_workspaces_authorization.sql` establishes stable Twitch-ID accounts, explicit workspaces, one-owned-workspace enforcement, protected owner membership, team roles/invitations, server-side session records, OAuth state, append-only audit writes, and RLS policies.
+- `0001_identity_workspaces_authorization.sql` establishes stable Twitch-ID accounts, explicit workspaces, one-owned-workspace enforcement, protected owner membership, team roles/invitations, server-side session records, OAuth state, append-only audit writes, and RLS policies.
+- `0002_integrations_and_outbox.sql` establishes tenant-scoped provider integration records with encrypted credential-envelope columns, plus the transactional outbox table. Both tables use ENABLE and FORCE ROW LEVEL SECURITY and are inaccessible without verified user/workspace context.
+
+New tenant-owned tables must follow the same pattern. Never put plaintext provider credentials in integration rows, audit details, outbox payloads, logs, or job messages.
