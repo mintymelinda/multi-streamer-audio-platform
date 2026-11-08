@@ -331,7 +331,13 @@ export class RequestsService {
     workspaceId: VerifiedWorkspaceId,
     requestId: string,
   ) {
-    const result = await client.query<{ id: string; status: RequestStatus; priority: number; submitted_by_user_id: string | null; requester_twitch_user_id: string | null }>(
+    const result = await client.query<{
+      id: string;
+      status: RequestStatus;
+      priority: number;
+      submitted_by_user_id: string | null;
+      requester_twitch_user_id: string | null;
+    }>(
       'SELECT id, status, priority, submitted_by_user_id, requester_twitch_user_id FROM media_requests WHERE workspace_id = $1 AND id = $2 FOR UPDATE',
       [workspaceId, requestId],
     );
@@ -364,9 +370,14 @@ export class RequestsService {
   }
 
   private async recordTransition(
-    client: PoolClient, workspaceId: VerifiedWorkspaceId, requestId: string,
-    from: RequestStatus | null, to: RequestStatus, actorId?: string,
-    actorType: 'user' | 'moderator' | 'system' | 'twitch' = 'system', reason?: string,
+    client: PoolClient,
+    workspaceId: VerifiedWorkspaceId,
+    requestId: string,
+    from: RequestStatus | null,
+    to: RequestStatus,
+    actorId?: string,
+    actorType: 'user' | 'moderator' | 'system' | 'twitch' = 'system',
+    reason?: string,
   ) {
     await client.query(
       'INSERT INTO request_state_history (workspace_id, request_id, from_status, to_status, actor_user_id, actor_type, reason) VALUES ($1,$2,$3,$4,$5,$6,$7)',
