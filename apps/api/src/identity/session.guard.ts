@@ -1,5 +1,5 @@
 import { Inject, Injectable, UnauthorizedException, type CanActivate, type ExecutionContext } from '@nestjs/common';
-import type { AuthService } from './auth.service.js';
+import { AuthService } from './auth.service.js';
 import type { AuthenticatedUser, HttpRequest } from './http.types.js';
 import { parseCookies, sessionCookieName } from './security.js';
 
