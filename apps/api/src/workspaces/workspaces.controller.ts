@@ -1,7 +1,20 @@
 import {
-  Body, Controller, Get, NotFoundException, Param, Post, Req, UnauthorizedException, UseGuards,
+  Body,
+  Controller,
+  Get,
+  Inject,
+  NotFoundException,
+  Param,
+  Post,
+  Req,
+  UnauthorizedException,
+  UseGuards,
 } from '@nestjs/common';
-import type { AuthenticatedUser, HttpRequest, WorkspaceRequestContext } from '../identity/http.types.js';
+import type {
+  AuthenticatedUser,
+  HttpRequest,
+  WorkspaceRequestContext,
+} from '../identity/http.types.js';
 import { CsrfGuard } from '../identity/csrf.guard.js';
 import { SessionGuard } from '../identity/session.guard.js';
 import { WorkspaceAccessGuard } from './workspace-access.guard.js';
@@ -22,7 +35,7 @@ function requireWorkspaceContext(request: HttpRequest): WorkspaceRequestContext 
 @Controller('workspaces')
 @UseGuards(SessionGuard)
 export class WorkspacesController {
-  constructor(private readonly workspaces: WorkspacesService) {}
+  constructor(@Inject(WorkspacesService) private readonly workspaces: WorkspacesService) {}
 
   @Get()
   list(@Req() request: HttpRequest) {
