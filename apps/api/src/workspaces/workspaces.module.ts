@@ -19,5 +19,6 @@ import { WorkspacesService } from './workspaces.service.js';
     WorkspaceAccessGuard,
     WorkspacePermissionGuard,
   ],
+  exports: [WorkspaceAccessGuard, WorkspacePermissionGuard],
 })
 export class WorkspacesModule {}

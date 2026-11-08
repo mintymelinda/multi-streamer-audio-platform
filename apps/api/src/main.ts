@@ -21,7 +21,7 @@ async function bootstrap(): Promise<void> {
           : randomUUID();
       },
     }),
-    { logger: new ConsoleLogger({ json: true }) },
+    { logger: new ConsoleLogger({ json: true }), rawBody: true },
   );
 
   app.useGlobalFilters(new ApiExceptionFilter());

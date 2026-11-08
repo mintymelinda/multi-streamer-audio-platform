@@ -19,6 +19,7 @@ export interface HttpRequest {
   params?: Record<string, unknown>;
   user?: AuthenticatedUser;
   workspace?: WorkspaceRequestContext;
+  rawBody?: Buffer;
 }
 
 export interface HttpReply {
