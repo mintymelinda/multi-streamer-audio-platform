@@ -1,7 +1,7 @@
 import { ForbiddenException, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
-import type { DatabaseService } from '../database/database.service.js';
+import { DatabaseService } from '../database/database.service.js';
 import { isSafeLocalReturnPath, newOpaqueToken, sha256 } from './security.js';
 import { getTwitchAppConfig } from './twitch-app-config.js';
 
@@ -25,7 +25,7 @@ export interface SessionIdentity {
 
 @Injectable()
 export class AuthService {
-  constructor(@Inject('DatabaseService') private readonly database: DatabaseService) {}
+  constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {}
 
   async beginTwitchLogin(returnTo?: string): Promise<string> {
     const config = getTwitchAppConfig();
