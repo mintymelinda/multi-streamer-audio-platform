@@ -29,12 +29,19 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 26.13.0
-          cache: pnpm
 
-      # The initial lockfile is generated in the first network-enabled CI run.
+      # The initial lockfile is generated in this network-enabled CI run.
       # Switch to --frozen-lockfile before merging Phase 0.
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
+
+      - name: Preserve generated lockfile for Phase 0 finalization
+        uses: actions/upload-artifact@v4
+        with:
+          name: pnpm-lockfile
+          path: pnpm-lock.yaml
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Validate local infrastructure definition
         run: docker compose --env-file infra/compose/.env.example -f infra/compose/docker-compose.yml config --quiet
