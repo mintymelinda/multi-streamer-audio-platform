@@ -25,4 +25,3 @@ This document scopes roadmap item 25 from architecture issue #3.
 - Use stable event IDs and workspace IDs for deduplication and routing.
 - On reconnect, clients fetch an authorized REST snapshot and resume live events; Socket.IO is not the source of truth.
 - Test missed events, duplicate delivery, stale sessions, revoked memberships, and attempts to subscribe to another workspace's room.
-
