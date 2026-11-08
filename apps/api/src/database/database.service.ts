@@ -1,4 +1,9 @@
-import { Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  type OnModuleDestroy,
+  type OnModuleInit,
+} from '@nestjs/common';
 import { readFileSync } from 'node:fs';
 import { Pool, type PoolClient, type QueryResult, type QueryResultRow } from 'pg';
 
@@ -56,7 +61,9 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
         await client.query("SELECT set_config('app.user_id', $1, true)", [context.userId]);
       }
       if (context.workspaceId) {
-        await client.query("SELECT set_config('app.workspace_id', $1, true)", [context.workspaceId]);
+        await client.query("SELECT set_config('app.workspace_id', $1, true)", [
+          context.workspaceId,
+        ]);
       }
       if (context.twitchLookupId) {
         await client.query("SELECT set_config('app.twitch_lookup_id', $1, true)", [
