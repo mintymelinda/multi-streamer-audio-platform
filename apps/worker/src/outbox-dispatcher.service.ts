@@ -25,7 +25,9 @@ function readRequiredSetting(fileVariable: string, directVariable: string): stri
     const value = process.env[directVariable]?.trim();
     if (value) return value;
   }
-  throw new Error(`Worker configuration is missing. Set ${fileVariable} to a protected secret file.`);
+  throw new Error(
+    `Worker configuration is missing. Set ${fileVariable} to a protected secret file.`,
+  );
 }
 
 function retryDelaySeconds(attempt: number): number {
@@ -43,10 +45,10 @@ export class OutboxDispatcherService implements OnModuleInit, OnModuleDestroy {
     idleTimeoutMillis: 30_000,
     application_name: 'multi-streamer-audio-platform-outbox-dispatcher',
   });
-  private readonly redis = new IORedis(
-    readRequiredSetting('REDIS_URL_FILE', 'REDIS_URL'),
-    { maxRetriesPerRequest: null, enableReadyCheck: true },
-  );
+  private readonly redis = new IORedis(readRequiredSetting('REDIS_URL_FILE', 'REDIS_URL'), {
+    maxRetriesPerRequest: null,
+    enableReadyCheck: true,
+  });
   private readonly queue = new Queue('platform-outbox', { connection: this.redis });
   private timer: NodeJS.Timeout | undefined;
   private dispatchInFlight = false;
@@ -57,7 +59,10 @@ export class OutboxDispatcherService implements OnModuleInit, OnModuleDestroy {
     this.logger.log('Outbox dispatcher connected to PostgreSQL and Redis');
     this.timer = setInterval(() => {
       void this.dispatchBatch().catch((error: unknown) => {
-        this.logger.error('Outbox dispatch cycle failed', error instanceof Error ? error.stack : undefined);
+        this.logger.error(
+          'Outbox dispatch cycle failed',
+          error instanceof Error ? error.stack : undefined,
+        );
       });
     }, 1_000);
     void this.dispatchBatch();
