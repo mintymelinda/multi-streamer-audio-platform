@@ -63,19 +63,6 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # Temporary branch-scoped formatter repair; remove after this branch is clean.
-      - name: Repair formatting on prerequisite branch
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'phase-2/prerequisite-hardening'
-        run: |
-          pnpm format
-          if ! git diff --quiet; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add -A
-            git commit -m "style: apply repository formatter"
-            git push origin "HEAD:${GITHUB_HEAD_REF}"
-          fi
-
       - name: Validate local infrastructure definition
         run: docker compose --env-file infra/compose/.env.example -f infra/compose/docker-compose.yml config --quiet
 
