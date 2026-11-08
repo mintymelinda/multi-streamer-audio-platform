@@ -1,8 +1,17 @@
-import { BadRequestException, Injectable, ServiceUnavailableException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { getTwitchAppConfig } from '../identity/twitch-app-config.js';
 
-interface AppTokenResponse { access_token?: string; expires_in?: number }
-interface HelixUsersResponse { data?: Array<{ id?: string; login?: string }> }
+interface AppTokenResponse {
+  access_token?: string;
+  expires_in?: number;
+}
+interface HelixUsersResponse {
+  data?: Array<{ id?: string; login?: string }>;
+}
 
 @Injectable()
 export class TwitchDirectoryService {
