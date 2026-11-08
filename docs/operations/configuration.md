@@ -28,7 +28,6 @@
 - Keep local-only examples visibly marked and never reuse their values in production.
 - Document every new process-level variable, its purpose, whether it is secret, and its safe default.
 
-
 ## Twitch broadcaster authorization
 
 Platform sign-in and workspace broadcaster authorization are separate OAuth grants:
