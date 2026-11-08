@@ -64,6 +64,20 @@ BEGIN
     workspace_a, request_a, 0, 1, user_a
   );
 
+  UPDATE media_requests SET status = 'resolving' WHERE id = request_a;
+  UPDATE media_requests SET status = 'ready' WHERE id = request_a;
+  UPDATE media_requests SET status = 'playing' WHERE id = request_a;
+  UPDATE media_requests SET status = 'completed' WHERE id = request_a;
+  IF (SELECT completed_at FROM media_requests WHERE id = request_a) IS NULL THEN
+    RAISE EXCEPTION 'completed request did not receive completed_at';
+  END IF;
+  BEGIN
+    UPDATE media_requests SET status = 'queued' WHERE id = request_a;
+    RAISE EXCEPTION 'terminal request state was allowed to transition';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
+
   PERFORM set_config('app.user_id', user_b::text, true);
   PERFORM set_config('app.workspace_id', workspace_b::text, true);
   IF (SELECT count(*) FROM workspace_request_settings WHERE workspace_id = workspace_a) <> 0 THEN
