@@ -158,7 +158,9 @@ export class TwitchHelixService {
       throw new UnauthorizedException('Twitch rejected the workspace broadcaster authorization.');
     }
     if (response.status === 403) {
-      throw new ForbiddenException('The Twitch broadcaster is not permitted to manage these rewards.');
+      throw new ForbiddenException(
+        'The Twitch broadcaster is not permitted to manage these rewards.',
+      );
     }
     if (response.status === 404) {
       throw new NotFoundException('The Twitch reward was not found.');
