@@ -114,7 +114,7 @@ export class RequestsService {
         const created = inserted.rows[0];
         if (!created) throw new Error('Request insert did not return a row.');
         await this.recordTransition(client, input.workspace.id, created.id, null, decision, input.actor?.id, input.source === 'twitch_reward' ? 'twitch' : 'user');
-        let finalStatus = decision;
+        let finalStatus: RequestStatus = decision;
         if (decision === 'approved') {
           finalStatus = 'queued';
           await this.enqueue(client, input.workspace.id, created.id, 0, input.actor?.id);
@@ -175,9 +175,26 @@ export class RequestsService {
     return this.database.transaction(
       { userId: actor.id, verifiedWorkspaceId: workspace.id },
       async (client) => {
+        await client.query(
+          'INSERT INTO workspace_request_settings (workspace_id) VALUES ($1) ON CONFLICT DO NOTHING',
+          [workspace.id],
+        );
+        const policy = await client.query<{ queue_limit: number }>(
+          'SELECT queue_limit FROM workspace_request_settings WHERE workspace_id = $1 FOR UPDATE',
+          [workspace.id],
+        );
         const current = await this.getRequestForUpdate(client, workspace.id, requestId);
         const target: RequestStatus = action === 'approve' ? 'approved' : action === 'reject' ? 'rejected' : 'held';
         assertRequestTransition(current.status, target);
+        if (target === 'approved') {
+          const queued = await client.query<{ count: string }>(
+            "SELECT count(*)::text AS count FROM media_requests WHERE workspace_id = $1 AND status IN ('queued','resolving','ready','playing')",
+            [workspace.id],
+          );
+          if (Number(queued.rows[0]?.count ?? 0) >= (policy.rows[0]?.queue_limit ?? 50)) {
+            throw new ConflictException('The playable queue is full; the request remains pending.');
+          }
+        }
         await client.query('UPDATE media_requests SET status = $1, status_reason = $2, updated_at = now() WHERE id = $3', [target, reason ?? null, requestId]);
         await this.recordTransition(client, workspace.id, requestId, current.status, target, actor.id, 'moderator', reason);
         if (target === 'approved') {
@@ -211,6 +228,14 @@ export class RequestsService {
         await client.query("UPDATE media_requests SET status = 'cancelled', updated_at = now() WHERE id = $1", [requestId]);
         await client.query('DELETE FROM logical_queue_entries WHERE request_id = $1', [requestId]);
         await this.recordTransition(client, workspace.id, requestId, current.status, 'cancelled', actor.id, 'user');
+        await this.outbox.append(client, {
+          workspaceId: workspace.id as VerifiedWorkspaceId,
+          eventType: 'request.cancelled',
+          aggregateType: 'media_request',
+          aggregateId: requestId,
+          idempotencyKey: 'request.cancelled:' + requestId + ':' + current.status,
+          payload: { requestId, actorUserId: actor.id },
+        });
         return { id: requestId, status: 'cancelled' };
       },
     );
