@@ -234,7 +234,9 @@ export class TeamService {
       if (!membership.rowCount) {
         throw new ConflictException('You already have active access to this workspace.');
       }
-      await client.query("SELECT set_config('app.workspace_id', $1, true)", [invitation.workspace_id]);
+      await client.query("SELECT set_config('app.workspace_id', $1, true)", [
+        invitation.workspace_id,
+      ]);
       await this.audit(
         client,
         invitation.workspace_id,
@@ -243,7 +245,11 @@ export class TeamService {
         'invitation',
         invitationId,
       );
-      return { accepted: true, workspaceId: invitation.workspace_id, role: invitation.assigned_role };
+      return {
+        accepted: true,
+        workspaceId: invitation.workspace_id,
+        role: invitation.assigned_role,
+      };
     });
   }
 
