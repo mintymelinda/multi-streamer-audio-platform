@@ -62,7 +62,7 @@ export class EventSubConsumerService implements OnModuleInit, OnModuleDestroy {
     await this.pool.query('SELECT 1');
     this.worker = new Worker<EventSubJob>(
       'twitch-eventsub',
-      async (job: Job<EventSubJob>) => this.processDelivery(job.data),
+      async (job: Job<EventSubJob>) => this.processDelivery(job),
       {
         connection: this.redis,
         concurrency: 8,
@@ -72,6 +72,8 @@ export class EventSubConsumerService implements OnModuleInit, OnModuleDestroy {
     );
     this.worker.on('failed', (job) => {
       if (job && job.attemptsMade >= Number(job.opts.attempts ?? 1)) {
+        // Fallback for failures outside the processor's catch path (for example,
+        // a worker crash after BullMQ exhausts a stalled job).
         void this.markTerminalFailure(job.data.deliveryId).catch((error: unknown) => {
           this.logger.error(
             'Unable to mark terminal EventSub delivery failure',
@@ -91,13 +93,13 @@ export class EventSubConsumerService implements OnModuleInit, OnModuleDestroy {
     await this.pool.end();
   }
 
-  private async processDelivery(job: EventSubJob): Promise<void> {
+  private async processDelivery(job: Job<EventSubJob>): Promise<void> {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
       const result = await client.query<DeliveryRow>(
         'SELECT id, workspace_id, subscription_id, message_id, message_type, payload, status, attempts FROM twitch_eventsub_deliveries WHERE id = $1 AND workspace_id = $2 AND message_id = $3 FOR UPDATE',
-        [job.deliveryId, job.workspaceId, job.messageId],
+        [job.data.deliveryId, job.data.workspaceId, job.data.messageId],
       );
       const delivery = result.rows[0];
       if (!delivery) throw new Error('eventsub_delivery_not_found');
@@ -144,17 +146,22 @@ export class EventSubConsumerService implements OnModuleInit, OnModuleDestroy {
       await client.query('COMMIT');
     } catch (error) {
       await client.query('ROLLBACK').catch(() => undefined);
-      await this.recordAttemptFailure(job.deliveryId);
+      const maxAttempts = Number(job.opts.attempts ?? 1);
+      const terminal = job.attemptsMade + 1 >= maxAttempts;
+      // Persist exhaustion before throwing the final error. The previous
+      // implementation relied only on BullMQ's async "failed" event, leaving
+      // a crash window where a permanently failed job remained "accepted".
+      await this.recordAttemptFailure(job.data.deliveryId, terminal);
       throw error;
     } finally {
       client.release();
     }
   }
 
-  private async recordAttemptFailure(deliveryId: string): Promise<void> {
+  private async recordAttemptFailure(deliveryId: string, terminal: boolean): Promise<void> {
     await this.pool.query(
-      "UPDATE twitch_eventsub_deliveries SET attempts = attempts + 1, last_error = 'eventsub_processing_failed' WHERE id = $1 AND status IN ('accepted','processing')",
-      [deliveryId],
+      "UPDATE twitch_eventsub_deliveries SET attempts = attempts + 1, status = CASE WHEN $2 THEN 'failed' ELSE status END, last_error = CASE WHEN $2 THEN 'eventsub_processing_exhausted' ELSE 'eventsub_processing_failed' END WHERE id = $1 AND status IN ('accepted','processing')",
+      [deliveryId, terminal],
     );
   }
   private async markTerminalFailure(deliveryId: string): Promise<void> {
