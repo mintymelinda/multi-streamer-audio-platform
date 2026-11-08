@@ -105,7 +105,15 @@ export class TwitchRewardsService {
           );
           const mapping = inserted.rows[0];
           if (!mapping) throw new Error('Twitch reward mapping insert did not return a row.');
-          await this.recordChange(client, workspace.id, actor.id, mapping.id, 'created', null, mapping);
+          await this.recordChange(
+            client,
+            workspace.id,
+            actor.id,
+            mapping.id,
+            'created',
+            null,
+            mapping,
+          );
           await this.outbox.append(client, {
             workspaceId: workspace.id as VerifiedWorkspaceId,
             eventType: 'twitch.reward_mapping.created',
@@ -157,11 +165,26 @@ export class TwitchRewardsService {
             RETURNING id, workspace_id, twitch_reward_id, reward_title, reward_prompt, reward_cost,
               feature_key, feature_settings, enabled, sync_state, last_synced_at,
               last_sync_error_code, created_at, updated_at`,
-          [workspace.id, mappingId, nextFeature, JSON.stringify(nextSettings), nextEnabled, actor.id],
+          [
+            workspace.id,
+            mappingId,
+            nextFeature,
+            JSON.stringify(nextSettings),
+            nextEnabled,
+            actor.id,
+          ],
         );
         const updated = updatedResult.rows[0];
         if (!updated) throw new Error('Twitch reward mapping update did not return a row.');
-        await this.recordChange(client, workspace.id, actor.id, mappingId, 'updated', current, updated);
+        await this.recordChange(
+          client,
+          workspace.id,
+          actor.id,
+          mappingId,
+          'updated',
+          current,
+          updated,
+        );
         await this.outbox.append(client, {
           workspaceId: workspace.id as VerifiedWorkspaceId,
           eventType: 'twitch.reward_mapping.updated',
@@ -202,7 +225,11 @@ export class TwitchRewardsService {
         JSON.stringify({
           rewardId: after.twitch_reward_id,
           before: before
-            ? { featureKey: before.feature_key, featureSettings: before.feature_settings, enabled: before.enabled }
+            ? {
+                featureKey: before.feature_key,
+                featureSettings: before.feature_settings,
+                enabled: before.enabled,
+              }
             : null,
           after: {
             featureKey: after.feature_key,
