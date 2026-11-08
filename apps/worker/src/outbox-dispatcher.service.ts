@@ -15,6 +15,17 @@ interface OutboxRow {
   lock_token: string;
 }
 
+interface EventSubDeliveryRow {
+  id: string;
+  workspace_id: string;
+  subscription_id: string;
+  message_id: string;
+  message_type: 'notification' | 'revocation';
+  payload: Record<string, unknown>;
+  dispatch_attempts: number;
+  dispatch_lock_token: string;
+}
+
 function readRequiredSetting(fileVariable: string, directVariable: string): string {
   const secretFile = process.env[fileVariable];
   if (secretFile) {
@@ -50,17 +61,18 @@ export class OutboxDispatcherService implements OnModuleInit, OnModuleDestroy {
     enableReadyCheck: true,
   });
   private readonly queue = new Queue('platform-outbox', { connection: this.redis });
+  private readonly eventSubQueue = new Queue('twitch-eventsub', { connection: this.redis });
   private timer: NodeJS.Timeout | undefined;
   private dispatchInFlight = false;
 
   async onModuleInit(): Promise<void> {
     await this.pool.query('SELECT 1');
-    await this.queue.waitUntilReady();
-    this.logger.log('Outbox dispatcher connected to PostgreSQL and Redis');
+    await Promise.all([this.queue.waitUntilReady(), this.eventSubQueue.waitUntilReady()]);
+    this.logger.log('Outbox and EventSub dispatchers connected to PostgreSQL and Redis');
     this.timer = setInterval(() => {
       void this.dispatchBatch().catch((error: unknown) => {
         this.logger.error(
-          'Outbox dispatch cycle failed',
+          'Background dispatch cycle failed',
           error instanceof Error ? error.stack : undefined,
         );
       });
@@ -70,7 +82,7 @@ export class OutboxDispatcherService implements OnModuleInit, OnModuleDestroy {
 
   async onModuleDestroy(): Promise<void> {
     if (this.timer) clearInterval(this.timer);
-    await this.queue.close();
+    await Promise.all([this.queue.close(), this.eventSubQueue.close()]);
     await this.redis.quit();
     await this.pool.end();
   }
@@ -79,8 +91,10 @@ export class OutboxDispatcherService implements OnModuleInit, OnModuleDestroy {
     if (this.dispatchInFlight) return;
     this.dispatchInFlight = true;
     try {
-      const rows = await this.claimBatch();
-      for (const row of rows) await this.publish(row);
+      const outboxRows = await this.claimBatch();
+      for (const row of outboxRows) await this.publish(row);
+      const eventSubRows = await this.claimEventSubBatch();
+      for (const row of eventSubRows) await this.publishEventSub(row);
     } finally {
       this.dispatchInFlight = false;
     }
@@ -118,6 +132,91 @@ export class OutboxDispatcherService implements OnModuleInit, OnModuleDestroy {
       throw error;
     } finally {
       client.release();
+    }
+  }
+
+  private async claimEventSubBatch(): Promise<EventSubDeliveryRow[]> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const result = await client.query<EventSubDeliveryRow>(
+        `WITH candidates AS (
+           SELECT id
+             FROM twitch_eventsub_deliveries
+            WHERE status = 'accepted'
+              AND dispatch_published_at IS NULL
+              AND next_dispatch_at <= now()
+              AND (
+                dispatch_locked_at IS NULL
+                OR dispatch_locked_at < now() - interval '60 seconds'
+              )
+            ORDER BY received_at ASC, id ASC
+            FOR UPDATE SKIP LOCKED
+            LIMIT 25
+         )
+         UPDATE twitch_eventsub_deliveries AS delivery
+            SET dispatch_locked_at = now(),
+                dispatch_lock_token = gen_random_uuid(),
+                dispatch_attempts = delivery.dispatch_attempts + 1
+           FROM candidates
+          WHERE delivery.id = candidates.id
+         RETURNING delivery.id, delivery.workspace_id, delivery.subscription_id,
+                   delivery.message_id, delivery.message_type, delivery.payload,
+                   delivery.dispatch_attempts, delivery.dispatch_lock_token`,
+      );
+      await client.query('COMMIT');
+      return result.rows;
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  private async publishEventSub(row: EventSubDeliveryRow): Promise<void> {
+    try {
+      await this.eventSubQueue.add(
+        'eventsub-delivery',
+        {
+          deliveryId: row.id,
+          workspaceId: row.workspace_id,
+          subscriptionId: row.subscription_id,
+          messageId: row.message_id,
+          messageType: row.message_type,
+          payload: row.payload,
+        },
+        {
+          jobId: `eventsub-${row.id}`,
+          attempts: 8,
+          backoff: { type: 'exponential', delay: 1_000 },
+          removeOnComplete: { age: 30 * 24 * 60 * 60, count: 10_000 },
+          removeOnFail: false,
+        },
+      );
+      await this.pool.query(
+        `UPDATE twitch_eventsub_deliveries
+            SET dispatch_published_at = now(),
+                dispatch_locked_at = NULL,
+                dispatch_lock_token = NULL,
+                dispatch_error_code = NULL
+          WHERE id = $1 AND status = 'accepted'
+            AND dispatch_published_at IS NULL AND dispatch_lock_token = $2`,
+        [row.id, row.dispatch_lock_token],
+      );
+    } catch {
+      const delay = retryDelaySeconds(row.dispatch_attempts);
+      await this.pool.query(
+        `UPDATE twitch_eventsub_deliveries
+            SET next_dispatch_at = now() + ($2::text || ' seconds')::interval,
+                dispatch_locked_at = NULL,
+                dispatch_lock_token = NULL,
+                dispatch_error_code = 'redis_enqueue_failed'
+          WHERE id = $1 AND status = 'accepted'
+            AND dispatch_published_at IS NULL AND dispatch_lock_token = $3`,
+        [row.id, delay, row.dispatch_lock_token],
+      );
+      this.logger.warn(`EventSub delivery ${row.message_id} enqueue failed; retry scheduled.`);
     }
   }
 

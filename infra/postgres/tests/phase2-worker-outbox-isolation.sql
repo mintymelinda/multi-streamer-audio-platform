@@ -17,6 +17,19 @@ BEGIN
   ) VALUES (
     workspace_id, 'test.event', 'test', 'test-aggregate', 'worker-isolation-test', '{"safe":true}'::jsonb
   );
+  INSERT INTO twitch_eventsub_subscriptions (
+    subscription_id, workspace_id, event_type, event_version, status, secret_envelope
+  ) VALUES (
+    'worker-eventsub-subscription', workspace_id,
+    'channel.channel_points_custom_reward_redemption.add', '1', 'enabled',
+    '{"formatVersion":1}'::jsonb
+  );
+  INSERT INTO twitch_eventsub_deliveries (
+    workspace_id, subscription_id, message_id, message_type, payload
+  ) VALUES (
+    workspace_id, 'worker-eventsub-subscription', 'worker-eventsub-message',
+    'notification', '{"event":{"safe":true}}'::jsonb
+  );
 END;
 $$;
 
@@ -35,6 +48,15 @@ BEGIN
   IF has_column_privilege('platform_worker', 'outbox_events', 'payload', 'UPDATE') THEN
     RAISE EXCEPTION 'worker unexpectedly has permission to rewrite outbox payloads';
   END IF;
+  IF (SELECT count(*) FROM twitch_eventsub_deliveries WHERE message_id = 'worker-eventsub-message') <> 1 THEN
+    RAISE EXCEPTION 'worker cannot claim the durable EventSub delivery';
+  END IF;
+  IF has_table_privilege('platform_worker', 'twitch_eventsub_subscriptions', 'SELECT') THEN
+    RAISE EXCEPTION 'worker unexpectedly has access to EventSub signing secrets';
+  END IF;
+  IF has_column_privilege('platform_worker', 'twitch_eventsub_deliveries', 'payload', 'UPDATE') THEN
+    RAISE EXCEPTION 'worker unexpectedly has permission to rewrite EventSub payloads';
+  END IF;
   IF (SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname = 'platform_worker') THEN
     RAISE EXCEPTION 'worker role must not be superuser or bypass RLS';
   END IF;
@@ -43,4 +65,7 @@ $$;
 UPDATE outbox_events
    SET published_at = now()
  WHERE idempotency_key = 'worker-isolation-test';
+UPDATE twitch_eventsub_deliveries
+   SET dispatch_published_at = now()
+ WHERE message_id = 'worker-eventsub-message';
 ROLLBACK;
