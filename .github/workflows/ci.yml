@@ -80,8 +80,8 @@ jobs:
           runtime_flags="$(docker exec "$container_id" psql -U platform_bootstrap -d platform -Atqc "SELECT rolsuper::text || ':' || rolbypassrls::text FROM pg_roles WHERE rolname='platform_runtime'")"
           migrator_flags="$(docker exec "$container_id" psql -U platform_bootstrap -d platform -Atqc "SELECT rolsuper::text || ':' || rolbypassrls::text FROM pg_roles WHERE rolname='platform_migrator'")"
           schema_owner="$(docker exec "$container_id" psql -U platform_bootstrap -d platform -Atqc "SELECT pg_get_userbyid(nspowner) FROM pg_namespace WHERE nspname='public'")"
-          test "$runtime_flags" = "f:f"
-          test "$migrator_flags" = "f:f"
+          test "$runtime_flags" = "false:false"
+          test "$migrator_flags" = "false:false"
           test "$schema_owner" = "platform_migrator"
 
       - name: Lint
