@@ -59,11 +59,10 @@ test('reconciles linked rewards as synced, attention-required, or deleted withou
   const remote = await service.listRemoteRewards(workspace, actor);
   assert.equal(remote.length, 2);
   assert.equal(updates.length, 3);
-  assert.deepEqual(updates.map((entry) => entry.values[2]), [
-    'synced',
-    'attention_required',
-    'deleted_on_twitch',
-  ]);
+  assert.deepEqual(
+    updates.map((entry) => entry.values[2]),
+    ['synced', 'attention_required', 'deleted_on_twitch'],
+  );
   assert.equal(updates[1].values[3], 'reward_metadata_changed');
   assert.equal(updates[2].values[3], 'reward_missing_on_twitch');
   assert.match(updates[2].sql, /enabled = false/);
@@ -138,7 +137,11 @@ test('refuses to link a reward that is not owned by the connected broadcaster', 
       throw new Error('Database must not be written for an unverified reward.');
     },
   };
-  const helix = { async listCustomRewards() { return []; } };
+  const helix = {
+    async listCustomRewards() {
+      return [];
+    },
+  };
   const service = new TwitchRewardsService(database, {}, helix);
   await assert.rejects(
     service.linkExistingReward(workspace, actor, {
