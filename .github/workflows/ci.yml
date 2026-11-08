@@ -1,0 +1,103 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Quality gates
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18.6
+        env:
+          POSTGRES_DB: platform
+          POSTGRES_USER: platform_bootstrap
+          POSTGRES_PASSWORD: ci-bootstrap-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U platform_bootstrap -d platform"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 12.18.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 26.13.0
+
+      # Generate the initial lockfile while bootstrapping the empty repository.
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      # Normalize the initial scaffold once; the resulting files are committed
+      # from the review branch after this CI run.
+      - name: Normalize initial workspace formatting
+        run: pnpm format
+
+      - name: Package normalized files for review-branch commit
+        run: |
+          git diff --name-only > /tmp/phase0-files.txt
+          if [ -f pnpm-lock.yaml ]; then echo pnpm-lock.yaml >> /tmp/phase0-files.txt; fi
+          sort -u /tmp/phase0-files.txt -o /tmp/phase0-files.txt
+          tar -czf phase0-normalized.tar.gz -T /tmp/phase0-files.txt
+
+      - name: Preserve normalized files and lockfile
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase0-normalized-files
+          path: phase0-normalized.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Validate local infrastructure definition
+        run: docker compose --env-file infra/compose/.env.example -f infra/compose/docker-compose.yml config --quiet
+
+      - name: Validate PostgreSQL migration/runtime role separation
+        run: |
+          container_id="$(docker ps --filter 'ancestor=postgres:18.6' --format '{{.ID}}' | head -n 1)"
+          test -n "$container_id"
+          docker cp infra/postgres/init/001-roles.sql "$container_id:/tmp/001-roles.sql"
+          docker exec "$container_id" psql -U platform_bootstrap -d platform -v ON_ERROR_STOP=1 -f /tmp/001-roles.sql
+          runtime_flags="$(docker exec "$container_id" psql -U platform_bootstrap -d platform -Atqc "SELECT rolsuper::text || ':' || rolbypassrls::text FROM pg_roles WHERE rolname='platform_runtime'")"
+          migrator_flags="$(docker exec "$container_id" psql -U platform_bootstrap -d platform -Atqc "SELECT rolsuper::text || ':' || rolbypassrls::text FROM pg_roles WHERE rolname='platform_migrator'")"
+          schema_owner="$(docker exec "$container_id" psql -U platform_bootstrap -d platform -Atqc "SELECT pg_get_userbyid(nspowner) FROM pg_namespace WHERE nspname='public'")"
+          test "$runtime_flags" = "false:false"
+          test "$migrator_flags" = "false:false"
+          test "$schema_owner" = "platform_migrator"
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Check formatting
+        run: pnpm format:check
+
+      - name: Type check
+        run: pnpm typecheck
+
+      - name: Check migration naming and ordering
+        run: pnpm db:migrations:check
+
+      - name: Unit tests
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
