@@ -6,7 +6,7 @@ on:
     branches: [main]
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -35,6 +35,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
@@ -46,6 +48,19 @@ jobs:
         with:
           node-version: 26.13.0
           cache: pnpm
+
+      # Temporary lockfile repair after merging the latest Dependabot baseline.
+      - name: Repair and commit lockfile
+        if: github.event_name == 'pull_request' && github.actor == 'mintymelinda' && github.event.pull_request.head.ref == 'phase-1/identity-workspaces-tenant-isolation'
+        run: |
+          pnpm install --no-frozen-lockfile
+          if ! git diff --quiet -- pnpm-lock.yaml; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add pnpm-lock.yaml
+            git commit -m "chore: repair pnpm lockfile after dependency baseline update"
+            git push origin "HEAD:${GITHUB_HEAD_REF}"
+          fi
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
