@@ -62,7 +62,8 @@ function optionalString(value: unknown, field: string, max: number): string | un
   if (typeof value !== 'string' || value.length > max) {
     throw new BadRequestException(`${field} must be a string no longer than ${max} characters.`);
   }
-  return value.trim();
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
 }
 
 function featureKey(value: unknown) {
@@ -104,10 +105,11 @@ export class TwitchRewardsController {
     if (typeof cost !== 'number' || !Number.isInteger(cost) || cost < 1 || cost > 1_000_000) {
       throw new BadRequestException('rewardCost must be an integer between 1 and 1000000.');
     }
+    const rewardPrompt = optionalString(data.rewardPrompt, 'rewardPrompt', 200);
     return this.rewards.linkExistingReward(workspace(request), user(request), {
       rewardId: requiredString(data.rewardId, 'rewardId', 128),
       rewardTitle: requiredString(data.rewardTitle, 'rewardTitle', 45),
-      rewardPrompt: optionalString(data.rewardPrompt, 'rewardPrompt', 200),
+      ...(rewardPrompt !== undefined ? { rewardPrompt } : {}),
       rewardCost: cost,
       featureKey: key,
       featureSettings: settings,
