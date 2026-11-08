@@ -74,11 +74,7 @@ export class TeamController {
     @Param('workspaceId') workspaceId: string,
     @Param('invitationId') invitationId: string,
   ) {
-    return this.team.cancelInvitation(
-      requireAuthenticatedUser(request),
-      workspaceId,
-      invitationId,
-    );
+    return this.team.cancelInvitation(requireAuthenticatedUser(request), workspaceId, invitationId);
   }
 
   @Patch('members/:memberUserId')
@@ -88,7 +84,8 @@ export class TeamController {
     @Param('memberUserId') memberUserId: string,
     @Body() body: unknown,
   ) {
-    const role = typeof body === 'object' && body !== null && 'role' in body ? body.role : undefined;
+    const role =
+      typeof body === 'object' && body !== null && 'role' in body ? body.role : undefined;
     const user = requireAuthenticatedUser(request);
     const workspaceRole = requireWorkspaceContext(request).role;
     return this.team.changeMemberRole(user, workspaceId, memberUserId, role, workspaceRole);
@@ -100,11 +97,7 @@ export class TeamController {
     @Param('workspaceId') workspaceId: string,
     @Param('memberUserId') memberUserId: string,
   ) {
-    return this.team.revokeMember(
-      requireAuthenticatedUser(request),
-      workspaceId,
-      memberUserId,
-    );
+    return this.team.revokeMember(requireAuthenticatedUser(request), workspaceId, memberUserId);
   }
 }
 
