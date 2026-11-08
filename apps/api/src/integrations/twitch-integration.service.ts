@@ -1,14 +1,12 @@
 import type { VerifiedWorkspaceId } from '@platform/contracts';
-import {
-  ForbiddenException,
-  Inject,
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { DatabaseService } from '../database/database.service.js';
 import type { AuthenticatedUser, WorkspaceRequestContext } from '../identity/http.types.js';
-import { getTwitchAppConfig, getTwitchIntegrationRedirectUri } from '../identity/twitch-app-config.js';
+import {
+  getTwitchAppConfig,
+  getTwitchIntegrationRedirectUri,
+} from '../identity/twitch-app-config.js';
 import { isSafeLocalReturnPath, newOpaqueToken, sha256 } from '../identity/security.js';
 import {
   encryptIntegrationCredentials,
@@ -64,10 +62,12 @@ export class TwitchIntegrationService {
     const broadcaster = await this.database.transaction(
       { userId: actor.id, verifiedWorkspaceId: workspace.id },
       async (client) => {
-        const result = await client.query<{ owner_user_id: string; broadcaster_twitch_user_id: string }>(
-          'SELECT owner_user_id, broadcaster_twitch_user_id FROM workspaces WHERE id = $1',
-          [workspace.id],
-        );
+        const result = await client.query<{
+          owner_user_id: string;
+          broadcaster_twitch_user_id: string;
+        }>('SELECT owner_user_id, broadcaster_twitch_user_id FROM workspaces WHERE id = $1', [
+          workspace.id,
+        ]);
         return result.rows[0];
       },
     );
@@ -76,7 +76,9 @@ export class TwitchIntegrationService {
       broadcaster.owner_user_id !== actor.id ||
       broadcaster.broadcaster_twitch_user_id !== actor.twitchUserId
     ) {
-      throw new ForbiddenException('The signed-in Twitch account is not this workspace broadcaster.');
+      throw new ForbiddenException(
+        'The signed-in Twitch account is not this workspace broadcaster.',
+      );
     }
 
     const config = getTwitchAppConfig();
@@ -111,17 +113,21 @@ export class TwitchIntegrationService {
     );
     const oauthState = consumed.rows[0];
     if (!oauthState) {
-      throw new UnauthorizedException('Twitch authorization state is invalid, expired, or belongs to another account.');
+      throw new UnauthorizedException(
+        'Twitch authorization state is invalid, expired, or belongs to another account.',
+      );
     }
 
     const workspaceId = oauthState.workspace_id as VerifiedWorkspaceId;
     const broadcaster = await this.database.transaction(
       { userId: actor.id, verifiedWorkspaceId: workspaceId },
       async (client) => {
-        const result = await client.query<{ owner_user_id: string; broadcaster_twitch_user_id: string }>(
-          'SELECT owner_user_id, broadcaster_twitch_user_id FROM workspaces WHERE id = $1',
-          [workspaceId],
-        );
+        const result = await client.query<{
+          owner_user_id: string;
+          broadcaster_twitch_user_id: string;
+        }>('SELECT owner_user_id, broadcaster_twitch_user_id FROM workspaces WHERE id = $1', [
+          workspaceId,
+        ]);
         return result.rows[0];
       },
     );
@@ -133,7 +139,10 @@ export class TwitchIntegrationService {
       throw new ForbiddenException('The signed-in Twitch account is not this workspace broadcaster.');
     }
 
-    const credentials = await this.exchangeAndValidate(code, broadcaster.broadcaster_twitch_user_id);
+    const credentials = await this.exchangeAndValidate(
+      code,
+      broadcaster.broadcaster_twitch_user_id,
+    );
     const credentialId = randomUUID();
     const envelope = encryptIntegrationCredentials(
       JSON.stringify(credentials),
@@ -190,7 +199,11 @@ export class TwitchIntegrationService {
           `INSERT INTO audit_events
             (workspace_id, actor_user_id, event_type, target_type, target_id, details)
            VALUES ($1,$2,'twitch.integration.connected','workspace_integration',$1,$3::jsonb)`,
-          [workspaceId, actor.id, JSON.stringify({ provider: 'twitch', scopes: credentials.scopes })],
+          [
+            workspaceId,
+            actor.id,
+            JSON.stringify({ provider: 'twitch', scopes: credentials.scopes }),
+          ],
         );
         await this.outbox.append(client, {
           workspaceId,
@@ -292,7 +305,9 @@ export class TwitchIntegrationService {
       !Number.isFinite(token.expires_in) ||
       token.expires_in <= 0
     ) {
-      throw new UnauthorizedException('Twitch did not return a complete renewable user credential.');
+      throw new UnauthorizedException(
+        'Twitch did not return a complete renewable user credential.',
+      );
     }
 
     let validation: TwitchValidationResponse;
