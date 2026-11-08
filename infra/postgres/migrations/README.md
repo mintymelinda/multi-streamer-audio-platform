@@ -23,3 +23,6 @@ Start the local services with `pnpm dev:infra`, then apply the role bootstrap an
 - `0002_integrations_and_outbox.sql` establishes tenant-scoped provider integration records with encrypted credential-envelope columns, plus the transactional outbox table. Both tables use ENABLE and FORCE ROW LEVEL SECURITY and are inaccessible without verified user/workspace context.
 
 New tenant-owned tables must follow the same pattern. Never put plaintext provider credentials in integration rows, audit details, outbox payloads, logs, or job messages.
+
+- `0005_worker_outbox_dispatch.sql` and `0006_eventsub_worker_dispatch.sql` grant the worker narrowly scoped dispatch access without access to business tables or subscription secrets.
+- `0007_eventsub_redemption_intake.sql` adds an idempotent EventSub intake ledger. The worker may persist normalized EventSub payloads and update delivery processing metadata, but it cannot create requests, read signing secrets, or execute reward feature mappings. Worker-role isolation tests run separately from runtime tenant tests.
