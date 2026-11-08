@@ -77,7 +77,7 @@ export class TwitchRedemptionRouterService implements OnModuleInit, OnModuleDest
         `WITH candidates AS (
            SELECT id
              FROM twitch_eventsub_intake
-            WHERE routing_status = 'pending'
+            WHERE (routing_status = 'pending' AND routing_next_attempt_at <= now())
                OR (routing_status = 'processing'
                    AND routing_locked_at < now() - interval '60 seconds')
             ORDER BY received_at ASC, id ASC
@@ -192,6 +192,9 @@ export class TwitchRedemptionRouterService implements OnModuleInit, OnModuleDest
             SET routing_status = $2,
                 routed_request_id = $3,
                 routing_error_code = $4,
+                routing_next_attempt_at = CASE WHEN $2 = 'pending'
+                  THEN now() + make_interval(secs => LEAST(300, power(2, LEAST(routing_attempts, 8))::integer))
+                  ELSE routing_next_attempt_at END,
                 routing_locked_at = NULL,
                 routing_lock_token = NULL
           WHERE id = $1 AND routing_lock_token = $5`,
