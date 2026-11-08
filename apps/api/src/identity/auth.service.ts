@@ -55,7 +55,7 @@ export class AuthService {
     }
     const oauthState = await this.database.transaction({}, async (client) => {
       const result = await client.query<{ return_path: string }>(
-        'UPDATE twitch_oauth_states SET consumed_at = now() WHERE state_hash = $1 AND purpose = 'login' AND consumed_at IS NULL AND expires_at > now() RETURNING return_path',
+        "UPDATE twitch_oauth_states SET consumed_at = now() WHERE state_hash = $1 AND purpose = 'login' AND consumed_at IS NULL AND expires_at > now() RETURNING return_path",
         [sha256(state)],
       );
       return result.rows[0]?.return_path;
