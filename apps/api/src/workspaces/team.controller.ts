@@ -5,6 +5,7 @@ import {
   Get,
   Inject,
   NotFoundException,
+  Param,
   Patch,
   Post,
   Req,
@@ -45,57 +46,59 @@ export class TeamController {
 
   @Get('members')
   listMembers(@Req() request: HttpRequest) {
-    return this.team.listMembers(requireAuthenticatedUser(request).id, requireWorkspaceContext(request).id);
+    const user = requireAuthenticatedUser(request);
+    const workspace = requireWorkspaceContext(request);
+    return this.team.listMembers(user.id, workspace.id);
   }
 
   @Get('invitations')
   listInvitations(@Req() request: HttpRequest) {
-    return this.team.listWorkspaceInvitations(requireAuthenticatedUser(request).id, requireWorkspaceContext(request).id);
+    const user = requireAuthenticatedUser(request);
+    const workspace = requireWorkspaceContext(request);
+    return this.team.listWorkspaceInvitations(user.id, workspace.id);
   }
 
   @Post('invitations')
-  createInvitation(
-    @Req() request: HttpRequest,
-    @Body() body: unknown,
-  ) {
+  createInvitation(@Req() request: HttpRequest, @Body() body: unknown) {
     const value = typeof body === 'object' && body !== null ? body : {};
     const username = 'twitchUsername' in value ? value.twitchUsername : undefined;
     const role = 'role' in value ? value.role : undefined;
     const user = requireAuthenticatedUser(request);
-    const workspaceRole = requireWorkspaceContext(request).role;
-    return this.team.createInvitation(user, requireWorkspaceContext(request).id, username, role, workspaceRole);
+    const workspace = requireWorkspaceContext(request);
+    return this.team.createInvitation(user, workspace.id, username, role, workspace.role);
   }
 
   @Delete('invitations/:invitationId')
   cancelInvitation(
     @Req() request: HttpRequest,
-    @Param('workspaceId') workspaceId: string,
     @Param('invitationId') invitationId: string,
   ) {
-    return this.team.cancelInvitation(requireAuthenticatedUser(request), requireWorkspaceContext(request).id, invitationId);
+    const user = requireAuthenticatedUser(request);
+    const workspace = requireWorkspaceContext(request);
+    return this.team.cancelInvitation(user, workspace.id, invitationId);
   }
 
   @Patch('members/:memberUserId')
   changeMemberRole(
     @Req() request: HttpRequest,
-    @Param('workspaceId') workspaceId: string,
     @Param('memberUserId') memberUserId: string,
     @Body() body: unknown,
   ) {
     const role =
       typeof body === 'object' && body !== null && 'role' in body ? body.role : undefined;
     const user = requireAuthenticatedUser(request);
-    const workspaceRole = requireWorkspaceContext(request).role;
-    return this.team.changeMemberRole(user, requireWorkspaceContext(request).id, memberUserId, role, workspaceRole);
+    const workspace = requireWorkspaceContext(request);
+    return this.team.changeMemberRole(user, workspace.id, memberUserId, role, workspace.role);
   }
 
   @Delete('members/:memberUserId')
   revokeMember(
     @Req() request: HttpRequest,
-    @Param('workspaceId') workspaceId: string,
     @Param('memberUserId') memberUserId: string,
   ) {
-    return this.team.revokeMember(requireAuthenticatedUser(request), requireWorkspaceContext(request).id, memberUserId);
+    const user = requireAuthenticatedUser(request);
+    const workspace = requireWorkspaceContext(request);
+    return this.team.revokeMember(user, workspace.id, memberUserId);
   }
 }
 
