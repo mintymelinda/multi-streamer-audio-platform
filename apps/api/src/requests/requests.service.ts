@@ -427,6 +427,15 @@ export class RequestsService {
     workspaceId: VerifiedWorkspaceId,
     requestIds: string[],
   ) {
+    await client.query(
+      `DELETE FROM logical_queue_entries q
+        USING media_requests r
+        WHERE q.workspace_id = $1
+          AND r.workspace_id = q.workspace_id
+          AND r.id = q.request_id
+          AND r.status <> 'queued'`,
+      [workspaceId],
+    );
     const bounds = await client.query<{ offset: string }>(
       'SELECT (COALESCE(MAX(sequence), 0) + count(*) + 1)::text AS offset FROM logical_queue_entries WHERE workspace_id = $1',
       [workspaceId],
@@ -446,6 +455,10 @@ export class RequestsService {
         [workspaceId, requestId],
       );
     }
+    await client.query(
+      'INSERT INTO workspace_queue_counters (workspace_id) VALUES ($1) ON CONFLICT DO NOTHING',
+      [workspaceId],
+    );
     await client.query(
       'UPDATE workspace_queue_counters SET next_sequence = $2 WHERE workspace_id = $1',
       [workspaceId, requestIds.length + 1],
