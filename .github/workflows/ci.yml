@@ -49,7 +49,7 @@ jobs:
 
       # Temporary lockfile repair after merging the latest Dependabot baseline.
       - name: Repair and commit lockfile
-        if: github.event_name == 'pull_request' && github.actor == 'mintymelinda' && (github.event.pull_request.head.ref == 'phase-1/identity-workspaces-tenant-isolation' || github.event.pull_request.head.ref == 'phase-2/twitch-reward-integration')
+        if: github.event_name == 'pull_request' && github.actor == 'mintymelinda' && (github.event.pull_request.head.ref == 'phase-1/identity-workspaces-tenant-isolation' || (github.event.pull_request.head.ref == 'phase-2/twitch-reward-integration' || github.event.pull_request.head.ref == 'fix/phase-2-pnpm-lockfile'))
         run: |
           pnpm install --fix-lockfile --no-frozen-lockfile
           if ! git diff --quiet -- pnpm-lock.yaml; then
