@@ -11,7 +11,7 @@
     "@nestjs/common": "12.4.0",
     "@nestjs/core": "12.4.0",
     "@platform/contracts": "workspace:*",
-    "bullmq": "5.58.5",
+    "bullmq": "6.7.0",
     "ioredis": "5.6.1",
     "pg": "8.16.3",
     "reflect-metadata": "0.2.2",
