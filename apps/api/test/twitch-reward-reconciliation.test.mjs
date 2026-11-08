@@ -71,9 +71,11 @@ test('reconciles linked rewards as synced, attention-required, or deleted withou
 
 test('linking an existing reward verifies it with Twitch and stores Twitch-owned metadata', async () => {
   const insertValues = [];
+  let insertSql = '';
   const client = {
     async query(sql, values = []) {
       if (sql.includes('INSERT INTO twitch_reward_mappings')) {
+        insertSql = sql;
         insertValues.push(values);
         return {
           rows: [
@@ -127,7 +129,7 @@ test('linking an existing reward verifies it with Twitch and stores Twitch-owned
   assert.equal(insertValues[0][2], 'Canonical Twitch title');
   assert.equal(insertValues[0][3], 'Canonical prompt');
   assert.equal(insertValues[0][4], 900);
-  assert.match(insertValues[0] ? 'synced' : '', /synced/);
+  assert.match(insertSql, /'synced'/);
 });
 
 test('refuses to link a reward that is not owned by the connected broadcaster', async () => {
