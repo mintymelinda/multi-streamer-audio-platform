@@ -170,7 +170,7 @@ export class AuthService {
           'SELECT id, status FROM platform_users WHERE twitch_user_id = $1 LIMIT 1',
           [twitchUserId],
         );
-        let userId = candidateUserId;
+        let userId: string = candidateUserId;
         const user = existing.rows[0];
         if (user) {
           userId = user.id;
