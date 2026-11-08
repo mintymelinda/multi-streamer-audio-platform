@@ -1,3 +1,4 @@
+import type { VerifiedWorkspaceId } from '@platform/contracts';
 import {
   ForbiddenException,
   Inject,
@@ -49,7 +50,11 @@ export class WorkspaceAccessGuard implements CanActivate {
 
     // Controllers/services may now establish workspace context using this
     // verified request context; the guard never trusts an unverified tenant ID.
-    request.workspace = { id: workspaceId, role: membership.role, status: membership.status };
+    request.workspace = {
+      id: workspaceId as VerifiedWorkspaceId,
+      role: membership.role,
+      status: membership.status,
+    };
     return true;
   }
 }
