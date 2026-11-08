@@ -94,18 +94,24 @@ test('refreshes an expiring broadcaster token, validates identity and scope, and
   globalThis.fetch = async (url, init = {}) => {
     calls.push({ url: String(url), init });
     if (String(url).endsWith('/oauth2/token')) {
-      return new Response(JSON.stringify({
-        access_token: 'new-access-token',
-        refresh_token: 'new-refresh-token',
-        expires_in: 3600,
-      }), { status: 200, headers: { 'content-type': 'application/json' } });
+      return new Response(
+        JSON.stringify({
+          access_token: 'new-access-token',
+          refresh_token: 'new-refresh-token',
+          expires_in: 3600,
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
     }
     if (String(url).endsWith('/oauth2/validate')) {
-      return new Response(JSON.stringify({
-        client_id: 'test-client-id',
-        user_id: actor.twitchUserId,
-        scopes: ['channel:manage:redemptions'],
-      }), { status: 200, headers: { 'content-type': 'application/json' } });
+      return new Response(
+        JSON.stringify({
+          client_id: 'test-client-id',
+          user_id: actor.twitchUserId,
+          scopes: ['channel:manage:redemptions'],
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
     }
     throw new Error('Unexpected Twitch endpoint.');
   };
@@ -131,7 +137,9 @@ test('refreshes an expiring broadcaster token, validates identity and scope, and
 test('does not refresh a broadcaster token that remains valid beyond the refresh window', async () => {
   const fixture = setupCredential(new Date(Date.now() + 60 * 60_000).toISOString());
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () => { throw new Error('A valid token should not be refreshed.'); };
+  globalThis.fetch = async () => {
+    throw new Error('A valid token should not be refreshed.');
+  };
   try {
     const token = await fixture.service.getAccessToken({ id: workspaceId }, actor);
     assert.equal(token, 'old-access-token');
@@ -148,9 +156,23 @@ test('marks the integration for reauthorization when Twitch rejects the refreshe
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url) => {
     if (String(url).endsWith('/oauth2/token')) {
-      return new Response(JSON.stringify({ access_token: 'new-access-token', refresh_token: 'new-refresh-token', expires_in: 3600 }), { status: 200 });
+      return new Response(
+        JSON.stringify({
+          access_token: 'new-access-token',
+          refresh_token: 'new-refresh-token',
+          expires_in: 3600,
+        }),
+        { status: 200 },
+      );
     }
-    return new Response(JSON.stringify({ client_id: 'test-client-id', user_id: actor.twitchUserId, scopes: ['channel:read:redemptions'] }), { status: 200 });
+    return new Response(
+      JSON.stringify({
+        client_id: 'test-client-id',
+        user_id: actor.twitchUserId,
+        scopes: ['channel:read:redemptions'],
+      }),
+      { status: 200 },
+    );
   };
   try {
     await assert.rejects(
