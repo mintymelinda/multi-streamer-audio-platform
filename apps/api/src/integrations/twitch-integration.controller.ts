@@ -10,7 +10,12 @@ import {
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
-import type { AuthenticatedUser, HttpReply, HttpRequest, WorkspaceRequestContext } from '../identity/http.types.js';
+import type {
+  AuthenticatedUser,
+  HttpReply,
+  HttpRequest,
+  WorkspaceRequestContext,
+} from '../identity/http.types.js';
 import { CsrfGuard } from '../identity/csrf.guard.js';
 import { SessionGuard } from '../identity/session.guard.js';
 import {
@@ -47,11 +52,7 @@ export class TwitchIntegrationController {
     if (context.role !== 'owner') {
       throw new ForbiddenException('Only the workspace owner can authorize its Twitch channel.');
     }
-    const url = await this.integration.beginAuthorization(
-      context,
-      actor(request),
-      '/',
-    );
+    const url = await this.integration.beginAuthorization(context, actor(request), '/');
     return reply.code(302).redirect(url);
   }
 
