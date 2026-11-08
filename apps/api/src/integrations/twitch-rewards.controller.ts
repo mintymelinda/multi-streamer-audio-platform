@@ -50,7 +50,9 @@ function record(value: unknown): Record<string, unknown> {
 
 function requiredString(value: unknown, field: string, max: number): string {
   if (typeof value !== 'string' || value.trim().length === 0 || value.length > max) {
-    throw new BadRequestException(`${field} must be a non-empty string no longer than ${max} characters.`);
+    throw new BadRequestException(
+      `${field} must be a non-empty string no longer than ${max} characters.`,
+    );
   }
   return value.trim();
 }
@@ -74,7 +76,9 @@ function featureSettings(feature: ReturnType<typeof featureKey>, value: unknown)
   try {
     return normalizeTwitchRewardFeatureSettings(feature, value);
   } catch (error) {
-    throw new BadRequestException(error instanceof Error ? error.message : 'Feature settings are invalid.');
+    throw new BadRequestException(
+      error instanceof Error ? error.message : 'Feature settings are invalid.',
+    );
   }
 }
 
@@ -131,7 +135,8 @@ export class TwitchRewardsController {
       input.featureSettings = featureSettings(key, data.featureSettings);
     }
     if (data.enabled !== undefined) {
-      if (typeof data.enabled !== 'boolean') throw new BadRequestException('enabled must be a boolean.');
+      if (typeof data.enabled !== 'boolean')
+        throw new BadRequestException('enabled must be a boolean.');
       input.enabled = data.enabled;
     }
     if (Object.keys(input).length === 0) {
