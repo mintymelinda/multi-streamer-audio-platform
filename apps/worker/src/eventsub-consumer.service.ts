@@ -4,11 +4,20 @@ import { Redis } from 'ioredis';
 import { readFileSync } from 'node:fs';
 import { Pool } from 'pg';
 
-interface EventSubJob { deliveryId: string; workspaceId: string; messageId: string }
+interface EventSubJob {
+  deliveryId: string;
+  workspaceId: string;
+  messageId: string;
+}
 interface DeliveryRow {
-  id: string; workspace_id: string; subscription_id: string; message_id: string;
-  message_type: 'notification' | 'revocation'; payload: Record<string, unknown>;
-  status: 'accepted' | 'processing' | 'processed' | 'failed'; attempts: number;
+  id: string;
+  workspace_id: string;
+  subscription_id: string;
+  message_id: string;
+  message_type: 'notification' | 'revocation';
+  payload: Record<string, unknown>;
+  status: 'accepted' | 'processing' | 'processed' | 'failed';
+  attempts: number;
 }
 interface EventSubEnvelope {
   subscription?: { type?: unknown; version?: unknown; status?: unknown };
@@ -16,7 +25,10 @@ interface EventSubEnvelope {
 }
 function readSetting(fileVariable: string, directVariable: string): string {
   const file = process.env[fileVariable];
-  if (file) { const value = readFileSync(file, 'utf8').trim(); if (value) return value; }
+  if (file) {
+    const value = readFileSync(file, 'utf8').trim();
+    if (value) return value;
+  }
   if (process.env.NODE_ENV !== 'production') {
     const value = process.env[directVariable]?.trim();
     if (value) return value;
@@ -35,11 +47,14 @@ export class EventSubConsumerService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(EventSubConsumerService.name);
   private readonly pool = new Pool({
     connectionString: readSetting('DATABASE_URL_FILE', 'DATABASE_URL'),
-    max: 4, connectionTimeoutMillis: 5_000, idleTimeoutMillis: 30_000,
+    max: 4,
+    connectionTimeoutMillis: 5_000,
+    idleTimeoutMillis: 30_000,
     application_name: 'multi-streamer-audio-platform-eventsub-consumer',
   });
   private readonly redis = new Redis(readSetting('REDIS_URL_FILE', 'REDIS_URL'), {
-    maxRetriesPerRequest: null, enableReadyCheck: true,
+    maxRetriesPerRequest: null,
+    enableReadyCheck: true,
   });
   private worker: Worker<EventSubJob> | undefined;
 
@@ -48,14 +63,20 @@ export class EventSubConsumerService implements OnModuleInit, OnModuleDestroy {
     this.worker = new Worker<EventSubJob>(
       'twitch-eventsub',
       async (job: Job<EventSubJob>) => this.processDelivery(job.data),
-      { connection: this.redis, concurrency: 8, lockDuration: 30_000,
-        limiter: { max: 20, duration: 1_000 } },
+      {
+        connection: this.redis,
+        concurrency: 8,
+        lockDuration: 30_000,
+        limiter: { max: 20, duration: 1_000 },
+      },
     );
     this.worker.on('failed', (job) => {
       if (job && job.attemptsMade >= Number(job.opts.attempts ?? 1)) {
         void this.markTerminalFailure(job.data.deliveryId).catch((error: unknown) => {
-          this.logger.error('Unable to mark terminal EventSub delivery failure',
-            error instanceof Error ? error.stack : undefined);
+          this.logger.error(
+            'Unable to mark terminal EventSub delivery failure',
+            error instanceof Error ? error.stack : undefined,
+          );
         });
       }
       this.logger.warn(`EventSub job ${job?.id ?? 'unknown'} failed.`);
@@ -87,24 +108,34 @@ export class EventSubConsumerService implements OnModuleInit, OnModuleDestroy {
 
       const envelope = delivery.payload as EventSubEnvelope;
       const eventType = requiredString(envelope.subscription?.type, 'subscription_type');
-      const eventVersion = typeof envelope.subscription?.version === 'string'
-        ? envelope.subscription.version : '1';
-      const eventPayload = delivery.message_type === 'notification'
-        ? envelope.event : envelope.subscription;
+      const eventVersion =
+        typeof envelope.subscription?.version === 'string' ? envelope.subscription.version : '1';
+      const eventPayload =
+        delivery.message_type === 'notification' ? envelope.event : envelope.subscription;
       if (!eventPayload || typeof eventPayload !== 'object' || Array.isArray(eventPayload)) {
         throw new Error('invalid_eventsub_payload');
       }
       // Use Twitch's redemption ID for redemption dedupe; use message ID for
       // other notifications and revocations. No feature handler is called here.
-      const eventId = delivery.message_type === 'notification'
-        && eventType === 'channel.channel_points_custom_reward_redemption.add'
-        ? requiredString(eventPayload.id, 'redemption_id') : delivery.message_id;
+      const eventId =
+        delivery.message_type === 'notification' &&
+        eventType === 'channel.channel_points_custom_reward_redemption.add'
+          ? requiredString(eventPayload.id, 'redemption_id')
+          : delivery.message_id;
 
       await client.query(
         'INSERT INTO twitch_eventsub_intake (workspace_id, delivery_id, subscription_id, message_id, message_type, event_type, event_version, event_id, event_payload) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb) ON CONFLICT (workspace_id, event_type, event_id) DO NOTHING',
-        [delivery.workspace_id, delivery.id, delivery.subscription_id,
-          delivery.message_id, delivery.message_type, eventType, eventVersion,
-          eventId, JSON.stringify(eventPayload)],
+        [
+          delivery.workspace_id,
+          delivery.id,
+          delivery.subscription_id,
+          delivery.message_id,
+          delivery.message_type,
+          eventType,
+          eventVersion,
+          eventId,
+          JSON.stringify(eventPayload),
+        ],
       );
       await client.query(
         "UPDATE twitch_eventsub_deliveries SET status = 'processed', processed_at = now(), attempts = attempts + 1, last_error = NULL WHERE id = $1 AND workspace_id = $2",

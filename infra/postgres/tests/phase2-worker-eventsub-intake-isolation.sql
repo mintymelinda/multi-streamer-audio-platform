@@ -24,14 +24,14 @@ END;
 $$;
 SET LOCAL ROLE platform_worker;
 DO $$
-DECLARE v_delivery_id uuid; v_workspace_id uuid;
+DECLARE delivery_id uuid; workspace_id uuid;
 BEGIN
-  SELECT d.id, d.workspace_id INTO v_delivery_id, v_workspace_id
-    FROM twitch_eventsub_deliveries d WHERE d.message_id = 'worker-intake-message';
+  SELECT id, d.workspace_id INTO delivery_id, workspace_id
+    FROM twitch_eventsub_deliveries d WHERE message_id = 'worker-intake-message';
   INSERT INTO twitch_eventsub_intake
     (workspace_id, delivery_id, subscription_id, message_id, message_type,
      event_type, event_version, event_id, event_payload)
-  VALUES (v_workspace_id, v_delivery_id, 'worker-intake-subscription',
+  VALUES (workspace_id, delivery_id, 'worker-intake-subscription',
     'worker-intake-message', 'notification',
     'channel.channel_points_custom_reward_redemption.add', '1',
     'redemption-123', '{"id":"redemption-123"}'::jsonb)
