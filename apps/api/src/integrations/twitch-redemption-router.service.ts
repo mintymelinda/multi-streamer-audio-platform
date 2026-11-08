@@ -135,6 +135,7 @@ export class TwitchRedemptionRouterService implements OnModuleInit, OnModuleDest
                JOIN workspaces AS workspace ON workspace.id = mapping.workspace_id
                JOIN platform_users AS owner ON owner.id = $3
               WHERE mapping.workspace_id = $1 AND mapping.twitch_reward_id = $2
+                AND workspace.owner_user_id = owner.id
                 AND workspace.status = 'active' AND owner.status = 'active'
               LIMIT 1`,
             [row.workspace_id, rewardId, row.service_actor_user_id],
