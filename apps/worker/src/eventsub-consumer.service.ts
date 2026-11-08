@@ -20,7 +20,7 @@ interface DeliveryRow {
   attempts: number;
 }
 interface EventSubEnvelope {
-  subscription?: { type?: unknown; version?: unknown; status?: unknown };
+  subscription?: Record<string, unknown>;
   event?: Record<string, unknown>;
 }
 function readSetting(fileVariable: string, directVariable: string): string {
