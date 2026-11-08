@@ -9,7 +9,13 @@ import { TwitchRewardsController } from './twitch-rewards.controller.js';
 import { TwitchRewardsService } from './twitch-rewards.service.js';
 
 @Module({
-  imports: [DatabaseModule, IdentityModule, OutboxModule, WorkspacesModule, TwitchIntegrationModule],
+  imports: [
+    DatabaseModule,
+    IdentityModule,
+    OutboxModule,
+    WorkspacesModule,
+    TwitchIntegrationModule,
+  ],
   controllers: [TwitchRewardsController],
   providers: [TwitchRewardsService, TwitchHelixService],
 })
