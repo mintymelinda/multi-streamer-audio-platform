@@ -313,8 +313,8 @@ export class RequestsService {
       { userId: actor.id, verifiedWorkspaceId: workspace.id },
       async (client) => {
         await this.lockQueueSettings(client, workspace.id);
-        const currentIds = await this.getQueuedRequestIds(client, workspace.id);
-        this.assertQueuePermutation(currentIds, requestIds);
+        const current = await this.getQueuedRequests(client, workspace.id);
+        this.assertQueuePermutation(current, requestIds);
         await this.rewriteQueueOrder(client, workspace.id, requestIds);
         await this.outbox.append(client, {
           workspaceId: workspace.id as VerifiedWorkspaceId,
@@ -338,12 +338,11 @@ export class RequestsService {
       { userId: actor.id, verifiedWorkspaceId: workspace.id },
       async (client) => {
         await this.lockQueueSettings(client, workspace.id);
-        const currentIds = await this.getQueuedRequestIds(client, workspace.id);
-        if (!currentIds.includes(requestId)) {
-          throw new NotFoundException('Queued request not found.');
-        }
+        const current = await this.getQueuedRequests(client, workspace.id);
+        const currentIds = current.map((row) => row.request_id);
         const nextIds = moveQueueItem(currentIds, requestId, 'front');
         if (!nextIds) throw new NotFoundException('Queued request not found.');
+        await this.setQueuePriority(client, workspace.id, requestId, 100);
         await this.rewriteQueueOrder(client, workspace.id, nextIds);
         await this.outbox.append(client, {
           workspaceId: workspace.id as VerifiedWorkspaceId,
@@ -368,12 +367,11 @@ export class RequestsService {
       { userId: actor.id, verifiedWorkspaceId: workspace.id },
       async (client) => {
         await this.lockQueueSettings(client, workspace.id);
-        const currentIds = await this.getQueuedRequestIds(client, workspace.id);
-        if (!currentIds.includes(requestId)) {
-          throw new NotFoundException('Queued request not found.');
-        }
+        const current = await this.getQueuedRequests(client, workspace.id);
+        const currentIds = current.map((row) => row.request_id);
         const nextIds = moveQueueItem(currentIds, requestId, position);
         if (!nextIds) throw new NotFoundException('Queued request not found.');
+        await this.setQueuePriority(client, workspace.id, requestId, position === 'front' ? 100 : 0);
         await this.rewriteQueueOrder(client, workspace.id, nextIds);
         await this.outbox.append(client, {
           workspaceId: workspace.id as VerifiedWorkspaceId,
@@ -399,9 +397,9 @@ export class RequestsService {
     );
   }
 
-  private async getQueuedRequestIds(client: PoolClient, workspaceId: VerifiedWorkspaceId) {
-    const result = await client.query<{ request_id: string }>(
-      `SELECT q.request_id
+  private async getQueuedRequests(client: PoolClient, workspaceId: VerifiedWorkspaceId) {
+    const result = await client.query<{ request_id: string; priority: number }>(
+      `SELECT q.request_id, q.priority
          FROM logical_queue_entries q
          JOIN media_requests r ON r.id = q.request_id AND r.workspace_id = q.workspace_id
         WHERE q.workspace_id = $1 AND r.status = 'queued'
@@ -409,15 +407,46 @@ export class RequestsService {
         FOR UPDATE OF q`,
       [workspaceId],
     );
-    return result.rows.map((row) => row.request_id);
+    return result.rows;
   }
 
-  private assertQueuePermutation(currentIds: string[], requestedIds: string[]) {
+  private assertQueuePermutation(
+    current: Array<{ request_id: string; priority: number }>,
+    requestedIds: string[],
+  ) {
+    const currentIds = current.map((row) => row.request_id);
     if (!isExactQueuePermutation(currentIds, requestedIds)) {
       throw new ConflictException(
         'Queue order must contain every currently queued request exactly once.',
       );
     }
+    const priorityById = new Map(current.map((row) => [row.request_id, row.priority]));
+    let previousPriority = Number.POSITIVE_INFINITY;
+    for (const requestId of requestedIds) {
+      const priority = priorityById.get(requestId);
+      if (priority === undefined || priority > previousPriority) {
+        throw new ConflictException(
+          'Manual reordering must preserve priority groups; promote a request to change its priority.',
+        );
+      }
+      previousPriority = priority;
+    }
+  }
+
+  private async setQueuePriority(
+    client: PoolClient,
+    workspaceId: VerifiedWorkspaceId,
+    requestId: string,
+    priority: number,
+  ) {
+    await client.query(
+      'UPDATE logical_queue_entries SET priority = $3 WHERE workspace_id = $1 AND request_id = $2',
+      [workspaceId, requestId, priority],
+    );
+    await client.query(
+      'UPDATE media_requests SET priority = $3 WHERE workspace_id = $1 AND id = $2',
+      [workspaceId, requestId, priority],
+    );
   }
 
   private async rewriteQueueOrder(
@@ -445,12 +474,8 @@ export class RequestsService {
     );
     for (const [index, requestId] of requestIds.entries()) {
       await client.query(
-        'UPDATE logical_queue_entries SET priority = 0, sequence = $3 WHERE workspace_id = $1 AND request_id = $2',
+        'UPDATE logical_queue_entries SET sequence = $3 WHERE workspace_id = $1 AND request_id = $2',
         [workspaceId, requestId, index + 1],
-      );
-      await client.query(
-        'UPDATE media_requests SET priority = 0 WHERE workspace_id = $1 AND id = $2',
-        [workspaceId, requestId],
       );
     }
     await client.query(
