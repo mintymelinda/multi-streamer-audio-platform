@@ -1,0 +1,25 @@
+{
+  "name": "multi-streamer-audio-platform",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@12.18.0",
+  "engines": {
+    "node": ">=26.13.0 <27",
+    "pnpm": ">=12.18.0 <13"
+  },
+  "scripts": {
+    "dev:infra": "docker compose --env-file infra/compose/.env.example -f infra/compose/docker-compose.yml up -d",
+    "dev:infra:down": "docker compose --env-file infra/compose/.env.example -f infra/compose/docker-compose.yml down",
+    "lint": "biome lint .",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "node --test packages/contracts/test/*.test.mjs apps/api/test/*.test.mjs",
+    "build": "pnpm -r --if-present build",
+    "db:migrations:check": "node scripts/check-migrations.mjs"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.5",
+    "typescript": "7.0.2"
+  }
+}
