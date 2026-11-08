@@ -157,7 +157,7 @@ export class TwitchEventSubService {
     if (!record) throw new UnauthorizedException('Unknown Twitch EventSub subscription.');
     if (
       subscription?.type !== record.event_type ||
-      subscription.version !== record.event_version
+      subscription?.version !== record.event_version
     ) {
       throw new UnauthorizedException('Twitch EventSub subscription metadata does not match.');
     }
