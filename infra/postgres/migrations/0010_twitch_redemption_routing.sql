@@ -11,6 +11,7 @@ ALTER TABLE twitch_eventsub_intake
   ADD COLUMN routing_status text NOT NULL DEFAULT 'pending'
     CHECK (routing_status IN ('pending', 'processing', 'processed', 'ignored', 'failed')),
   ADD COLUMN routing_attempts integer NOT NULL DEFAULT 0 CHECK (routing_attempts >= 0),
+  ADD COLUMN routing_next_attempt_at timestamptz NOT NULL DEFAULT now(),
   ADD COLUMN routing_locked_at timestamptz,
   ADD COLUMN routing_lock_token uuid,
   ADD COLUMN routed_request_id uuid,
@@ -22,7 +23,7 @@ ALTER TABLE twitch_eventsub_intake
     REFERENCES media_requests(workspace_id, id) ON DELETE SET NULL (routed_request_id);
 
 CREATE INDEX twitch_eventsub_intake_routing
-  ON twitch_eventsub_intake (received_at, id)
+  ON twitch_eventsub_intake (routing_next_attempt_at, received_at, id)
   WHERE routing_status IN ('pending', 'processing');
 
 -- The API router may claim durable intake rows across workspaces. It then
