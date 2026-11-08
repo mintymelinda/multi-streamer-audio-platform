@@ -135,9 +135,9 @@ export class RequestsService {
     );
   }
 
-  async list(workspace: WorkspaceRequestContext) {
+  async list(workspace: WorkspaceRequestContext, userId: string) {
     return this.database.transaction(
-      { verifiedWorkspaceId: workspace.id },
+      { userId, verifiedWorkspaceId: workspace.id },
       async (client) => {
         const result = await client.query(
           'SELECT * FROM media_requests WHERE workspace_id = $1 ORDER BY submitted_at DESC LIMIT 100',
@@ -148,9 +148,9 @@ export class RequestsService {
     );
   }
 
-  async queue(workspace: WorkspaceRequestContext) {
+  async queue(workspace: WorkspaceRequestContext, userId: string) {
     return this.database.transaction(
-      { verifiedWorkspaceId: workspace.id },
+      { userId, verifiedWorkspaceId: workspace.id },
       async (client) => {
         const result = await client.query(
           `SELECT r.*, q.priority AS queue_priority, q.sequence AS queue_sequence, q.inserted_at
@@ -190,7 +190,7 @@ export class RequestsService {
           eventType: 'request.moderated',
           aggregateType: 'media_request',
           aggregateId: requestId,
-          idempotencyKey: `request.moderated:${requestId}:${target}:${Date.now()}`,
+          idempotencyKey: `request.moderated:${requestId}:${current.status}:${target}`,
           payload: { requestId, status: target, actorUserId: actor.id, reason: reason ?? null },
         });
         const updated = await client.query('SELECT * FROM media_requests WHERE id = $1', [requestId]);
