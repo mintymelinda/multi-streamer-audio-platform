@@ -33,6 +33,14 @@ interface RewardMappingRow {
 
 const REDEMPTION_EVENT = 'channel.channel_points_custom_reward_redemption.add';
 
+function httpStatus(error: unknown): number | undefined {
+  if (typeof error !== 'object' || error === null || !('getStatus' in error)) {
+    return undefined;
+  }
+  const getStatus = error.getStatus;
+  return typeof getStatus === 'function' ? getStatus.call(error) : undefined;
+}
+
 @Injectable()
 export class TwitchRedemptionRouterService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(TwitchRedemptionRouterService.name);
@@ -118,11 +126,15 @@ export class TwitchRedemptionRouterService implements OnModuleInit, OnModuleDest
         { userId: row.service_actor_user_id, verifiedWorkspaceId: row.workspace_id },
         (client) =>
           client.query<RewardMappingRow>(
-            `SELECT id, twitch_reward_id, feature_key, feature_settings, enabled, sync_state
-               FROM twitch_reward_mappings
-              WHERE workspace_id = $1 AND twitch_reward_id = $2
+            `SELECT mapping.id, mapping.twitch_reward_id, mapping.feature_key,
+                    mapping.feature_settings, mapping.enabled, mapping.sync_state
+               FROM twitch_reward_mappings AS mapping
+               JOIN workspaces AS workspace ON workspace.id = mapping.workspace_id
+               JOIN platform_users AS owner ON owner.id = $3
+              WHERE mapping.workspace_id = $1 AND mapping.twitch_reward_id = $2
+                AND workspace.status = 'active' AND owner.status = 'active'
               LIMIT 1`,
-            [row.workspace_id, rewardId],
+            [row.workspace_id, rewardId, row.service_actor_user_id],
           ),
       );
       const mapping = mappingResult.rows[0];
@@ -158,6 +170,7 @@ export class TwitchRedemptionRouterService implements OnModuleInit, OnModuleDest
         serviceActorUserId: row.service_actor_user_id,
         source: 'twitch_reward',
         ...requestInput,
+        priority: mapping.feature_settings.priority ?? 0,
         metadata: {
           ...requestInput.metadata,
           eventSubMessageId: row.message_id,
@@ -167,10 +180,9 @@ export class TwitchRedemptionRouterService implements OnModuleInit, OnModuleDest
       await this.finish(row, 'processed', typeof request.id === 'string' ? request.id : null, null);
     } catch (error) {
       const terminal = row.routing_attempts >= 8;
+      const statusCode = httpStatus(error);
       const code =
-        typeof error === 'object' && error !== null && 'getStatus' in error &&
-        typeof error.getStatus === 'function' &&
-        (error.getStatus() === 400 || error.getStatus() === 409)
+        statusCode === 400 || statusCode === 409
           ? 'request_policy_rejected'
           : 'redemption_routing_failed';
       await this.finish(row, terminal || code === 'request_policy_rejected' ? 'failed' : 'pending', null, code);
