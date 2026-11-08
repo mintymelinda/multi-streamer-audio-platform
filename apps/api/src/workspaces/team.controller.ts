@@ -1,14 +1,27 @@
 import {
-  Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards,
+  Body, Controller, Delete, Get, NotFoundException, Param, Patch, Post, Req,
+  UnauthorizedException, UseGuards,
 } from '@nestjs/common';
+import type { AuthenticatedUser, HttpRequest, WorkspaceRequestContext } from '../identity/http.types.js';
 import { CsrfGuard } from '../identity/csrf.guard.js';
-import type { HttpRequest } from '../identity/http.types.js';
 import { SessionGuard } from '../identity/session.guard.js';
 import { WorkspaceAccessGuard } from './workspace-access.guard.js';
 import {
   RequireWorkspacePermission, WorkspacePermissionGuard,
 } from './workspace-permission.guard.js';
 import { TeamService } from './team.service.js';
+
+function requireAuthenticatedUser(request: HttpRequest): AuthenticatedUser {
+  const user = request.user;
+  if (!user) throw new UnauthorizedException('Sign-in is required.');
+  return user;
+}
+
+function requireWorkspaceContext(request: HttpRequest): WorkspaceRequestContext {
+  const workspace = request.workspace;
+  if (!workspace) throw new NotFoundException('Workspace not found.');
+  return workspace;
+}
 
 @Controller('workspaces/:workspaceId')
 @UseGuards(SessionGuard, WorkspaceAccessGuard, CsrfGuard, WorkspacePermissionGuard)
@@ -18,12 +31,12 @@ export class TeamController {
 
   @Get('members')
   listMembers(@Req() request: HttpRequest, @Param('workspaceId') workspaceId: string) {
-    return this.team.listMembers(request.user!.id, workspaceId);
+    return this.team.listMembers(requireAuthenticatedUser(request).id, workspaceId);
   }
 
   @Get('invitations')
   listInvitations(@Req() request: HttpRequest, @Param('workspaceId') workspaceId: string) {
-    return this.team.listWorkspaceInvitations(request.user!.id, workspaceId);
+    return this.team.listWorkspaceInvitations(requireAuthenticatedUser(request).id, workspaceId);
   }
 
   @Post('invitations')
@@ -35,9 +48,9 @@ export class TeamController {
     const value = typeof body === 'object' && body !== null ? body : {};
     const username = 'twitchUsername' in value ? value.twitchUsername : undefined;
     const role = 'role' in value ? value.role : undefined;
-    return this.team.createInvitation(
-      request.user!, workspaceId, username, role, request.workspace!.role,
-    );
+    const user = requireAuthenticatedUser(request);
+    const workspaceRole = requireWorkspaceContext(request).role;
+    return this.team.createInvitation(user, workspaceId, username, role, workspaceRole);
   }
 
   @Delete('invitations/:invitationId')
@@ -46,7 +59,9 @@ export class TeamController {
     @Param('workspaceId') workspaceId: string,
     @Param('invitationId') invitationId: string,
   ) {
-    return this.team.cancelInvitation(request.user!, workspaceId, invitationId);
+    return this.team.cancelInvitation(
+      requireAuthenticatedUser(request), workspaceId, invitationId,
+    );
   }
 
   @Patch('members/:memberUserId')
@@ -57,9 +72,9 @@ export class TeamController {
     @Body() body: unknown,
   ) {
     const role = typeof body === 'object' && body !== null && 'role' in body ? body.role : undefined;
-    return this.team.changeMemberRole(
-      request.user!, workspaceId, memberUserId, role, request.workspace!.role,
-    );
+    const user = requireAuthenticatedUser(request);
+    const workspaceRole = requireWorkspaceContext(request).role;
+    return this.team.changeMemberRole(user, workspaceId, memberUserId, role, workspaceRole);
   }
 
   @Delete('members/:memberUserId')
@@ -68,7 +83,9 @@ export class TeamController {
     @Param('workspaceId') workspaceId: string,
     @Param('memberUserId') memberUserId: string,
   ) {
-    return this.team.revokeMember(request.user!, workspaceId, memberUserId);
+    return this.team.revokeMember(
+      requireAuthenticatedUser(request), workspaceId, memberUserId,
+    );
   }
 }
 
@@ -79,16 +96,16 @@ export class MyInvitationsController {
 
   @Get()
   list(@Req() request: HttpRequest) {
-    return this.team.listMyInvitations(request.user!);
+    return this.team.listMyInvitations(requireAuthenticatedUser(request));
   }
 
   @Post(':invitationId/accept')
   accept(@Req() request: HttpRequest, @Param('invitationId') invitationId: string) {
-    return this.team.respondToInvitation(request.user!, invitationId, true);
+    return this.team.respondToInvitation(requireAuthenticatedUser(request), invitationId, true);
   }
 
   @Post(':invitationId/decline')
   decline(@Req() request: HttpRequest, @Param('invitationId') invitationId: string) {
-    return this.team.respondToInvitation(request.user!, invitationId, false);
+    return this.team.respondToInvitation(requireAuthenticatedUser(request), invitationId, false);
   }
 }
