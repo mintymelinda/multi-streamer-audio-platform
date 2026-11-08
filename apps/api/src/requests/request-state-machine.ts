@@ -1,6 +1,17 @@
 export type RequestStatus =
-  | 'submitted' | 'pending' | 'held' | 'approved' | 'queued' | 'resolving'
-  | 'ready' | 'playing' | 'completed' | 'rejected' | 'cancelled' | 'failed' | 'skipped';
+  | 'submitted'
+  | 'pending'
+  | 'held'
+  | 'approved'
+  | 'queued'
+  | 'resolving'
+  | 'ready'
+  | 'playing'
+  | 'completed'
+  | 'rejected'
+  | 'cancelled'
+  | 'failed'
+  | 'skipped';
 
 const transitions: Readonly<Record<RequestStatus, ReadonlySet<RequestStatus>>> = {
   submitted: new Set(['pending', 'held', 'approved', 'rejected', 'cancelled']),
@@ -39,7 +50,9 @@ export function classifyModeration(
   if (mode === 'automatic') return 'approved';
   const haystack = `${title} ${artist ?? ''}`.normalize('NFKC').toLowerCase();
   const matches = (terms: readonly string[]) =>
-    terms.some((term) => term.trim().length > 0 && haystack.includes(term.normalize('NFKC').toLowerCase()));
+    terms.some(
+      (term) => term.trim().length > 0 && haystack.includes(term.normalize('NFKC').toLowerCase()),
+    );
   if (matches(rejectTerms)) return 'rejected';
   if (matches(holdTerms)) return 'held';
   return 'approved';
