@@ -1,5 +1,10 @@
 import {
-  CanActivate, ExecutionContext, ForbiddenException, Injectable, SetMetadata,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  SetMetadata,
+  type CanActivate,
+  type ExecutionContext,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import type { HttpRequest } from '../identity/http.types.js';
@@ -13,7 +18,7 @@ export function RequireWorkspacePermission(permission: WorkspacePermission) {
 
 @Injectable()
 export class WorkspacePermissionGuard implements CanActivate {
-  constructor(private readonly reflector: Reflector) {}
+  constructor(@Inject(Reflector) private readonly reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
     const permission = this.reflector.getAllAndOverride<WorkspacePermission>(
