@@ -33,7 +33,8 @@ CREATE POLICY twitch_eventsub_intake_api_router
   ON twitch_eventsub_intake TO platform_runtime
   USING (true)
   WITH CHECK (true);
-GRANT SELECT, UPDATE (
+GRANT SELECT ON twitch_eventsub_intake TO platform_runtime;
+GRANT UPDATE (
   routing_status,
   routing_attempts,
   routing_next_attempt_at,
