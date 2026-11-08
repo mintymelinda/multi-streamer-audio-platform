@@ -371,7 +371,12 @@ export class RequestsService {
         const currentIds = current.map((row) => row.request_id);
         const nextIds = moveQueueItem(currentIds, requestId, position);
         if (!nextIds) throw new NotFoundException('Queued request not found.');
-        await this.setQueuePriority(client, workspace.id, requestId, position === 'front' ? 100 : 0);
+        await this.setQueuePriority(
+          client,
+          workspace.id,
+          requestId,
+          position === 'front' ? 100 : 0,
+        );
         await this.rewriteQueueOrder(client, workspace.id, nextIds);
         await this.outbox.append(client, {
           workspaceId: workspace.id as VerifiedWorkspaceId,
