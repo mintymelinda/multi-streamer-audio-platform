@@ -4,11 +4,13 @@ BEGIN;
 DO $$
 DECLARE actor_id uuid := gen_random_uuid(); workspace_id uuid := gen_random_uuid();
 BEGIN
+  PERFORM set_config('app.user_id', actor_id::text, true);
   INSERT INTO platform_users (id, twitch_user_id) VALUES (actor_id, '950000002');
   INSERT INTO workspaces (id, name, owner_user_id, broadcaster_twitch_user_id)
     VALUES (workspace_id, 'EventSub intake isolation', actor_id, '950000002');
   INSERT INTO workspace_memberships (workspace_id, user_id, role)
     VALUES (workspace_id, actor_id, 'owner');
+  PERFORM set_config('app.workspace_id', workspace_id::text, true);
   INSERT INTO twitch_eventsub_subscriptions
     (subscription_id, workspace_id, event_type, event_version, status, secret_envelope)
   VALUES ('worker-intake-subscription', workspace_id,
