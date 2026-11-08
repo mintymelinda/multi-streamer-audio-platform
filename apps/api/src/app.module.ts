@@ -8,7 +8,14 @@ import { TwitchEventSubModule } from './integrations/twitch-eventsub.module.js';
 import { WorkspacesModule } from './workspaces/workspaces.module.js';
 
 @Module({
-  imports: [DatabaseModule, IdentityModule, WorkspacesModule, OutboxModule, RequestsModule, TwitchEventSubModule],
+  imports: [
+    DatabaseModule,
+    IdentityModule,
+    WorkspacesModule,
+    OutboxModule,
+    RequestsModule,
+    TwitchEventSubModule,
+  ],
   controllers: [HealthController],
 })
 export class AppModule {}
