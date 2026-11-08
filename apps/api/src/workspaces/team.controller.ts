@@ -5,7 +5,6 @@ import {
   Get,
   Inject,
   NotFoundException,
-  Param,
   Patch,
   Post,
   Req,
@@ -45,19 +44,18 @@ export class TeamController {
   constructor(@Inject(TeamService) private readonly team: TeamService) {}
 
   @Get('members')
-  listMembers(@Req() request: HttpRequest, @Param('workspaceId') workspaceId: string) {
-    return this.team.listMembers(requireAuthenticatedUser(request).id, workspaceId);
+  listMembers(@Req() request: HttpRequest) {
+    return this.team.listMembers(requireAuthenticatedUser(request).id, requireWorkspaceContext(request).id);
   }
 
   @Get('invitations')
-  listInvitations(@Req() request: HttpRequest, @Param('workspaceId') workspaceId: string) {
-    return this.team.listWorkspaceInvitations(requireAuthenticatedUser(request).id, workspaceId);
+  listInvitations(@Req() request: HttpRequest) {
+    return this.team.listWorkspaceInvitations(requireAuthenticatedUser(request).id, requireWorkspaceContext(request).id);
   }
 
   @Post('invitations')
   createInvitation(
     @Req() request: HttpRequest,
-    @Param('workspaceId') workspaceId: string,
     @Body() body: unknown,
   ) {
     const value = typeof body === 'object' && body !== null ? body : {};
@@ -65,7 +63,7 @@ export class TeamController {
     const role = 'role' in value ? value.role : undefined;
     const user = requireAuthenticatedUser(request);
     const workspaceRole = requireWorkspaceContext(request).role;
-    return this.team.createInvitation(user, workspaceId, username, role, workspaceRole);
+    return this.team.createInvitation(user, requireWorkspaceContext(request).id, username, role, workspaceRole);
   }
 
   @Delete('invitations/:invitationId')
@@ -74,7 +72,7 @@ export class TeamController {
     @Param('workspaceId') workspaceId: string,
     @Param('invitationId') invitationId: string,
   ) {
-    return this.team.cancelInvitation(requireAuthenticatedUser(request), workspaceId, invitationId);
+    return this.team.cancelInvitation(requireAuthenticatedUser(request), requireWorkspaceContext(request).id, invitationId);
   }
 
   @Patch('members/:memberUserId')
@@ -88,7 +86,7 @@ export class TeamController {
       typeof body === 'object' && body !== null && 'role' in body ? body.role : undefined;
     const user = requireAuthenticatedUser(request);
     const workspaceRole = requireWorkspaceContext(request).role;
-    return this.team.changeMemberRole(user, workspaceId, memberUserId, role, workspaceRole);
+    return this.team.changeMemberRole(user, requireWorkspaceContext(request).id, memberUserId, role, workspaceRole);
   }
 
   @Delete('members/:memberUserId')
@@ -97,7 +95,7 @@ export class TeamController {
     @Param('workspaceId') workspaceId: string,
     @Param('memberUserId') memberUserId: string,
   ) {
-    return this.team.revokeMember(requireAuthenticatedUser(request), workspaceId, memberUserId);
+    return this.team.revokeMember(requireAuthenticatedUser(request), requireWorkspaceContext(request).id, memberUserId);
   }
 }
 
