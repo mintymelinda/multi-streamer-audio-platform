@@ -547,6 +547,7 @@ export class RequestsService {
     return this.database.transaction(
       { userId: actor.id, verifiedWorkspaceId: workspace.id },
       async (client) => {
+        await this.lockQueueSettings(client, workspace.id);
         const current = await this.getRequestForUpdate(client, workspace.id, requestId);
         if (
           current.submitted_by_user_id !== actor.id &&
