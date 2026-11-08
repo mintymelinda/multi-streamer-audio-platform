@@ -90,7 +90,6 @@ function featureSettings(feature: ReturnType<typeof featureKey>, value: unknown)
 export class TwitchRewardsController {
   constructor(@Inject(TwitchRewardsService) private readonly rewards: TwitchRewardsService) {}
 
-
   @Get()
   @RequireWorkspacePermission('workspace:read')
   listRemoteRewards(@Req() request: HttpRequest) {
@@ -113,10 +112,7 @@ export class TwitchRewardsController {
     if (data.isEnabled !== undefined && typeof data.isEnabled !== 'boolean') {
       throw new BadRequestException('isEnabled must be a boolean.');
     }
-    if (
-      data.isUserInputRequired !== undefined &&
-      typeof data.isUserInputRequired !== 'boolean'
-    ) {
+    if (data.isUserInputRequired !== undefined && typeof data.isUserInputRequired !== 'boolean') {
       throw new BadRequestException('isUserInputRequired must be a boolean.');
     }
     const reward: CreateTwitchCustomReward = {
@@ -179,10 +175,7 @@ export class TwitchRewardsController {
   @Delete(':rewardId')
   @UseGuards(CsrfGuard)
   @RequireWorkspacePermission('workspace:manage')
-  async deleteRemoteReward(
-    @Req() request: HttpRequest,
-    @Param('rewardId') rewardId: string,
-  ) {
+  async deleteRemoteReward(@Req() request: HttpRequest, @Param('rewardId') rewardId: string) {
     const id = requiredString(rewardId, 'rewardId', 128);
     await this.rewards.deleteRemoteReward(workspace(request), user(request), id);
     return { deleted: true, rewardId: id };
