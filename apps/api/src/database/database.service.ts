@@ -1,10 +1,11 @@
+import type { VerifiedWorkspaceId } from '@platform/contracts';
 import { Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import { readFileSync } from 'node:fs';
 import { Pool, type PoolClient, type QueryResult, type QueryResultRow } from 'pg';
 
 export interface DatabaseContext {
   userId?: string;
-  verifiedWorkspaceId?: string;
+  verifiedWorkspaceId?: VerifiedWorkspaceId;
   twitchLookupId?: string;
 }
 
