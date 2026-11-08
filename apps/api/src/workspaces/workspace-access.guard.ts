@@ -23,10 +23,8 @@ export class WorkspaceAccessGuard implements CanActivate {
       throw new NotFoundException('Workspace not found.');
     }
     const userId = user.id;
-    const result = await this.database.transaction(
-      { userId, workspaceId },
-      (client) =>
-        client.query<{
+    const result = await this.database.transaction({ userId, workspaceId }, (client) =>
+      client.query<{
           role: WorkspaceRequestContext['role'];
           status: WorkspaceRequestContext['status'];
         }>(
