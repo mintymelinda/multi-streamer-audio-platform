@@ -150,7 +150,6 @@ test('does not refresh a broadcaster token that remains valid beyond the refresh
   }
 });
 
-
 test('marks the integration for reauthorization when Twitch rejects the refreshed broadcaster identity or scope', async () => {
   const fixture = setupCredential(new Date(Date.now() + 30_000).toISOString());
   const originalFetch = globalThis.fetch;
