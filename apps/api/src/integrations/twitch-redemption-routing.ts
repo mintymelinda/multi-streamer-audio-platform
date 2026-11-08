@@ -19,7 +19,13 @@ export function buildTwitchRedemptionRequest(
   const rawInput = typeof event.user_input === 'string' ? event.user_input.trim() : '';
   if (!rawInput || rawInput.length > 500) return null;
 
-  const isHttpUrl = /^https?:\/\//i.test(rawInput);
+  let isHttpUrl = false;
+  try {
+    const parsedUrl = new URL(rawInput);
+    isHttpUrl = parsedUrl.protocol === 'http:' || parsedUrl.protocol === 'https:';
+  } catch {
+    isHttpUrl = false;
+  }
   if (inputMode === 'url_only' && !isHttpUrl) return null;
 
   const userId = typeof event.user_id === 'string' ? event.user_id : undefined;
