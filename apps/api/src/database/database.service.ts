@@ -4,7 +4,7 @@ import { Pool, type PoolClient, type QueryResult, type QueryResultRow } from 'pg
 
 export interface DatabaseContext {
   userId?: string;
-  workspaceId?: string;
+  verifiedWorkspaceId?: string;
   twitchLookupId?: string;
 }
 
@@ -60,9 +60,9 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
       if (context.userId) {
         await client.query("SELECT set_config('app.user_id', $1, true)", [context.userId]);
       }
-      if (context.workspaceId) {
+      if (context.verifiedWorkspaceId) {
         await client.query("SELECT set_config('app.workspace_id', $1, true)", [
-          context.workspaceId,
+          context.verifiedWorkspaceId,
         ]);
       }
       if (context.twitchLookupId) {
