@@ -35,7 +35,7 @@ pnpm test
 pnpm build
 ```
 
-The root scripts are the canonical local equivalents of CI quality gates.
+The root scripts are the canonical local equivalents of CI quality gates. Exact direct dependency versions are pinned in workspace manifests. The pnpm lockfile must be generated and committed from a network-enabled environment before Phase 0 is merged; CI currently bootstraps it without frozen-lockfile enforcement.
 
 ## Configuration policy
 

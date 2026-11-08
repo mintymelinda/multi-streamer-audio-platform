@@ -31,8 +31,13 @@ jobs:
           node-version: 26.13.0
           cache: pnpm
 
+      # The initial lockfile is generated in the first network-enabled CI run.
+      # Switch to --frozen-lockfile before merging Phase 0.
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Validate local infrastructure definition
+        run: docker compose --env-file infra/compose/.env.example -f infra/compose/docker-compose.yml config --quiet
 
       - name: Lint
         run: pnpm lint

@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import { ConsoleLogger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
@@ -17,6 +18,7 @@ async function bootstrap(): Promise<void> {
           : randomUUID();
       },
     }),
+    { logger: new ConsoleLogger({ json: true }) },
   );
 
   app.enableShutdownHooks();
