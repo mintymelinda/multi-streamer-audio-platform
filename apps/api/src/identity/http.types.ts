@@ -1,3 +1,5 @@
+import type { VerifiedWorkspaceId } from '@platform/contracts';
+
 export interface AuthenticatedUser {
   id: string;
   twitchUserId: string;
@@ -6,7 +8,7 @@ export interface AuthenticatedUser {
 }
 
 export interface WorkspaceRequestContext {
-  id: string;
+  id: VerifiedWorkspaceId;
   role: 'owner' | 'admin' | 'moderator' | 'viewer';
   status: 'active' | 'restricted' | 'suspended';
 }
