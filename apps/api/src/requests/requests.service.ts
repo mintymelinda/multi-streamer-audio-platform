@@ -51,11 +51,10 @@ export class RequestsService {
     if (input.mediaUrl && !/^https?:\/\//i.test(input.mediaUrl)) {
       throw new ConflictException('Media URL must use HTTP or HTTPS.');
     }
+    const databaseUserId = input.actor?.id ?? input.serviceActorUserId;
     return this.database.transaction(
       {
-        ...((input.actor?.id ?? input.serviceActorUserId)
-          ? { userId: input.actor?.id ?? input.serviceActorUserId }
-          : {}),
+        ...(databaseUserId ? { userId: databaseUserId } : {}),
         verifiedWorkspaceId: input.workspace.id,
       },
       async (client) => {
