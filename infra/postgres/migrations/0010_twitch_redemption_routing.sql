@@ -19,7 +19,7 @@ ALTER TABLE twitch_eventsub_intake
     CHECK ((routing_locked_at IS NULL) = (routing_lock_token IS NULL)),
   ADD CONSTRAINT twitch_eventsub_intake_request_fk
     FOREIGN KEY (workspace_id, routed_request_id)
-    REFERENCES media_requests(workspace_id, id) ON DELETE SET NULL;
+    REFERENCES media_requests(workspace_id, id) ON DELETE SET NULL (routed_request_id);
 
 CREATE INDEX twitch_eventsub_intake_routing
   ON twitch_eventsub_intake (received_at, id)
