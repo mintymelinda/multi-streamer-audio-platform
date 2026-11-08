@@ -1,12 +1,23 @@
-import { ForbiddenException, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Inject,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { DatabaseService } from '../database/database.service.js';
 import { isSafeLocalReturnPath, newOpaqueToken, sha256 } from './security.js';
 import { getTwitchAppConfig } from './twitch-app-config.js';
 
-interface TwitchTokenResponse { access_token?: string }
-interface TwitchValidationResponse { client_id?: string; user_id?: string; expires_in?: number }
+interface TwitchTokenResponse {
+  access_token?: string;
+}
+interface TwitchValidationResponse {
+  client_id?: string;
+  user_id?: string;
+  expires_in?: number;
+}
 
 export interface NewLoginSession {
   userId: string;
@@ -63,7 +74,9 @@ export class AuthService {
 
   async resolveSession(sessionToken: string): Promise<SessionIdentity | null> {
     const sessionResult = await this.database.query<{
-      id: string; user_id: string; csrf_token_hash: string;
+      id: string;
+      user_id: string;
+      csrf_token_hash: string;
     }>(
       'SELECT id, user_id, csrf_token_hash FROM user_sessions WHERE session_token_hash = $1 AND revoked_at IS NULL AND expires_at > now() LIMIT 1',
       [sha256(sessionToken)],
