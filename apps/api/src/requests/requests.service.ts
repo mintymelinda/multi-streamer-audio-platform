@@ -70,7 +70,19 @@ export class RequestsService {
             'SELECT * FROM media_requests WHERE workspace_id = $1 AND source = $2 AND source_event_id = $3',
             [input.workspace.id, input.source, input.sourceEventId],
           );
-          if (duplicate.rows[0]) return duplicate.rows[0];
+          if (duplicate.rows[0]) {
+            const existing = duplicate.rows[0] as {
+              submitted_by_user_id: string | null;
+              requester_twitch_user_id: string | null;
+            };
+            const sameSubmitter =
+              (input.actor?.id ?? null) === existing.submitted_by_user_id &&
+              (requesterId ?? null) === existing.requester_twitch_user_id;
+            if (!sameSubmitter) {
+              throw new ConflictException('This idempotency key has already been used.');
+            }
+            return duplicate.rows[0];
+          }
         }
 
         const active =
