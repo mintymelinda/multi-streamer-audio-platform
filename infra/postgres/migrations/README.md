@@ -8,4 +8,15 @@ Schema migrations are immutable, ordered SQL files named `NNNN_short_description
 - Prefer expand/contract changes so application and worker versions can overlap safely during deployment.
 - Include tenant ownership columns, RLS policies, forced RLS, indexes, and default privileges in the migration that creates tenant data.
 - The application runtime role must not own tables and must not have `BYPASSRLS`.
-- CI validates file naming/order and tests the local role-bootstrap SQL. Database-specific migration execution checks become active when the first migration is added.
+- The migrator is a separate schema owner with no superuser or `BYPASSRLS` privilege.
+- The application must authenticate the user and verify workspace membership before setting transaction-local `app.user_id` and `app.workspace_id`. RLS is an additional boundary, not a substitute for authorization.
+- Use transaction-local settings only. Never use session-level `SET` for tenant context with pooled connections.
+- CI applies every migration using the migrator role and executes tenant-isolation tests using the restricted runtime role.
+
+## Local migration checks
+
+Start the local services with `pnpm dev:infra`, then apply the role bootstrap and migrations using the local-only credentials from the Compose example. Do not reuse those credentials outside local development. The CI workflow is the canonical automated integration check.
+
+## First migration
+
+`0001_identity_workspaces_authorization.sql` establishes stable Twitch-ID accounts, explicit workspaces, one-owned-workspace enforcement, protected owner membership, team roles/invitations, server-side session records, OAuth state, append-only audit writes, and RLS policies.
