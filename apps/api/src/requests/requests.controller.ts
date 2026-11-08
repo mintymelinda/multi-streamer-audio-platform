@@ -56,9 +56,7 @@ function stringArray(value: unknown, field: string): string[] {
   if (
     !Array.isArray(value) ||
     value.length > 50 ||
-    value.some(
-      (item) => typeof item !== 'string' || item.trim().length === 0 || item.length > 100,
-    )
+    value.some((item) => typeof item !== 'string' || item.trim().length === 0 || item.length > 100)
   ) {
     throw new BadRequestException(
       `${field} must contain up to 50 non-empty strings of at most 100 characters.`,
