@@ -270,7 +270,7 @@ importers:
         version: link:../../packages/contracts
       bullmq:
         specifier: 6.7.0
-        version: 6.7.0(ioredis@5.6.1)(pg@8.16.3)
+        version: 6.7.0(ioredis@6.0.0)(pg@8.23.1)
       ioredis:
         specifier: 6.0.0
         version: 6.0.0
