@@ -15,7 +15,8 @@
     "format:check": "biome format .",
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "node --test packages/contracts/test/*.test.mjs",
-    "build": "pnpm -r --if-present build"
+    "build": "pnpm -r --if-present build",
+    "db:migrations:check": "node scripts/check-migrations.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.5",
