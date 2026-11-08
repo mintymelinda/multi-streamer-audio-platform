@@ -303,6 +303,155 @@ export class RequestsService {
     );
   }
 
+  async reorderQueue(
+    workspace: WorkspaceRequestContext,
+    actor: AuthenticatedUser,
+    requestIds: string[],
+  ) {
+    return this.database.transaction(
+      { userId: actor.id, verifiedWorkspaceId: workspace.id },
+      async (client) => {
+        await this.lockQueueSettings(client, workspace.id);
+        const currentIds = await this.getQueuedRequestIds(client, workspace.id);
+        this.assertQueuePermutation(currentIds, requestIds);
+        await this.rewriteQueueOrder(client, workspace.id, requestIds);
+        await this.outbox.append(client, {
+          workspaceId: workspace.id as VerifiedWorkspaceId,
+          eventType: 'queue.reordered',
+          aggregateType: 'logical_queue',
+          aggregateId: workspace.id,
+          idempotencyKey: `queue.reordered:${workspace.id}:${randomUUID()}`,
+          payload: { requestIds, actorUserId: actor.id },
+        });
+        return { requestIds };
+      },
+    );
+  }
+
+  async promoteQueueRequest(
+    workspace: WorkspaceRequestContext,
+    actor: AuthenticatedUser,
+    requestId: string,
+  ) {
+    return this.database.transaction(
+      { userId: actor.id, verifiedWorkspaceId: workspace.id },
+      async (client) => {
+        await this.lockQueueSettings(client, workspace.id);
+        const currentIds = await this.getQueuedRequestIds(client, workspace.id);
+        if (!currentIds.includes(requestId)) {
+          throw new NotFoundException('Queued request not found.');
+        }
+        const nextIds = [requestId, ...currentIds.filter((id) => id !== requestId)];
+        await this.rewriteQueueOrder(client, workspace.id, nextIds);
+        await this.outbox.append(client, {
+          workspaceId: workspace.id as VerifiedWorkspaceId,
+          eventType: 'queue.request.promoted',
+          aggregateType: 'media_request',
+          aggregateId: requestId,
+          idempotencyKey: `queue.request.promoted:${requestId}:${randomUUID()}`,
+          payload: { requestId, actorUserId: actor.id },
+        });
+        return { requestId, position: 1 };
+      },
+    );
+  }
+
+  async specialInsertQueueRequest(
+    workspace: WorkspaceRequestContext,
+    actor: AuthenticatedUser,
+    requestId: string,
+    position: 'front' | 'back',
+  ) {
+    return this.database.transaction(
+      { userId: actor.id, verifiedWorkspaceId: workspace.id },
+      async (client) => {
+        await this.lockQueueSettings(client, workspace.id);
+        const currentIds = await this.getQueuedRequestIds(client, workspace.id);
+        if (!currentIds.includes(requestId)) {
+          throw new NotFoundException('Queued request not found.');
+        }
+        const remaining = currentIds.filter((id) => id !== requestId);
+        const nextIds = position === 'front' ? [requestId, ...remaining] : [...remaining, requestId];
+        await this.rewriteQueueOrder(client, workspace.id, nextIds);
+        await this.outbox.append(client, {
+          workspaceId: workspace.id as VerifiedWorkspaceId,
+          eventType: 'queue.request.special_inserted',
+          aggregateType: 'media_request',
+          aggregateId: requestId,
+          idempotencyKey: `queue.request.special_inserted:${requestId}:${randomUUID()}`,
+          payload: { requestId, position, actorUserId: actor.id },
+        });
+        return { requestId, position };
+      },
+    );
+  }
+
+  private async lockQueueSettings(client: PoolClient, workspaceId: VerifiedWorkspaceId) {
+    await client.query(
+      'INSERT INTO workspace_request_settings (workspace_id) VALUES ($1) ON CONFLICT DO NOTHING',
+      [workspaceId],
+    );
+    await client.query(
+      'SELECT workspace_id FROM workspace_request_settings WHERE workspace_id = $1 FOR UPDATE',
+      [workspaceId],
+    );
+  }
+
+  private async getQueuedRequestIds(client: PoolClient, workspaceId: VerifiedWorkspaceId) {
+    const result = await client.query<{ request_id: string }>(
+      `SELECT q.request_id
+         FROM logical_queue_entries q
+         JOIN media_requests r ON r.id = q.request_id AND r.workspace_id = q.workspace_id
+        WHERE q.workspace_id = $1 AND r.status = 'queued'
+        ORDER BY q.priority DESC, q.sequence ASC
+        FOR UPDATE OF q`,
+      [workspaceId],
+    );
+    return result.rows.map((row) => row.request_id);
+  }
+
+  private assertQueuePermutation(currentIds: string[], requestedIds: string[]) {
+    if (
+      requestedIds.length !== currentIds.length ||
+      new Set(requestedIds).size !== requestedIds.length ||
+      requestedIds.some((id) => !currentIds.includes(id))
+    ) {
+      throw new ConflictException(
+        'Queue order must contain every currently queued request exactly once.',
+      );
+    }
+  }
+
+  private async rewriteQueueOrder(
+    client: PoolClient,
+    workspaceId: VerifiedWorkspaceId,
+    requestIds: string[],
+  ) {
+    const bounds = await client.query<{ offset: string }>(
+      'SELECT (COALESCE(MAX(sequence), 0) + count(*) + 1)::text AS offset FROM logical_queue_entries WHERE workspace_id = $1',
+      [workspaceId],
+    );
+    const offset = BigInt(bounds.rows[0]?.offset ?? '1');
+    await client.query(
+      'UPDATE logical_queue_entries SET sequence = sequence + $2::bigint WHERE workspace_id = $1',
+      [workspaceId, offset.toString()],
+    );
+    for (const [index, requestId] of requestIds.entries()) {
+      await client.query(
+        'UPDATE logical_queue_entries SET priority = 0, sequence = $3 WHERE workspace_id = $1 AND request_id = $2',
+        [workspaceId, requestId, index + 1],
+      );
+      await client.query(
+        'UPDATE media_requests SET priority = 0 WHERE workspace_id = $1 AND id = $2',
+        [workspaceId, requestId],
+      );
+    }
+    await client.query(
+      'UPDATE workspace_queue_counters SET next_sequence = $2 WHERE workspace_id = $1',
+      [workspaceId, requestIds.length + 1],
+    );
+  }
+
   async moderate(
     workspace: WorkspaceRequestContext,
     actor: AuthenticatedUser,
