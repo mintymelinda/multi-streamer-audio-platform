@@ -21,6 +21,5 @@ import { EventSubRecoveryService } from './eventsub-recovery.service.js';
   controllers: [TwitchEventSubController, EventSubRecoveryController],
   providers: [TwitchEventSubService, TwitchRedemptionRouterService, EventSubRecoveryService],
   exports: [TwitchEventSubService, EventSubRecoveryService],
-  exports: [TwitchEventSubService],
 })
 export class TwitchEventSubModule {}
