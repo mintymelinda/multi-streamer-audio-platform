@@ -11,13 +11,7 @@ import { EventSubRecoveryController } from './eventsub-recovery.controller.js';
 import { EventSubRecoveryService } from './eventsub-recovery.service.js';
 
 @Module({
-  imports: [
-    DatabaseModule,
-    IdentityModule,
-    OutboxModule,
-    RequestsModule,
-    WorkspacesModule,
-  ],
+  imports: [DatabaseModule, IdentityModule, OutboxModule, RequestsModule, WorkspacesModule],
   controllers: [TwitchEventSubController, EventSubRecoveryController],
   providers: [TwitchEventSubService, TwitchRedemptionRouterService, EventSubRecoveryService],
   exports: [TwitchEventSubService, EventSubRecoveryService],
