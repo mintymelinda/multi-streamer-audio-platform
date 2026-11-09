@@ -134,10 +134,10 @@ BEGIN
     RAISE EXCEPTION 'Failed outbox event could not be retried';
   END IF;
   UPDATE outbox_events
-     SET dispatch_status = 'dismissed', published_at = now()
+     SET dispatch_status = 'dismissed', published_at = NULL
    WHERE workspace_id = workspace_a AND id = outbox_id AND dispatch_status = 'pending';
   IF NOT EXISTS (
-    SELECT 1 FROM outbox_events WHERE id = outbox_id AND dispatch_status = 'dismissed'
+    SELECT 1 FROM outbox_events WHERE id = outbox_id AND dispatch_status = 'dismissed' AND published_at IS NULL
   ) THEN
     RAISE EXCEPTION 'Outbox event could not be dismissed';
   END IF;
