@@ -113,7 +113,8 @@ export class OutboxDispatcherService implements OnModuleInit, OnModuleDestroy {
         `WITH candidates AS (
            SELECT id
              FROM outbox_events
-            WHERE published_at IS NULL
+            WHERE dispatch_status = 'pending'
+              AND published_at IS NULL
               AND available_at <= now()
               AND (locked_at IS NULL OR locked_at < now() - interval '60 seconds')
             ORDER BY occurred_at ASC, id ASC
@@ -244,8 +245,8 @@ export class OutboxDispatcherService implements OnModuleInit, OnModuleDestroy {
       );
       const published = await this.pool.query(
         `UPDATE outbox_events
-            SET published_at = now(), locked_at = NULL, lock_token = NULL,
-                last_error_code = NULL
+            SET published_at = now(), dispatch_status = 'published',
+                locked_at = NULL, lock_token = NULL, last_error_code = NULL
           WHERE id = $1 AND published_at IS NULL AND lock_token = $2`,
         [row.id, row.lock_token],
       );
@@ -266,10 +267,20 @@ export class OutboxDispatcherService implements OnModuleInit, OnModuleDestroy {
       const delay = retryDelaySeconds(row.attempt_count);
       await this.pool.query(
         `UPDATE outbox_events
-            SET available_at = now() + ($2::text || ' seconds')::interval,
+            SET dispatch_status = CASE
+                  WHEN attempt_count >= 8 OR created_at < now() - interval '24 hours'
+                    THEN 'failed' ELSE 'pending' END,
+                available_at = CASE
+                  WHEN attempt_count >= 8 OR created_at < now() - interval '24 hours'
+                    THEN available_at
+                  ELSE now() + ($2::text || ' seconds')::interval END,
                 locked_at = NULL, lock_token = NULL,
-                last_error_code = 'redis_enqueue_failed'
-          WHERE id = $1 AND published_at IS NULL AND lock_token = $3`,
+                last_error_code = CASE
+                  WHEN attempt_count >= 8 OR created_at < now() - interval '24 hours'
+                    THEN 'outbox_dispatch_exhausted'
+                  ELSE 'redis_enqueue_failed' END
+          WHERE id = $1 AND published_at IS NULL
+            AND dispatch_status = 'pending' AND lock_token = $3`,
         [row.id, delay, row.lock_token],
       );
       this.logger.warn(`Outbox event ${row.id} enqueue failed; retry scheduled.`);
