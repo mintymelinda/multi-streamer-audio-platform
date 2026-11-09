@@ -3,7 +3,7 @@ CREATE TABLE spotify_oauth_transactions (
   id uuid PRIMARY KEY,
   state_hash text NOT NULL UNIQUE CHECK (state_hash ~ '^[a-f0-9]{64}$'),
   workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES platform_users(id) ON DELETE CASCADE,
   session_id uuid NOT NULL REFERENCES user_sessions(id) ON DELETE CASCADE,
   verifier_ciphertext text NOT NULL, verifier_nonce text NOT NULL, verifier_auth_tag text NOT NULL,
   verifier_wrapped_dek text NOT NULL, verifier_dek_nonce text NOT NULL,
