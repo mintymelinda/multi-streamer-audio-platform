@@ -9,10 +9,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import type { AuthenticatedUser, WorkspaceRequestContext } from '../identity/http.types.js';
-import {
-  getTwitchAppConfig,
-  getTwitchEventSubCallbackUrl,
-} from '../identity/twitch-app-config.js';
+import { getTwitchAppConfig, getTwitchEventSubCallbackUrl } from '../identity/twitch-app-config.js';
 import { TwitchIntegrationService } from './twitch-integration.service.js';
 
 export interface TwitchCustomReward {
@@ -97,14 +94,18 @@ export class TwitchHelixService {
         signal: AbortSignal.timeout(10_000),
       });
     } catch {
-      throw new ServiceUnavailableException('Twitch EventSub subscription creation is temporarily unavailable.');
+      throw new ServiceUnavailableException(
+          'Twitch EventSub subscription creation is temporarily unavailable.',
+        );
     }
     if (response.status === 401) {
       this.appToken = undefined;
       throw new UnauthorizedException('Twitch app authorization was rejected.');
     }
     if (response.status === 409) {
-      throw new ConflictException('A matching Twitch EventSub subscription already exists and must be reconciled.');
+      throw new ConflictException(
+          'A matching Twitch EventSub subscription already exists and must be reconciled.',
+        );
     }
     if (response.status === 429 || response.status >= 500) {
       throw new ServiceUnavailableException('Twitch EventSub subscription creation is temporarily unavailable.');
@@ -136,7 +137,9 @@ export class TwitchHelixService {
         signal: AbortSignal.timeout(10_000),
       });
     } catch {
-      throw new ServiceUnavailableException('Twitch EventSub subscription deletion is temporarily unavailable.');
+      throw new ServiceUnavailableException(
+          'Twitch EventSub subscription deletion is temporarily unavailable.',
+        );
     }
     if (response.status === 401) {
       this.appToken = undefined;
@@ -173,7 +176,9 @@ export class TwitchHelixService {
           signal: AbortSignal.timeout(10_000),
         });
       } catch {
-        throw new ServiceUnavailableException('Twitch EventSub reconciliation is temporarily unavailable.');
+        throw new ServiceUnavailableException(
+            'Twitch EventSub reconciliation is temporarily unavailable.',
+          );
       }
       if (response.status === 401) {
         this.appToken = undefined;
