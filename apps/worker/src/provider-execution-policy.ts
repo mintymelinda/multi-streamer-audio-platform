@@ -12,7 +12,7 @@ export interface ProviderRetryPolicy {
   baseDelayMs: number;
   maxDelayMs: number;
   failoverEnabled: boolean;
-  failoverOnPermanent: boolean;
+  failoverOnPermanentFailure: boolean;
 }
 
 export const DEFAULT_PROVIDER_RETRY_POLICY: Readonly<ProviderRetryPolicy> = {
@@ -20,7 +20,7 @@ export const DEFAULT_PROVIDER_RETRY_POLICY: Readonly<ProviderRetryPolicy> = {
   baseDelayMs: 5_000,
   maxDelayMs: 300_000,
   failoverEnabled: true,
-  failoverOnPermanent: false,
+  failoverOnPermanentFailure: false,
 };
 
 export function classifyProviderFailure(input: ProviderFailureInput): ProviderFailureClass {
@@ -52,7 +52,7 @@ export function isProviderFailoverAllowed(input: {
   const policy = { ...DEFAULT_PROVIDER_RETRY_POLICY, ...input.policy };
   if (!policy.failoverEnabled || !input.retryBudgetRemaining) return false;
   if (input.failureClass === 'authorization' || input.failureClass === 'uncertain') return false;
-  return input.failureClass === 'transient' || policy.failoverOnPermanent;
+  return input.failureClass === 'transient' || policy.failoverOnPermanentFailure;
 }
 
 export interface FailoverCandidate {

@@ -8,7 +8,23 @@ export interface RecoverablePlaybackRequest {
   providerInstanceId?: string | null;
 }
 
+export interface WorkspaceProviderRecoveryPolicy {
+  automaticRetryEnabled: boolean;
+  failoverEnabled: boolean;
+  failoverOnPermanentFailure: boolean;
+  maxAttempts: number;
+  baseDelayMs: number;
+  maxDelayMs: number;
+}
+
 export interface PlaybackRecoveryDependencies {
+  getPolicy?(workspaceId: string, actorId: string): Promise<WorkspaceProviderRecoveryPolicy>;
+  updatePolicy?(
+    workspaceId: string,
+    actorId: string,
+    policy: WorkspaceProviderRecoveryPolicy,
+    reason: string,
+  ): Promise<WorkspaceProviderRecoveryPolicy>;
   authorize(input: {
     workspaceId: string;
     actorId: string;
@@ -33,6 +49,47 @@ export interface PlaybackRecoveryDependencies {
 @Injectable()
 export class PlaybackRecoveryService {
   constructor(private readonly dependencies: PlaybackRecoveryDependencies) {}
+
+  async getPolicy(input: { workspaceId: string; actorId: string }) {
+    const workspaceId = required(input.workspaceId, 'workspaceId');
+    const actorId = required(input.actorId, 'actorId');
+    const authorization = await this.dependencies.authorize({
+      workspaceId,
+      actorId,
+      action: 'policy:read',
+    });
+    if (!authorization.allowed) {
+      throw new ForbiddenException('You cannot view this workspace recovery policy.');
+    }
+    if (!this.dependencies.getPolicy) {
+      throw new Error('Provider recovery policy storage is not configured.');
+    }
+    return this.dependencies.getPolicy(workspaceId, actorId);
+  }
+
+  async updatePolicy(input: {
+    workspaceId: string;
+    actorId: string;
+    reason: string;
+    policy: WorkspaceProviderRecoveryPolicy;
+  }) {
+    const workspaceId = required(input.workspaceId, 'workspaceId');
+    const actorId = required(input.actorId, 'actorId');
+    const reason = requiredReason(input.reason);
+    const policy = validateRecoveryPolicy(input.policy);
+    const authorization = await this.dependencies.authorize({
+      workspaceId,
+      actorId,
+      action: 'policy:manage',
+    });
+    if (!authorization.allowed) {
+      throw new ForbiddenException('You cannot change this workspace recovery policy.');
+    }
+    if (!this.dependencies.updatePolicy) {
+      throw new Error('Provider recovery policy storage is not configured.');
+    }
+    return this.dependencies.updatePolicy(workspaceId, actorId, policy, reason);
+  }
 
   async retry(input: RecoveryActionInput) {
     const { request, reason } = await this.authorizedRequest(input, 'retry');
@@ -125,4 +182,27 @@ function requiredReason(value: string): string {
     throw new TypeError('A recovery reason between 10 and 500 characters is required.');
   }
   return reason;
+}
+
+function validateRecoveryPolicy(
+  value: WorkspaceProviderRecoveryPolicy,
+): WorkspaceProviderRecoveryPolicy {
+  if (
+    !value ||
+    typeof value.automaticRetryEnabled !== 'boolean' ||
+    typeof value.failoverEnabled !== 'boolean' ||
+    typeof value.failoverOnPermanentFailure !== 'boolean'
+  ) {
+    throw new TypeError('Recovery policy flags must be boolean.');
+  }
+  if (!Number.isSafeInteger(value.maxAttempts) || value.maxAttempts < 1 || value.maxAttempts > 10) {
+    throw new TypeError('maxAttempts must be an integer between 1 and 10.');
+  }
+  if (!Number.isSafeInteger(value.baseDelayMs) || value.baseDelayMs < 250 || value.baseDelayMs > 3600000) {
+    throw new TypeError('baseDelayMs must be between 250 and 3600000.');
+  }
+  if (!Number.isSafeInteger(value.maxDelayMs) || value.maxDelayMs < value.baseDelayMs || value.maxDelayMs > 86400000) {
+    throw new TypeError('maxDelayMs must be at least baseDelayMs and no greater than 86400000.');
+  }
+  return { ...value };
 }

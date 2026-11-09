@@ -1,10 +1,12 @@
 import {
   BadRequestException,
   Body,
+  Get,
   Controller,
   Inject,
   Param,
   Post,
+  Put,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -113,6 +115,64 @@ export class PlaybackRecoveryController {
       requestId,
       actorId: actor(request).id,
       reason: recoveryReason(body),
+    });
+  }
+}
+
+@Controller('workspaces/:workspaceId/playback/recovery-policy')
+@UseGuards(SessionGuard, WorkspaceAccessGuard, WorkspacePermissionGuard)
+@RequireWorkspacePermission('workspace:manage')
+export class PlaybackRecoveryPolicyController {
+  constructor(
+    @Inject(PlaybackRecoveryService)
+    private readonly recovery: PlaybackRecoveryService,
+  ) {}
+
+  @Get()
+  getPolicy(@Req() request: HttpRequest) {
+    return this.recovery.getPolicy({
+      workspaceId: workspace(request).id,
+      actorId: actor(request).id,
+    });
+  }
+
+  @Put()
+  @UseGuards(CsrfGuard)
+  updatePolicy(@Req() request: HttpRequest, @Body() body: unknown) {
+    if (typeof body !== 'object' || body === null) {
+      throw new BadRequestException('A recovery policy object is required.');
+    }
+    const value = body as Record<string, unknown>;
+    const policy = {
+      automaticRetryEnabled: value.automaticRetryEnabled,
+      failoverEnabled: value.failoverEnabled,
+      failoverOnPermanentFailure: value.failoverOnPermanentFailure,
+      maxAttempts: value.maxAttempts,
+      baseDelayMs: value.baseDelayMs,
+      maxDelayMs: value.maxDelayMs,
+    };
+    if (
+      typeof policy.automaticRetryEnabled !== 'boolean' ||
+      typeof policy.failoverEnabled !== 'boolean' ||
+      typeof policy.failoverOnPermanentFailure !== 'boolean' ||
+      typeof policy.maxAttempts !== 'number' ||
+      typeof policy.baseDelayMs !== 'number' ||
+      typeof policy.maxDelayMs !== 'number'
+    ) {
+      throw new BadRequestException('Recovery policy fields have invalid types.');
+    }
+    return this.recovery.updatePolicy({
+      workspaceId: workspace(request).id,
+      actorId: actor(request).id,
+      reason: recoveryReason(body),
+      policy: policy as {
+        automaticRetryEnabled: boolean;
+        failoverEnabled: boolean;
+        failoverOnPermanentFailure: boolean;
+        maxAttempts: number;
+        baseDelayMs: number;
+        maxDelayMs: number;
+      },
     });
   }
 }

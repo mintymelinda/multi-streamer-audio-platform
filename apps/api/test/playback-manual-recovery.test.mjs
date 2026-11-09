@@ -4,6 +4,14 @@ import { PlaybackRecoveryService } from '../dist/playback/playback-recovery.serv
 
 function setup(allowed = true) {
   const actions = [];
+  let policy = {
+    automaticRetryEnabled: true,
+    failoverEnabled: true,
+    failoverOnPermanentFailure: false,
+    maxAttempts: 3,
+    baseDelayMs: 5000,
+    maxDelayMs: 300000,
+  };
   const request = {
     id: 'request-a',
     workspaceId: 'workspace-a',
@@ -13,6 +21,11 @@ function setup(allowed = true) {
   };
   const service = new PlaybackRecoveryService({
     authorize: async () => ({ allowed }),
+    getPolicy: async () => policy,
+    updatePolicy: async (_workspaceId, _actorId, nextPolicy) => {
+      policy = nextPolicy;
+      return policy;
+    },
     getRequest: async () => request,
     retry: async (item) => actions.push(['retry', item.id]),
     reroute: async (item, providerId) => actions.push(['reroute', item.id, providerId]),
@@ -22,6 +35,47 @@ function setup(allowed = true) {
   });
   return { service, actions, request };
 }
+
+test('workspace recovery policy is configurable within safe retry bounds', async () => {
+  const { service } = setup();
+  const current = await service.getPolicy({
+    workspaceId: 'workspace-a',
+    actorId: 'admin-a',
+  });
+  assert.equal(current.maxAttempts, 3);
+
+  const updated = await service.updatePolicy({
+    workspaceId: 'workspace-a',
+    actorId: 'admin-a',
+    reason: 'Tune provider outage recovery',
+    policy: {
+      automaticRetryEnabled: false,
+      failoverEnabled: true,
+      failoverOnPermanentFailure: false,
+      maxAttempts: 5,
+      baseDelayMs: 10000,
+      maxDelayMs: 600000,
+    },
+  });
+  assert.equal(updated.automaticRetryEnabled, false);
+  assert.equal(updated.maxAttempts, 5);
+
+  await assert.rejects(
+    service.updatePolicy({
+      workspaceId: 'workspace-a',
+      actorId: 'admin-a',
+      reason: 'Invalid retry limit',
+      policy: {
+        automaticRetryEnabled: true,
+        failoverEnabled: true,
+        failoverOnPermanentFailure: false,
+        maxAttempts: 11,
+        baseDelayMs: 10000,
+        maxDelayMs: 600000,
+      },
+    }),
+  );
+});
 
 test('manual retry preserves the original request and media identity', async () => {
   const { service, request } = setup();

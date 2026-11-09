@@ -13,13 +13,89 @@ import {
 
 @Module({
   imports: [DatabaseModule, IdentityModule, WorkspacesModule, ProviderExecutionQueueModule],
-  controllers: [PlaybackRecoveryController],
+  controllers: [PlaybackRecoveryController, PlaybackRecoveryPolicyController],
   providers: [
     {
       provide: PlaybackRecoveryService,
       inject: [DatabaseService, ProviderExecutionQueueService],
       useFactory: (database: DatabaseService, executionQueue: ProviderExecutionQueueService) =>
         new PlaybackRecoveryService({
+          getPolicy: async (workspaceId, actorId) => {
+            const result = await database.transaction(
+              { userId: actorId, verifiedWorkspaceId: workspaceId as never },
+              async (client) => {
+                await client.query(
+                  'INSERT INTO workspace_provider_recovery_policies (workspace_id) VALUES ($1) ON CONFLICT DO NOTHING',
+                  [workspaceId],
+                );
+                return client.query<{
+                  automatic_retry_enabled: boolean;
+                  failover_enabled: boolean;
+                  failover_on_permanent_failure: boolean;
+                  max_attempts: number;
+                  base_delay_ms: number;
+                  max_delay_ms: number;
+                }>(
+                  `SELECT automatic_retry_enabled, failover_enabled, failover_on_permanent_failure,
+                          max_attempts, base_delay_ms, max_delay_ms
+                     FROM workspace_provider_recovery_policies WHERE workspace_id = $1`,
+                  [workspaceId],
+                );
+              },
+            );
+            return mapRecoveryPolicy(result.rows[0]);
+          },
+          updatePolicy: async (workspaceId, actorId, policy, reason) =>
+            database.transaction(
+              { userId: actorId, verifiedWorkspaceId: workspaceId as never },
+              async (client) => {
+                const result = await client.query<{
+                  automatic_retry_enabled: boolean;
+                  failover_enabled: boolean;
+                  failover_on_permanent_failure: boolean;
+                  max_attempts: number;
+                  base_delay_ms: number;
+                  max_delay_ms: number;
+                }>(
+                  `INSERT INTO workspace_provider_recovery_policies (
+                     workspace_id, automatic_retry_enabled, failover_enabled,
+                     failover_on_permanent_failure, max_attempts, base_delay_ms,
+                     max_delay_ms, updated_by
+                   )
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                   ON CONFLICT (workspace_id) DO UPDATE SET
+                     automatic_retry_enabled = EXCLUDED.automatic_retry_enabled,
+                     failover_enabled = EXCLUDED.failover_enabled,
+                     failover_on_permanent_failure = EXCLUDED.failover_on_permanent_failure,
+                     max_attempts = EXCLUDED.max_attempts,
+                     base_delay_ms = EXCLUDED.base_delay_ms,
+                     max_delay_ms = EXCLUDED.max_delay_ms,
+                     updated_by = EXCLUDED.updated_by,
+                     updated_at = now()
+                   RETURNING automatic_retry_enabled, failover_enabled,
+                             failover_on_permanent_failure, max_attempts,
+                             base_delay_ms, max_delay_ms`,
+                  [
+                    workspaceId,
+                    policy.automaticRetryEnabled,
+                    policy.failoverEnabled,
+                    policy.failoverOnPermanentFailure,
+                    policy.maxAttempts,
+                    policy.baseDelayMs,
+                    policy.maxDelayMs,
+                    actorId,
+                  ],
+                );
+                await client.query(
+                  `INSERT INTO audit_events
+                    (workspace_id, actor_user_id, event_type, target_type, target_id, details)
+                   VALUES ($1, $2, 'playback.recovery.policy.updated',
+                           'workspace_provider_recovery_policy', $1, $3::jsonb)`,
+                  [workspaceId, actorId, JSON.stringify({ ...policy, reason })],
+                );
+                return mapRecoveryPolicy(result.rows[0]);
+              },
+            ),
           authorize: async ({ workspaceId, actorId }) => {
             const result = await database.transaction(
               { userId: actorId, verifiedWorkspaceId: workspaceId as never },
@@ -238,4 +314,23 @@ async function closeRequest(
       );
     },
   );
+}
+
+function mapRecoveryPolicy(row: {
+  automatic_retry_enabled: boolean;
+  failover_enabled: boolean;
+  failover_on_permanent_failure: boolean;
+  max_attempts: number;
+  base_delay_ms: number;
+  max_delay_ms: number;
+} | undefined): WorkspaceProviderRecoveryPolicy {
+  if (!row) throw new Error('Provider recovery policy could not be loaded.');
+  return {
+    automaticRetryEnabled: row.automatic_retry_enabled,
+    failoverEnabled: row.failover_enabled,
+    failoverOnPermanentFailure: row.failover_on_permanent_failure,
+    maxAttempts: row.max_attempts,
+    baseDelayMs: row.base_delay_ms,
+    maxDelayMs: row.max_delay_ms,
+  };
 }
