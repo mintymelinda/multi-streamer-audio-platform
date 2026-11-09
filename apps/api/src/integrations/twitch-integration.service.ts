@@ -21,6 +21,7 @@ import {
 } from '../security/integration-credential-crypto.js';
 import { OutboxService } from '../outbox/outbox.service.js';
 import { hasRequiredTwitchRewardScopes } from './twitch-integration-scopes.js';
+import { classifyTwitchAuthorizationFailure, shouldPauseTwitchWorkspace } from './twitch-authorization-recovery.js';
 
 interface TwitchTokenResponse {
   access_token?: string;
@@ -421,7 +422,12 @@ export class TwitchIntegrationService {
         },
       );
     } catch (error) {
-      if (error instanceof UnauthorizedException) {
+      const status =
+        typeof error === 'object' && error !== null && 'getStatus' in error &&
+        typeof error.getStatus === 'function'
+          ? error.getStatus()
+          : undefined;
+      if (classifyTwitchAuthorizationFailure({ status }) === 'reauth_required') {
         await this.markAuthorizationLost(workspace, actor, 'twitch_authorization_rejected');
       }
       throw error;
@@ -437,6 +443,15 @@ export class TwitchIntegrationService {
     await this.database.transaction(
       { userId: actor.id, verifiedWorkspaceId: workspace.id },
       async (client) => {
+        const current = await client.query<{ status: string }>(
+          `SELECT status FROM workspace_integrations
+            WHERE workspace_id = $1 AND provider = 'twitch' FOR UPDATE`,
+          [workspace.id],
+        );
+        if (!shouldPauseTwitchWorkspace({
+          currentStatus: current.rows[0]?.status ?? 'disconnected',
+          failure: 'reauth_required',
+        })) return;
         const paused = await client.query<{ id: string }>(
           `UPDATE workspace_integrations
               SET status = 'reauth_required', recovery_state = 'paused',
