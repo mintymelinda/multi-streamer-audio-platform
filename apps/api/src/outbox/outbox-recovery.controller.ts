@@ -49,9 +49,7 @@ function reason(body: unknown): string {
 @Controller('workspaces/:workspaceId/outbox/events')
 @UseGuards(SessionGuard, WorkspaceAccessGuard, WorkspacePermissionGuard)
 export class OutboxRecoveryController {
-  constructor(
-    @Inject(OutboxRecoveryService) private readonly recovery: OutboxRecoveryService,
-  ) {}
+  constructor(@Inject(OutboxRecoveryService) private readonly recovery: OutboxRecoveryService) {}
 
   @Get('failed')
   @RequireWorkspacePermission('workspace:read')
@@ -62,22 +60,14 @@ export class OutboxRecoveryController {
   @Post(':eventId/retry')
   @UseGuards(CsrfGuard)
   @RequireWorkspacePermission('workspace:manage')
-  retry(
-    @Req() request: HttpRequest,
-    @Param('eventId') eventId: string,
-    @Body() body: unknown,
-  ) {
+  retry(@Req() request: HttpRequest, @Param('eventId') eventId: string, @Body() body: unknown) {
     return this.recovery.retry(workspace(request), actor(request), eventId, reason(body));
   }
 
   @Post(':eventId/dismiss')
   @UseGuards(CsrfGuard)
   @RequireWorkspacePermission('workspace:manage')
-  dismiss(
-    @Req() request: HttpRequest,
-    @Param('eventId') eventId: string,
-    @Body() body: unknown,
-  ) {
+  dismiss(@Req() request: HttpRequest, @Param('eventId') eventId: string, @Body() body: unknown) {
     return this.recovery.dismiss(workspace(request), actor(request), eventId, reason(body));
   }
 }
