@@ -109,6 +109,18 @@ jobs:
       - name: Lint
         run: pnpm lint
 
+      - name: Apply Biome formatting before committing
+        if: github.event_name == 'pull_request' && github.actor == 'mintymelinda'
+        run: |
+          pnpm format
+          if ! git diff --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add -A
+            git commit -m "chore: apply Biome formatting"
+            git push origin "HEAD:${GITHUB_HEAD_REF}"
+          fi
+
       - name: Check formatting
         run: pnpm format:check
 
