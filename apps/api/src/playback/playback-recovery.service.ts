@@ -198,10 +198,18 @@ function validateRecoveryPolicy(
   if (!Number.isSafeInteger(value.maxAttempts) || value.maxAttempts < 1 || value.maxAttempts > 10) {
     throw new TypeError('maxAttempts must be an integer between 1 and 10.');
   }
-  if (!Number.isSafeInteger(value.baseDelayMs) || value.baseDelayMs < 250 || value.baseDelayMs > 3600000) {
+  if (
+    !Number.isSafeInteger(value.baseDelayMs) ||
+    value.baseDelayMs < 250 ||
+    value.baseDelayMs > 3600000
+  ) {
     throw new TypeError('baseDelayMs must be between 250 and 3600000.');
   }
-  if (!Number.isSafeInteger(value.maxDelayMs) || value.maxDelayMs < value.baseDelayMs || value.maxDelayMs > 86400000) {
+  if (
+    !Number.isSafeInteger(value.maxDelayMs) ||
+    value.maxDelayMs < value.baseDelayMs ||
+    value.maxDelayMs > 86400000
+  ) {
     throw new TypeError('maxDelayMs must be at least baseDelayMs and no greater than 86400000.');
   }
   return { ...value };

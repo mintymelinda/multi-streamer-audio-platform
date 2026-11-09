@@ -316,14 +316,18 @@ async function closeRequest(
   );
 }
 
-function mapRecoveryPolicy(row: {
-  automatic_retry_enabled: boolean;
-  failover_enabled: boolean;
-  failover_on_permanent_failure: boolean;
-  max_attempts: number;
-  base_delay_ms: number;
-  max_delay_ms: number;
-} | undefined): WorkspaceProviderRecoveryPolicy {
+function mapRecoveryPolicy(
+  row:
+    | {
+        automatic_retry_enabled: boolean;
+        failover_enabled: boolean;
+        failover_on_permanent_failure: boolean;
+        max_attempts: number;
+        base_delay_ms: number;
+        max_delay_ms: number;
+      }
+    | undefined,
+): WorkspaceProviderRecoveryPolicy {
   if (!row) throw new Error('Provider recovery policy could not be loaded.');
   return {
     automaticRetryEnabled: row.automatic_retry_enabled,
