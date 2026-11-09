@@ -26,4 +26,6 @@ Start the local services with `pnpm dev:infra`, then apply the role bootstrap an
 - `0011_phase2_recovery_state.sql` persists Twitch authorization pause/reconciliation state and operator-dismissed EventSub delivery outcomes.
 - `0012_outbox_operator_recovery.sql` persists terminal outbox dispatch states and grants the restricted worker only the additional dispatch-state update permission.
 
+- `0014_provider_instances.sql` establishes stable workspace-scoped provider identity, versioned adapter contracts, declared capabilities, and non-secret connection health metadata.
+
 New tenant-owned tables must follow the same pattern. Never put plaintext provider credentials in integration rows, audit details, outbox payloads, logs, or job messages.

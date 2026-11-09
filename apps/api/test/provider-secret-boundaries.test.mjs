@@ -1,8 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {
-  ProviderSecretRedactionService,
-} from '../dist/providers/provider-secret-redaction.service.js';
+import { ProviderSecretRedactionService } from '../dist/providers/provider-secret-redaction.service.js';
 
 const secrets = [
   'access-token-value',
@@ -16,10 +14,15 @@ test('redacts secrets from structured application logs and nested provider error
   const redactor = new ProviderSecretRedactionService();
   const output = redactor.redact({
     message: 'Provider request failed',
-    error: { message: '401 Unauthorized', headers: { authorization: 'Bearer authorization-value' } },
+    error: {
+      message: '401 Unauthorized',
+      headers: { authorization: 'Bearer authorization-value' },
+    },
     credentials: {
-      accessToken: secrets[0], refreshToken: secrets[1],
-      clientSecret: secrets[2], ciphertext: secrets[3],
+      accessToken: secrets[0],
+      refreshToken: secrets[1],
+      clientSecret: secrets[2],
+      ciphertext: secrets[3],
     },
   });
   const serialized = JSON.stringify(output);
@@ -29,9 +32,14 @@ test('redacts secrets from structured application logs and nested provider error
 test('redacts secrets from browser/API DTOs without removing safe connection metadata', async () => {
   const redactor = new ProviderSecretRedactionService();
   const dto = redactor.toBrowserDto({
-    providerId: 'spotify', status: 'connected', displayName: 'Streamer account',
-    accessToken: secrets[0], refreshToken: secrets[1], clientSecret: secrets[2],
-    credentialCiphertext: secrets[3], authorization: secrets[4],
+    providerId: 'spotify',
+    status: 'connected',
+    displayName: 'Streamer account',
+    accessToken: secrets[0],
+    refreshToken: secrets[1],
+    clientSecret: secrets[2],
+    credentialCiphertext: secrets[3],
+    authorization: secrets[4],
   });
   const serialized = JSON.stringify(dto);
   for (const secret of secrets) assert.equal(serialized.includes(secret), false);

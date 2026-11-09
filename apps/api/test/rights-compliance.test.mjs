@@ -42,14 +42,28 @@ test('requires an explicit, versioned streamer rights/use attestation before ena
 
 test('rejects an attestation for an obsolete policy version or a non-acceptance', async () => {
   const { service } = createService({
-    policy: { repeatInfringerThreshold: 3, requireRightsAttestation: true, currentVersion: '2026-11' },
+    policy: {
+      repeatInfringerThreshold: 3,
+      requireRightsAttestation: true,
+      currentVersion: '2026-11',
+    },
   });
-  await assert.rejects(service.recordAttestation({
-    workspaceId: 'workspace-a', actorId: 'user-a', policyVersion: '2025-01', accepted: true,
-  }));
-  await assert.rejects(service.recordAttestation({
-    workspaceId: 'workspace-a', actorId: 'user-a', policyVersion: '2026-11', accepted: false,
-  }));
+  await assert.rejects(
+    service.recordAttestation({
+      workspaceId: 'workspace-a',
+      actorId: 'user-a',
+      policyVersion: '2025-01',
+      accepted: true,
+    }),
+  );
+  await assert.rejects(
+    service.recordAttestation({
+      workspaceId: 'workspace-a',
+      actorId: 'user-a',
+      policyVersion: '2026-11',
+      accepted: false,
+    }),
+  );
 });
 
 test('accepts a rights-holder report with evidence and records a reviewable case', async () => {
@@ -66,18 +80,28 @@ test('accepts a rights-holder report with evidence and records a reviewable case
 
 test('requires documented reasons and actor attribution for content blocking and workspace/provider restrictions', async () => {
   const { service, events } = createService();
-  await assert.rejects(service.blockContent({
-    contentId: 'media-123', actorId: 'admin-a', reason: ' ',
-  }));
+  await assert.rejects(
+    service.blockContent({
+      contentId: 'media-123',
+      actorId: 'admin-a',
+      reason: ' ',
+    }),
+  );
   await service.blockContent({
-    contentId: 'media-123', actorId: 'admin-a', reason: 'Validated rights-holder claim',
+    contentId: 'media-123',
+    actorId: 'admin-a',
+    reason: 'Validated rights-holder claim',
   });
   await service.disableProviderPath({
-    workspaceId: 'workspace-a', providerId: 'spotify', actorId: 'admin-a',
+    workspaceId: 'workspace-a',
+    providerId: 'spotify',
+    actorId: 'admin-a',
     reason: 'Provider path under rights review',
   });
   await service.suspendWorkspace({
-    workspaceId: 'workspace-a', actorId: 'admin-a', reason: 'Repeated substantiated infringement',
+    workspaceId: 'workspace-a',
+    actorId: 'admin-a',
+    reason: 'Repeated substantiated infringement',
   });
   assert.deepEqual(
     events.map((event) => event.eventType),

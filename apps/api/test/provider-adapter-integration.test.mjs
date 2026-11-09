@@ -12,7 +12,10 @@ const adapters = [
 
 for (const [name, Adapter] of adapters) {
   test(`${name} adapter satisfies the shared provider contract and is replaceable`, async () => {
-    const adapter = new Adapter({ transport: createFakeTransport(), credentials: createFakeCredentials() });
+    const adapter = new Adapter({
+      transport: createFakeTransport(),
+      credentials: createFakeCredentials(),
+    });
     assert.equal(adapter.contractVersion, 1);
     assert.ok(adapter.providerId);
     assert.ok(adapter.capabilities);
@@ -30,7 +33,9 @@ for (const [name, Adapter] of adapters) {
     });
     await assert.rejects(adapter.search({ query: 'test' }), (error) => {
       const serialized = JSON.stringify(error);
-      return !serialized.includes('test-access-token') && !serialized.includes('test-client-secret');
+      return (
+        !serialized.includes('test-access-token') && !serialized.includes('test-client-secret')
+      );
     });
   });
 }
@@ -67,7 +72,13 @@ function createFakeCredentials() {
   return { accessToken: 'test-access-token', clientSecret: 'test-client-secret' };
 }
 function createFailingTransport() {
-  return { request: async () => { throw Object.assign(new Error('provider failed'), { authorization: 'Bearer test-access-token' }); } };
+  return {
+    request: async () => {
+      throw Object.assign(new Error('provider failed'), {
+        authorization: 'Bearer test-access-token',
+      });
+    },
+  };
 }
 function createUnauthorizedTransport() {
   return { request: async () => ({ status: 401, data: { error: 'invalid_token' } }) };

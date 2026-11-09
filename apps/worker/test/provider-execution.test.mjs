@@ -11,13 +11,19 @@ test('classifies transient, authorization, permanent, and uncertain provider fai
   assert.equal(classifyProviderFailure({ status: 503 }), 'transient');
   assert.equal(classifyProviderFailure({ status: 401 }), 'authorization');
   assert.equal(classifyProviderFailure({ code: 'unsupported_media' }), 'permanent');
-  assert.equal(classifyProviderFailure({ outcome: 'unknown', sideEffectStarted: true }), 'uncertain');
+  assert.equal(
+    classifyProviderFailure({ outcome: 'unknown', sideEffectStarted: true }),
+    'uncertain',
+  );
 });
 
 test('does not fail over on authorization loss or uncertain playback outcomes', () => {
   assert.equal(isProviderFailoverAllowed({ failureClass: 'authorization' }), false);
   assert.equal(isProviderFailoverAllowed({ failureClass: 'uncertain' }), false);
-  assert.equal(isProviderFailoverAllowed({ failureClass: 'transient', retryBudgetRemaining: true }), true);
+  assert.equal(
+    isProviderFailoverAllowed({ failureClass: 'transient', retryBudgetRemaining: true }),
+    true,
+  );
 });
 
 test('selects a deterministic eligible failover candidate without changing requested media', () => {

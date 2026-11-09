@@ -33,7 +33,10 @@ function createService() {
   };
   const service = new ProviderCredentialsService(
     db,
-    { encrypt: async (value) => ({ ciphertext: `enc:${value}`, nonce: 'nonce', authTag: 'tag' }), decrypt: async (value) => value.ciphertext.slice(4) },
+    {
+      encrypt: async (value) => ({ ciphertext: `enc:${value}`, nonce: 'nonce', authTag: 'tag' }),
+      decrypt: async (value) => value.ciphertext.slice(4),
+    },
     { revoke: async () => ({ revoked: true }) },
     { append: async (_client, event) => audit.push(event) },
   );
@@ -89,15 +92,20 @@ test('disconnect revokes provider authorization and removes credentials but pres
   });
 
   assert.equal(state.has(connected.credentialId), false);
-  assert.equal(audit.some((event) => event.eventType === 'provider.disconnected'), true);
+  assert.equal(
+    audit.some((event) => event.eventType === 'provider.disconnected'),
+    true,
+  );
 });
 
 test('disconnect-and-remove-data also removes integration settings and cache', async () => {
   const { service } = createService();
   const removed = [];
   service.setIntegrationDataStore({
-    removeSettings: async (workspaceId, providerInstanceId) => removed.push(['settings', workspaceId, providerInstanceId]),
-    removeCache: async (workspaceId, providerInstanceId) => removed.push(['cache', workspaceId, providerInstanceId]),
+    removeSettings: async (workspaceId, providerInstanceId) =>
+      removed.push(['settings', workspaceId, providerInstanceId]),
+    removeCache: async (workspaceId, providerInstanceId) =>
+      removed.push(['cache', workspaceId, providerInstanceId]),
   });
 
   await service.disconnectAndRemoveData({
