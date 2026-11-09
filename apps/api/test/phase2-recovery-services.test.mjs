@@ -77,7 +77,7 @@ test(
 );
 
 test(
-  'Twitch recovery provisions a missing redemption subscription and waits for callback verification',
+  'Twitch recovery provisions a missing redemption subscription and waits for verification',
   async () => {
     let registered = false;
     let resumed = false;
