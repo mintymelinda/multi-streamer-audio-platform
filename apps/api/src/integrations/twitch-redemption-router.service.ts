@@ -1,8 +1,8 @@
 import { Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import type { VerifiedWorkspaceId } from '@platform/contracts';
-import { DatabaseService } from '../database/database.service.js';
+import type { DatabaseService } from '../database/database.service.js';
 import type { WorkspaceRequestContext } from '../identity/http.types.js';
-import { RequestsService } from '../requests/requests.service.js';
+import type { RequestsService } from '../requests/requests.service.js';
 import { buildTwitchRedemptionRequest } from './twitch-redemption-routing.js';
 
 interface IntakeRow {
@@ -159,8 +159,7 @@ export class TwitchRedemptionRouterService implements OnModuleInit, OnModuleDest
       );
       const mapping = mappingResult.rows[0];
       if (
-        !mapping ||
-        !mapping.enabled ||
+        !mapping?.enabled ||
         mapping.sync_state !== 'synced' ||
         mapping.feature_key !== 'media_request'
       ) {
