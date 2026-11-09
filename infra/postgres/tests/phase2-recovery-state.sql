@@ -92,11 +92,14 @@ BEGIN
   ) RETURNING id INTO delivery_id;
 
   UPDATE twitch_eventsub_deliveries
-     SET status = 'accepted', attempts = 0, dispatch_published_at = NULL
+     SET status = 'accepted', attempts = 0, dispatch_published_at = NULL,
+         dispatch_attempts = 0, dispatch_generation = dispatch_generation + 1,
+         last_retried_at = now()
    WHERE workspace_id = workspace_a AND id = delivery_id AND status = 'failed';
   IF NOT EXISTS (
     SELECT 1 FROM twitch_eventsub_deliveries
      WHERE id = delivery_id AND status = 'accepted' AND attempts = 0
+       AND dispatch_attempts = 0 AND dispatch_generation = 1 AND last_retried_at IS NOT NULL
   ) THEN
     RAISE EXCEPTION 'Failed EventSub delivery could not be requeued';
   END IF;
@@ -125,12 +128,13 @@ BEGIN
   END IF;
   UPDATE outbox_events
      SET dispatch_status = 'pending', attempt_count = 0,
-         last_retried_at = now(), available_at = now(), published_at = NULL
+         last_retried_at = now(), dispatch_generation = dispatch_generation + 1,
+         available_at = now(), published_at = NULL
    WHERE workspace_id = workspace_a AND id = outbox_id AND dispatch_status = 'failed';
   IF NOT EXISTS (
     SELECT 1 FROM outbox_events WHERE id = outbox_id
       AND dispatch_status = 'pending' AND attempt_count = 0
-      AND last_retried_at IS NOT NULL
+      AND last_retried_at IS NOT NULL AND dispatch_generation = 1
   ) THEN
     RAISE EXCEPTION 'Failed outbox event could not be retried';
   END IF;
