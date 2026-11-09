@@ -40,7 +40,11 @@ test('Twitch recovery resumes only after live authorization, reward, and EventSu
   };
   const eventSub = {
     listWorkspaceSubscriptions: async () => [{ subscriptionId: 'sub-a', status: 'enabled' }],
-    reconcileWorkspaceSubscriptions: async () => ({ total: 1, enabled: 1 }),
+    reconcileWorkspaceSubscriptions: async () => ({
+      total: 1,
+      enabled: 1,
+      enabledSubscriptionIds: ['sub-a'],
+    }),
   };
   const rewards = {
     listRemoteRewards: async () => [],
@@ -95,7 +99,11 @@ test('Twitch recovery provisions a missing redemption subscription and waits for
     },
     {
       listWorkspaceSubscriptions: async () => [],
-      reconcileWorkspaceSubscriptions: async () => ({ total: 0, enabled: 0 }),
+      reconcileWorkspaceSubscriptions: async () => ({
+        total: 0,
+        enabled: 0,
+        enabledSubscriptionIds: [],
+      }),
       registerSubscription: async () => {
         registered = true;
       },
