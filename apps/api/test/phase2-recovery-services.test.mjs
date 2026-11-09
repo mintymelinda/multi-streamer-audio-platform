@@ -170,6 +170,10 @@ test('EventSub retry records the actor, reason, and transactional outbox event',
     statements.some((sql) => sql.includes('INSERT INTO audit_events')),
     true,
   );
+  assert.equal(
+    statements.some((sql) => sql.includes('dispatch_generation = CASE') && sql.includes('last_retried_at = CASE')),
+    true,
+  );
   assert.equal(appended[0]?.eventType, 'twitch.eventsub.delivery.retry');
   assert.equal(appended[0]?.payload.reason, 'Verified webhook payload after retry review');
 });
