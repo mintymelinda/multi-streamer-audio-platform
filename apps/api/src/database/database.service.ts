@@ -56,7 +56,7 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
       throw new Error('PostgreSQL notification channel name is invalid.');
     }
     const client = await this.pool.connect();
-    const onNotification = (message: { channel?: string; payload?: string }) => {
+    const onNotification = (message: { channel: string; payload: string | undefined }) => {
       if (message.channel === channel) handler(message.payload);
     };
     try {
