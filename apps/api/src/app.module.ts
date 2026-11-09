@@ -11,12 +11,14 @@ import { TwitchWorkspaceRecoveryModule } from './integrations/twitch-workspace-r
 import { RealtimeModule } from './realtime/realtime.module.js';
 import { OutboxRecoveryModule } from './outbox/outbox-recovery.module.js';
 import { WorkspacesModule } from './workspaces/workspaces.module.js';
+import { ProviderInstanceModule } from './providers/provider-instance.module.js';
 
 @Module({
   imports: [
     DatabaseModule,
     IdentityModule,
     WorkspacesModule,
+    ProviderInstanceModule,
     OutboxModule,
     RequestsModule,
     TwitchEventSubModule,
