@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  ServiceUnavailableException,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { Injectable, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
 
 export interface SpotifyConnectDevice {
   id: string | null;
@@ -70,11 +66,9 @@ export class SpotifyConnectClient {
   }
 
   async getPlayback(accessToken: string): Promise<SpotifyConnectPlayback | null> {
-    const result = await this.call<SpotifyPlaybackResponse | null>(
-      accessToken,
-      '/me/player',
-      { allowNoContent: true },
-    );
+    const result = await this.call<SpotifyPlaybackResponse | null>(accessToken, '/me/player', {
+      allowNoContent: true,
+    });
     if (!result) return null;
     const item = result.item;
     return {
@@ -98,10 +92,7 @@ export class SpotifyConnectClient {
     };
   }
 
-  async play(
-    accessToken: string,
-    input: { deviceId?: string; uri?: string } = {},
-  ): Promise<void> {
+  async play(accessToken: string, input: { deviceId?: string; uri?: string } = {}): Promise<void> {
     const url = new URL(`${this.apiBaseUrl}/me/player/play`);
     if (input.deviceId) url.searchParams.set('device_id', input.deviceId);
     await this.call(accessToken, url, {
@@ -162,9 +153,7 @@ export class SpotifyConnectClient {
     if (!accessToken.trim()) throw new TypeError('Spotify access token is required.');
     let response: Response;
     try {
-      response = await this.request(
-        path instanceof URL ? path : `${this.apiBaseUrl}${path}`,
-        {
+      response = await this.request(path instanceof URL ? path : `${this.apiBaseUrl}${path}`, {
           method: options.method ?? 'GET',
           headers: {
             Authorization: `Bearer ${accessToken}`,
@@ -172,8 +161,7 @@ export class SpotifyConnectClient {
           },
           ...(options.body ? { body: JSON.stringify(options.body) } : {}),
           signal: AbortSignal.timeout(10_000),
-        },
-      );
+      });
     } catch {
       throw new ServiceUnavailableException('Spotify Connect is temporarily unavailable.');
     }
