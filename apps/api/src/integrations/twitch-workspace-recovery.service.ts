@@ -1,11 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import type { VerifiedWorkspaceId } from '@platform/contracts';
-import {
-  ConflictException,
-  ForbiddenException,
-  Inject,
-  Injectable,
-} from '@nestjs/common';
+import { ConflictException, ForbiddenException, Inject, Injectable } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service.js';
 import type { AuthenticatedUser, WorkspaceRequestContext } from '../identity/http.types.js';
 import { OutboxService } from '../outbox/outbox.service.js';
@@ -113,13 +108,15 @@ export class TwitchWorkspaceRecoveryService {
       actor.twitchUserId,
       remoteSubscriptions,
     );
-    if (!canResumeTwitchWorkspace({
-      authorizationValid: status.status === 'connected',
-      broadcasterIdentityVerified: status.externalAccountId === actor.twitchUserId,
-      requiredScopesGranted: hasRequiredTwitchRewardScopes(status.grantedScopes),
-      eventSubReconciled: matchingRemote.status === 'enabled',
-      rewardMappingsReconciled: activeMappingsReconciled,
-    })) {
+    if (
+      !canResumeTwitchWorkspace({
+        authorizationValid: status.status === 'connected',
+        broadcasterIdentityVerified: status.externalAccountId === actor.twitchUserId,
+        requiredScopesGranted: hasRequiredTwitchRewardScopes(status.grantedScopes),
+        eventSubReconciled: matchingRemote.status === 'enabled',
+        rewardMappingsReconciled: activeMappingsReconciled,
+      })
+    ) {
       throw new ConflictException(
         'Twitch authorization, subscriptions, and reward mappings must all reconcile before recovery.',
       );
@@ -146,10 +143,15 @@ export class TwitchWorkspaceRecoveryService {
           `INSERT INTO audit_events
             (workspace_id, actor_user_id, event_type, target_type, target_id, details)
            VALUES ($1,$2,'twitch.integration.recovered','workspace_integration',$3,$4::jsonb)`,
-          [workspace.id, actor.id, integrationId, JSON.stringify({
-            eventSubSubscriptionsReconciled: true,
-            rewardMappingsReconciled: true,
-          })],
+          [
+            workspace.id,
+            actor.id,
+            integrationId,
+            JSON.stringify({
+              eventSubSubscriptionsReconciled: true,
+              rewardMappingsReconciled: true,
+            }),
+          ],
         );
         await this.outbox.append(client, {
           workspaceId: workspace.id as VerifiedWorkspaceId,
