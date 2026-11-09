@@ -5,10 +5,14 @@ import { IdentityModule } from '../identity/identity.module.js';
 import { ProviderExecutionQueueModule } from '../providers/provider-execution-queue.module.js';
 import { ProviderExecutionQueueService } from '../providers/provider-execution-queue.service.js';
 import { WorkspacesModule } from '../workspaces/workspaces.module.js';
-import { PlaybackRecoveryController } from './playback-recovery.controller.js';
+import {
+  PlaybackRecoveryController,
+  PlaybackRecoveryPolicyController,
+} from './playback-recovery.controller.js';
 import {
   PlaybackRecoveryService,
   type RecoverablePlaybackRequest,
+  type WorkspaceProviderRecoveryPolicy,
 } from './playback-recovery.service.js';
 
 @Module({
