@@ -27,5 +27,6 @@ Start the local services with `pnpm dev:infra`, then apply the role bootstrap an
 - `0012_outbox_operator_recovery.sql` persists terminal outbox dispatch states and grants the restricted worker only the additional dispatch-state update permission.
 
 - `0014_provider_instances.sql` establishes stable workspace-scoped provider identity, versioned adapter contracts, declared capabilities, and non-secret connection health metadata.
+- `0015_provider_credentials.sql` establishes workspace-scoped envelope-encrypted provider credentials, granted-scope metadata, authorization expiry, and revocation lifecycle state.
 
 New tenant-owned tables must follow the same pattern. Never put plaintext provider credentials in integration rows, audit details, outbox payloads, logs, or job messages.
