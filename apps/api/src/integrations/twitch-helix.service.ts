@@ -1,5 +1,6 @@
 import {
   BadGatewayException,
+  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -234,6 +235,11 @@ export class TwitchHelixService {
     const status = await this.integration.getStatus(workspace, actor);
     if (status.status !== 'connected' || !status.externalAccountId) {
       throw new UnauthorizedException('The workspace Twitch broadcaster is not connected.');
+    }
+    if (method !== 'GET' && status.recoveryState !== 'ready') {
+      throw new ConflictException(
+        'Twitch write operations are paused until workspace recovery is complete.',
+      );
     }
     const accessToken = await this.integration.getAccessToken(workspace, actor);
     const { clientId } = getTwitchAppConfig();
