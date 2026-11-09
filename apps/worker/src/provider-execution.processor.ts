@@ -176,7 +176,8 @@ export class ProviderExecutionProcessor {
             return this.reconcileOrStop(request, candidate.providerInstanceId, attempt);
           }
           if (result.outcome === 'failed') {
-            const failureClass = classifyProviderFailure({ code: 'provider_failed' });
+            const failureDetails = errorDetails(result);
+            const failureClass = classifyProviderFailure(failureDetails);
             await this.dependencies.persistExecutionState({
               workspaceId: input.workspaceId,
               requestId: input.requestId,
@@ -192,7 +193,10 @@ export class ProviderExecutionProcessor {
                 policy,
               })
             ) {
-              throw new Error('Provider execution failed and failover is not permitted.');
+              throw Object.assign(
+                new Error('Provider execution failed and failover is not permitted.'),
+                failureDetails,
+              );
             }
             continue;
           }
@@ -223,7 +227,12 @@ export class ProviderExecutionProcessor {
             workspaceId: input.workspaceId,
             requestId: input.requestId,
             providerInstanceId: candidate.providerInstanceId,
-            state: failureClass === 'authorization' ? 'failed' : 'retry_wait',
+            state:
+              failureClass === 'uncertain'
+                ? 'uncertain'
+                : failureClass === 'transient'
+                  ? 'retry_wait'
+                  : 'failed',
             attempt,
             failureClass,
             errorCode: errorCode(error),
