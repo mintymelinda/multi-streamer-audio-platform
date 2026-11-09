@@ -22,6 +22,10 @@ FROM toolchain AS checks
 
 COPY --chown=node:node . .
 
+# WORKDIR is created by the root toolchain stage; make the directory itself
+# writable before dropping privileges so pnpm can create its virtual store.
+RUN chown node:node /workspace
+
 USER node
 
 RUN pnpm install --frozen-lockfile
