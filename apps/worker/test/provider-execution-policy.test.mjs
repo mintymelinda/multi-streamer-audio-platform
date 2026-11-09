@@ -6,6 +6,7 @@ import {
   selectFailoverCandidate,
   shouldReconcilePlayback,
   DEFAULT_PROVIDER_RETRY_POLICY,
+  providerRetryDelayMs,
 } from '../src/provider-execution-policy.ts';
 
 test('classifies transient, authorization, permanent, and uncertain provider failures distinctly', () => {
@@ -72,4 +73,30 @@ test('selects a deterministic eligible failover candidate without changing reque
 test('requires playback reconciliation whenever an external start may have occurred', () => {
   assert.equal(shouldReconcilePlayback({ outcome: 'unknown', sideEffectStarted: true }), true);
   assert.equal(shouldReconcilePlayback({ outcome: 'failed', sideEffectStarted: false }), false);
+});
+
+test('allows permanent-media failover only when explicitly enabled', () => {
+  assert.equal(
+    isProviderFailoverAllowed({
+      failureClass: 'permanent',
+      retryBudgetRemaining: true,
+    }),
+    false,
+  );
+  assert.equal(
+    isProviderFailoverAllowed({
+      failureClass: 'permanent',
+      retryBudgetRemaining: true,
+      policy: { failoverOnPermanentFailure: true },
+    }),
+    true,
+  );
+});
+
+test('uses bounded exponential retry delays and rejects invalid attempts', () => {
+  assert.equal(providerRetryDelayMs(1), 5_000);
+  assert.equal(providerRetryDelayMs(2), 10_000);
+  assert.equal(providerRetryDelayMs(3), 20_000);
+  assert.equal(providerRetryDelayMs(10), DEFAULT_PROVIDER_RETRY_POLICY.maxDelayMs);
+  assert.throws(() => providerRetryDelayMs(0), /positive integer/);
 });
