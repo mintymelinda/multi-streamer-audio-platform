@@ -1,9 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { reconcileEventSubSubscriptions } from '../src/integrations/twitch-eventsub-reconciliation.ts';
+import {
+  reconcileEventSubSubscriptions,
+} from '../src/integrations/twitch-eventsub-reconciliation.ts';
 
 const local = [
-  { subscriptionId: 'sub-enabled', eventType: 'channel.channel_points_custom_reward_redemption.add', eventVersion: '1' },
+  {
+    subscriptionId: 'sub-enabled',
+    eventType: 'channel.channel_points_custom_reward_redemption.add',
+    eventVersion: '1',
+  },
   { subscriptionId: 'sub-missing', eventType: 'channel.update', eventVersion: '1' },
   { subscriptionId: 'sub-disabled', eventType: 'channel.update', eventVersion: '1' },
   { subscriptionId: 'sub-mismatch', eventType: 'channel.update', eventVersion: '1' },
@@ -42,7 +48,11 @@ test('reconciles only remote enabled subscriptions with matching identity and me
     { subscriptionId: 'sub-enabled', status: 'enabled', reason: null },
     { subscriptionId: 'sub-missing', status: 'revoked', reason: 'missing_on_twitch' },
     { subscriptionId: 'sub-disabled', status: 'disabled', reason: 'not_enabled_on_twitch' },
-    { subscriptionId: 'sub-mismatch', status: 'disabled', reason: 'subscription_metadata_mismatch' },
+    {
+      subscriptionId: 'sub-mismatch',
+      status: 'disabled',
+      reason: 'subscription_metadata_mismatch',
+    },
   ]);
 });
 
