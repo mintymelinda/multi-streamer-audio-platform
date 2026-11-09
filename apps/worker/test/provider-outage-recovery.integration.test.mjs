@@ -6,15 +6,19 @@ test('recovers from a provider outage using configured failover without changing
   const played = [];
   const processor = new ProviderExecutionProcessor({
     loadAuthoritativeRequest: async () => ({
-      id: 'request-a', workspaceId: 'workspace-a', mediaId: 'original-media-id',
-      mediaType: 'audio', status: 'approved',
+      id: 'request-a',
+      workspaceId: 'workspace-a',
+      mediaId: 'original-media-id',
+      mediaType: 'audio',
+      status: 'approved',
     }),
     getCandidates: async () => [
       { providerInstanceId: 'primary', eligible: true, priority: 1 },
       { providerInstanceId: 'backup', eligible: true, priority: 2 },
     ],
     execute: async (providerInstanceId, request) => {
-      if (providerInstanceId === 'primary') throw Object.assign(new Error('unavailable'), { status: 503 });
+      if (providerInstanceId === 'primary')
+        throw Object.assign(new Error('unavailable'), { status: 503 });
       played.push({ providerInstanceId, mediaId: request.mediaId });
       return { outcome: 'started', providerPlaybackId: 'playback-a' };
     },
@@ -30,7 +34,10 @@ test('does not retry or fail over after authorization expiry until reconnect and
   let executionCount = 0;
   const processor = new ProviderExecutionProcessor({
     loadAuthoritativeRequest: async () => ({
-      id: 'request-a', workspaceId: 'workspace-a', mediaId: 'media-a', status: 'approved',
+      id: 'request-a',
+      workspaceId: 'workspace-a',
+      mediaId: 'media-a',
+      status: 'approved',
     }),
     getCandidates: async () => [{ providerInstanceId: 'spotify-a', eligible: true, priority: 1 }],
     execute: async () => {
@@ -47,10 +54,14 @@ test('duplicate delivery and concurrent worker execution produce only one provid
   let playCount = 0;
   const processor = new ProviderExecutionProcessor({
     loadAuthoritativeRequest: async () => ({
-      id: 'request-a', workspaceId: 'workspace-a', mediaId: 'media-a', status: 'approved',
+      id: 'request-a',
+      workspaceId: 'workspace-a',
+      mediaId: 'media-a',
+      status: 'approved',
     }),
     acquirePlaybackLease: async () => true,
-    findPlaybackByRequest: async () => playCount > 0 ? { status: 'playing', providerPlaybackId: 'playback-a' } : null,
+    findPlaybackByRequest: async () =>
+      playCount > 0 ? { status: 'playing', providerPlaybackId: 'playback-a' } : null,
     getCandidates: async () => [{ providerInstanceId: 'spotify-a', eligible: true, priority: 1 }],
     execute: async () => {
       playCount += 1;
@@ -59,7 +70,11 @@ test('duplicate delivery and concurrent worker execution produce only one provid
     persistExecutionState: async () => undefined,
     releasePlaybackLease: async () => undefined,
   });
-  const input = { workspaceId: 'workspace-a', requestId: 'request-a', idempotencyKey: 'request-a-play' };
+  const input = {
+    workspaceId: 'workspace-a',
+    requestId: 'request-a',
+    idempotencyKey: 'request-a-play',
+  };
   await Promise.all([processor.process(input), processor.process(input)]);
   assert.equal(playCount, 1);
 });
@@ -68,7 +83,10 @@ test('reconciles uncertain playback before another provider is allowed to start'
   let secondProviderStarted = false;
   const processor = new ProviderExecutionProcessor({
     loadAuthoritativeRequest: async () => ({
-      id: 'request-a', workspaceId: 'workspace-a', mediaId: 'media-a', status: 'approved',
+      id: 'request-a',
+      workspaceId: 'workspace-a',
+      mediaId: 'media-a',
+      status: 'approved',
     }),
     getCandidates: async () => [
       { providerInstanceId: 'primary', eligible: true, priority: 1 },

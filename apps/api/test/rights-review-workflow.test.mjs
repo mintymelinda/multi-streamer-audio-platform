@@ -5,9 +5,18 @@ import { RightsReviewWorkflowService } from '../dist/compliance/rights-review-wo
 test('publishes source-specific use guidance and makes clear that platform acceptance is not permission', async () => {
   const service = new RightsReviewWorkflowService({
     guidance: {
-      youtube: { permittedUse: 'Use only where rights and platform terms allow', restrictions: ['No circumvention'] },
-      spotify: { permittedUse: 'Use only through approved Spotify authorization and playback flows', restrictions: ['No stream extraction'] },
-      lyrion: { permittedUse: 'Operator-managed library and server', restrictions: ['Confirm rights for each source'] },
+      youtube: {
+        permittedUse: 'Use only where rights and platform terms allow',
+        restrictions: ['No circumvention'],
+      },
+      spotify: {
+        permittedUse: 'Use only through approved Spotify authorization and playback flows',
+        restrictions: ['No stream extraction'],
+      },
+      lyrion: {
+        permittedUse: 'Operator-managed library and server',
+        restrictions: ['Confirm rights for each source'],
+      },
     },
   });
   for (const providerId of ['youtube', 'spotify', 'lyrion']) {
@@ -30,21 +39,40 @@ test('rights-holder reports move through documented triage, investigation, decis
     allegation: 'Unauthorized use',
     evidence: ['https://evidence.example.test/item'],
   });
-  await service.transition({ reportId: report.id, actorId: 'reviewer-a', to: 'investigating', reason: 'Evidence review started' });
-  await service.transition({ reportId: report.id, actorId: 'reviewer-a', to: 'decision_pending', reason: 'Evidence assessed' });
-  await service.escalate({ reportId: report.id, actorId: 'reviewer-a', reason: 'Requires legal review' });
+  await service.transition({
+    reportId: report.id,
+    actorId: 'reviewer-a',
+    to: 'investigating',
+    reason: 'Evidence review started',
+  });
+  await service.transition({
+    reportId: report.id,
+    actorId: 'reviewer-a',
+    to: 'decision_pending',
+    reason: 'Evidence assessed',
+  });
+  await service.escalate({
+    reportId: report.id,
+    actorId: 'reviewer-a',
+    reason: 'Requires legal review',
+  });
   assert.deepEqual(transitions, ['received', 'investigating', 'decision_pending', 'escalated']);
 });
 
 test('takedown decisions block the identified content and preserve evidence and audit history', async () => {
   let blocked;
   const service = new RightsReviewWorkflowService({
-    blockContent: async (input) => { blocked = input; },
+    blockContent: async (input) => {
+      blocked = input;
+    },
     appendAudit: async () => undefined,
   });
   await service.recordDecision({
-    reportId: 'report-a', actorId: 'reviewer-a', outcome: 'takedown',
-    contentId: 'media-a', reason: 'Substantiated rights-holder claim',
+    reportId: 'report-a',
+    actorId: 'reviewer-a',
+    outcome: 'takedown',
+    contentId: 'media-a',
+    reason: 'Substantiated rights-holder claim',
     preserveEvidence: true,
   });
   assert.equal(blocked.contentId, 'media-a');
@@ -56,9 +84,15 @@ test('requires qualified legal review of policies and operational procedures bef
   const service = new RightsReviewWorkflowService({
     legalReview: { policyApproved: false, proceduresApproved: true, reviewerQualified: true },
   });
-  await assert.rejects(service.assertPublicLaunchReady(), (error) => error.code === 'LEGAL_REVIEW_REQUIRED');
+  await assert.rejects(
+    service.assertPublicLaunchReady(),
+    (error) => error.code === 'LEGAL_REVIEW_REQUIRED',
+  );
   service.setLegalReview({
-    policyApproved: true, proceduresApproved: true, reviewerQualified: true, reviewedAt: new Date(),
+    policyApproved: true,
+    proceduresApproved: true,
+    reviewerQualified: true,
+    reviewedAt: new Date(),
   });
   assert.equal(await service.assertPublicLaunchReady(), true);
 });

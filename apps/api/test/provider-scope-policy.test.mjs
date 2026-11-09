@@ -11,10 +11,10 @@ test('requests only the scopes required by enabled provider features', async () 
       },
     },
   });
-  assert.deepEqual(
-    service.getRequestedScopes({ providerId: 'spotify', features: ['playback'] }),
-    ['user-read-playback-state', 'user-modify-playback-state'],
-  );
+  assert.deepEqual(service.getRequestedScopes({ providerId: 'spotify', features: ['playback'] }), [
+    'user-read-playback-state',
+    'user-modify-playback-state',
+  ]);
 });
 
 test('does not request optional scopes when the corresponding feature is disabled', async () => {
@@ -26,28 +26,37 @@ test('does not request optional scopes when the corresponding feature is disable
       },
     },
   });
-  assert.deepEqual(
-    service.getRequestedScopes({ providerId: 'spotify', features: [] }),
-    [],
-  );
+  assert.deepEqual(service.getRequestedScopes({ providerId: 'spotify', features: [] }), []);
 });
 
 test('rejects unrecognized, excessive, or silently broadened granted scopes', async () => {
   const service = new ProviderScopePolicyService({
     requiredScopes: { spotify: { playback: ['user-read-playback-state'] } },
   });
-  assert.equal(service.validateGrantedScopes({
-    providerId: 'spotify', requestedScopes: ['user-read-playback-state'],
-    grantedScopes: ['user-read-playback-state'],
-  }).valid, true);
-  assert.equal(service.validateGrantedScopes({
-    providerId: 'spotify', requestedScopes: ['user-read-playback-state'],
-    grantedScopes: ['user-read-playback-state', 'user-modify-playback-state'],
-  }).valid, false);
-  assert.equal(service.validateGrantedScopes({
-    providerId: 'spotify', requestedScopes: ['user-read-playback-state'],
-    grantedScopes: ['unknown-admin-scope'],
-  }).valid, false);
+  assert.equal(
+    service.validateGrantedScopes({
+      providerId: 'spotify',
+      requestedScopes: ['user-read-playback-state'],
+      grantedScopes: ['user-read-playback-state'],
+    }).valid,
+    true,
+  );
+  assert.equal(
+    service.validateGrantedScopes({
+      providerId: 'spotify',
+      requestedScopes: ['user-read-playback-state'],
+      grantedScopes: ['user-read-playback-state', 'user-modify-playback-state'],
+    }).valid,
+    false,
+  );
+  assert.equal(
+    service.validateGrantedScopes({
+      providerId: 'spotify',
+      requestedScopes: ['user-read-playback-state'],
+      grantedScopes: ['unknown-admin-scope'],
+    }).valid,
+    false,
+  );
 });
 
 test('authorization expiry pauses provider execution and requires reconnect/reconciliation', async () => {

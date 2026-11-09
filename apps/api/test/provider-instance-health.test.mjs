@@ -8,28 +8,51 @@ import {
 test('provider instance identity is workspace-scoped and stable across reconnects', async () => {
   const service = new ProviderInstanceService({
     findByIdentity: async ({ workspaceId, providerId, instanceKey }) => ({
-      id: 'instance-a', workspaceId, providerId, instanceKey,
+      id: 'instance-a',
+      workspaceId,
+      providerId,
+      instanceKey,
     }),
   });
   const first = await service.resolveIdentity({
-    workspaceId: 'workspace-a', providerId: 'spotify', instanceKey: 'primary',
+    workspaceId: 'workspace-a',
+    providerId: 'spotify',
+    instanceKey: 'primary',
   });
   const second = await service.resolveIdentity({
-    workspaceId: 'workspace-a', providerId: 'spotify', instanceKey: 'primary',
+    workspaceId: 'workspace-a',
+    providerId: 'spotify',
+    instanceKey: 'primary',
   });
   assert.equal(first.id, second.id);
   assert.equal(first.id, 'instance-a');
-  await assert.rejects(service.resolveIdentity({
-    workspaceId: '', providerId: 'spotify', instanceKey: 'primary',
-  }));
+  await assert.rejects(
+    service.resolveIdentity({
+      workspaceId: '',
+      providerId: 'spotify',
+      instanceKey: 'primary',
+    }),
+  );
 });
 
 test('health state distinguishes healthy, degraded, unavailable, and authorization-expired', async () => {
   const health = new ProviderHealthService();
-  assert.equal(health.classify({ latencyMs: 100, authorizationValid: true, consecutiveFailures: 0 }), 'healthy');
-  assert.equal(health.classify({ latencyMs: 2_000, authorizationValid: true, consecutiveFailures: 1 }), 'degraded');
-  assert.equal(health.classify({ latencyMs: null, authorizationValid: true, consecutiveFailures: 5 }), 'unavailable');
-  assert.equal(health.classify({ latencyMs: 100, authorizationValid: false, consecutiveFailures: 0 }), 'authorization_expired');
+  assert.equal(
+    health.classify({ latencyMs: 100, authorizationValid: true, consecutiveFailures: 0 }),
+    'healthy',
+  );
+  assert.equal(
+    health.classify({ latencyMs: 2_000, authorizationValid: true, consecutiveFailures: 1 }),
+    'degraded',
+  );
+  assert.equal(
+    health.classify({ latencyMs: null, authorizationValid: true, consecutiveFailures: 5 }),
+    'unavailable',
+  );
+  assert.equal(
+    health.classify({ latencyMs: 100, authorizationValid: false, consecutiveFailures: 0 }),
+    'authorization_expired',
+  );
 });
 
 test('health probes never overwrite authorization-expired state with healthy status', async () => {
