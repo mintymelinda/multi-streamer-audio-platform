@@ -8,6 +8,7 @@ export interface ProviderFailureInput {
 }
 
 export interface ProviderRetryPolicy {
+  automaticRetryEnabled: boolean;
   maxAttempts: number;
   baseDelayMs: number;
   maxDelayMs: number;
@@ -16,6 +17,7 @@ export interface ProviderRetryPolicy {
 }
 
 export const DEFAULT_PROVIDER_RETRY_POLICY: Readonly<ProviderRetryPolicy> = {
+  automaticRetryEnabled: true,
   maxAttempts: 3,
   baseDelayMs: 5_000,
   maxDelayMs: 300_000,
