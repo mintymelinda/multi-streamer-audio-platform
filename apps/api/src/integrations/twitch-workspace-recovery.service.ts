@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import type { VerifiedWorkspaceId } from '@platform/contracts';
 import {
   ConflictException,
@@ -48,8 +49,65 @@ export class TwitchWorkspaceRecoveryService {
     const activeMappingsReconciled = mappings.every(
       (mapping) => !mapping.enabled || mapping.sync_state === 'synced',
     );
-    const remoteSubscriptions = await this.helix.listEventSubSubscriptions(actor.twitchUserId);
-    const subscriptions = await this.eventSub.reconcileWorkspaceSubscriptions(
+    const redemptionEventType = 'channel.channel_points_custom_reward_redemption.add';
+    const [localSubscriptions, remoteSubscriptions] = await Promise.all([
+      this.eventSub.listWorkspaceSubscriptions(workspace.id, actor.id, redemptionEventType),
+      this.helix.listEventSubSubscriptions(actor.twitchUserId),
+    ]);
+    const localIds = new Set(localSubscriptions.map((item) => item.subscriptionId));
+    const remoteRedemptionSubscriptions = remoteSubscriptions.filter(
+      (item) =>
+        item.type === redemptionEventType &&
+        item.condition.broadcaster_user_id === actor.twitchUserId,
+    );
+    const matchingRemote = remoteRedemptionSubscriptions.find((item) => localIds.has(item.id));
+
+    if (matchingRemote?.status === 'webhook_callback_verification_pending') {
+      await this.eventSub.reconcileWorkspaceSubscriptions(
+        workspace.id,
+        actor.id,
+        actor.twitchUserId,
+        remoteSubscriptions,
+      );
+      throw new ConflictException(
+        'Twitch is verifying the EventSub callback. Retry workspace recovery after verification completes.',
+      );
+    }
+
+    if (matchingRemote?.status !== 'enabled') {
+      for (const remote of remoteRedemptionSubscriptions) {
+        await this.helix.deleteEventSubSubscription(remote.id);
+      }
+      const signingSecret = randomBytes(32).toString('base64url');
+      let created: Awaited<ReturnType<TwitchHelixService['createRedemptionEventSubSubscription']>>;
+      try {
+        created = await this.helix.createRedemptionEventSubSubscription(
+          actor.twitchUserId,
+          signingSecret,
+        );
+      } catch (error) {
+        if (error instanceof ConflictException) {
+          throw new ConflictException(
+            'A Twitch EventSub subscription is being created concurrently. Retry recovery shortly.',
+          );
+        }
+        throw error;
+      }
+      await this.eventSub.registerSubscription({
+        workspaceId: workspace.id,
+        actorUserId: actor.id,
+        subscriptionId: created.id,
+        eventType: created.type,
+        version: created.version,
+        condition: created.condition,
+        signingSecret,
+      });
+      throw new ConflictException(
+        'A Twitch EventSub subscription was created. Retry workspace recovery after Twitch verifies its callback.',
+      );
+    }
+
+    await this.eventSub.reconcileWorkspaceSubscriptions(
       workspace.id,
       actor.id,
       actor.twitchUserId,
@@ -59,8 +117,7 @@ export class TwitchWorkspaceRecoveryService {
       authorizationValid: status.status === 'connected',
       broadcasterIdentityVerified: status.externalAccountId === actor.twitchUserId,
       requiredScopesGranted: hasRequiredTwitchRewardScopes(status.grantedScopes),
-      eventSubReconciled:
-        subscriptions.total > 0 && subscriptions.enabled === subscriptions.total,
+      eventSubReconciled: matchingRemote.status === 'enabled',
       rewardMappingsReconciled: activeMappingsReconciled,
     })) {
       throw new ConflictException(
