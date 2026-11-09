@@ -121,7 +121,15 @@ export class WorkspaceRealtimeGateway
             [userId, requestedId],
           ),
         );
-        return result.rows[0] ?? null;
+        const membership = result.rows[0];
+        return membership
+          ? {
+              userId: membership.user_id,
+              workspaceId: membership.workspace_id,
+              role: membership.role,
+              active: membership.active,
+            }
+          : null;
       },
     });
     const room = `workspace:${authorization.workspaceId}`;
