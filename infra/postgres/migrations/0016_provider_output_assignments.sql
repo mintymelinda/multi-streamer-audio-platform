@@ -13,7 +13,7 @@ CREATE TABLE provider_output_assignments (
 );
 CREATE UNIQUE INDEX provider_output_assignments_active_output ON provider_output_assignments (workspace_id, output_id) WHERE active = true;
 CREATE UNIQUE INDEX provider_output_assignments_active_instance ON provider_output_assignments (workspace_id, provider_instance_id) WHERE active = true;
-CREATE INDEX provider_output_assignments_workspace_active ON provider_output_assignments (workspace_id, active);
+CREATE UNIQUE INDEX provider_output_assignments_active_player\n  ON provider_output_assignments (workspace_id, player_id) WHERE active = true;\nCREATE INDEX provider_output_assignments_workspace_active ON provider_output_assignments (workspace_id, active);
 ALTER TABLE provider_output_assignments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE provider_output_assignments FORCE ROW LEVEL SECURITY;
 CREATE POLICY provider_output_assignments_member_access ON provider_output_assignments

@@ -22,6 +22,6 @@ Start local services with `pnpm dev:infra`. CI is the canonical automated migrat
 - `0012_outbox_operator_recovery.sql`: terminal outbox dispatch states and worker permissions.
 - `0014_provider_instances.sql`: workspace-scoped provider identity, capabilities, and health.
 - `0015_provider_credentials.sql`: encrypted provider credentials and lifecycle metadata.
-- `0016_provider_output_assignments.sql`: explicit provider/player output ownership and unique active ownership per workspace/output and provider instance.
+- `0016_provider_output_assignments.sql`: explicit provider/player output ownership and unique active ownership per workspace/output, player, and provider instance.
 
 New tenant-owned tables must follow the same RLS pattern. Never put plaintext credentials in logs, audit details, outbox payloads, or job messages.

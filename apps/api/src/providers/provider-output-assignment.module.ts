@@ -15,11 +15,11 @@ type Row = { id: string; workspace_id: string; provider_instance_id: string; out
             FROM provider_output_assignments WHERE workspace_id = $1 AND provider_instance_id = $2 AND active = true`, [workspaceId, providerInstanceId]));
         return mapRow(result.rows[0]);
       },
-      findConflicts: async ({ workspaceId, providerInstanceId, outputId, userId }) => {
+      findConflicts: async ({ workspaceId, providerInstanceId, outputId, playerId, userId }) => {
         if (!userId) throw new Error('Authenticated workspace user is required.');
         const result = await database.transaction({ userId, verifiedWorkspaceId: workspaceId as never }, (client) =>
           client.query<Row>(`SELECT id, workspace_id, provider_instance_id, output_id, player_id, assigned_by, created_at, updated_at
-            FROM provider_output_assignments WHERE workspace_id = $1 AND output_id = $2 AND active = true AND provider_instance_id <> $3`, [workspaceId, outputId, providerInstanceId]));
+            FROM provider_output_assignments WHERE workspace_id = $1 AND (output_id = $2 OR player_id = $3) AND active = true AND provider_instance_id <> $4`, [workspaceId, outputId, playerId, providerInstanceId]));
         return result.rows.map(mapRow).filter((row) => row !== null);
       },
       saveAssignment: async ({ workspaceId, providerInstanceId, outputId, playerId, actorId }) => {
