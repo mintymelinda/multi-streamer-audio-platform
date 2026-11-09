@@ -5,10 +5,7 @@ import {
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
-import type {
-  OnGatewayConnection,
-  OnGatewayDisconnect,
-} from '@nestjs/websockets';
+import type { OnGatewayConnection, OnGatewayDisconnect } from '@nestjs/websockets';
 import type { OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import {
   ForbiddenException,
@@ -87,10 +84,7 @@ export class WorkspaceRealtimeGateway
   handleDisconnect(_client: WorkspaceSocket): void {}
 
   @SubscribeMessage('workspace:subscribe')
-  async subscribe(
-    @ConnectedSocket() client: WorkspaceSocket,
-    @MessageBody() body: unknown,
-  ) {
+  async subscribe(@ConnectedSocket() client: WorkspaceSocket, @MessageBody() body: unknown) {
     const workspaceId =
       typeof body === 'object' && body !== null && 'workspaceId' in body
         ? (body as { workspaceId?: unknown }).workspaceId
@@ -134,7 +128,10 @@ export class WorkspaceRealtimeGateway
     await client.join(room);
 
     const latest = await this.database.transaction(
-      { userId: identity.id, verifiedWorkspaceId: authorization.workspaceId as VerifiedWorkspaceId },
+      {
+        userId: identity.id,
+        verifiedWorkspaceId: authorization.workspaceId as VerifiedWorkspaceId,
+      },
       (db) =>
         db.query<{ id: string; occurred_at: Date }>(
           `SELECT id, occurred_at FROM outbox_events
