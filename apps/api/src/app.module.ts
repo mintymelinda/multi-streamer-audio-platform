@@ -16,25 +16,14 @@ import { ProviderCredentialsModule } from './providers/provider-credentials.modu
 import { ProviderOutputAssignmentModule } from './providers/provider-output-assignment.module.js';
 import { PlaybackCoordinatorModule } from './playback/playback-coordinator.module.js';
 import { ProviderExecutionQueueModule } from './providers/provider-execution-queue.module.js';
+import { SpotifyConnectOAuthModule } from './providers/spotify-connect-oauth.module.js';
 
 @Module({
   imports: [
-    DatabaseModule,
-    IdentityModule,
-    WorkspacesModule,
-    ProviderInstanceModule,
-    ProviderCredentialsModule,
-    ProviderOutputAssignmentModule,
-    PlaybackCoordinatorModule,
-    ProviderExecutionQueueModule,
-    OutboxModule,
-    RequestsModule,
-    TwitchEventSubModule,
-    TwitchRewardsModule,
-    TwitchIntegrationModule,
-    TwitchWorkspaceRecoveryModule,
-    RealtimeModule,
-    OutboxRecoveryModule,
+    DatabaseModule, IdentityModule, WorkspacesModule, ProviderInstanceModule, ProviderCredentialsModule,
+    ProviderOutputAssignmentModule, PlaybackCoordinatorModule, ProviderExecutionQueueModule,
+    SpotifyConnectOAuthModule, OutboxModule, RequestsModule, TwitchEventSubModule, TwitchRewardsModule,
+    TwitchIntegrationModule, TwitchWorkspaceRecoveryModule, RealtimeModule, OutboxRecoveryModule,
   ],
   controllers: [HealthController],
 })
