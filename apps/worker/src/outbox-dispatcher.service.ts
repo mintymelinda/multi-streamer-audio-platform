@@ -194,7 +194,7 @@ export class OutboxDispatcherService implements OnModuleInit, OnModuleDestroy {
         {
           jobId: `eventsub-${row.id}-${row.dispatch_attempts}`,
           attempts: 8,
-          backoff: { type: 'exponential', delay: 1_000 },
+          backoff: { type: 'phase2-exponential', delay: 1_000 },
           removeOnComplete: { age: 30 * 24 * 60 * 60, count: 10_000 },
           removeOnFail: false,
         },
@@ -272,12 +272,12 @@ export class OutboxDispatcherService implements OnModuleInit, OnModuleDestroy {
                   WHEN attempt_count >= 8 OR COALESCE(last_retried_at, created_at) < now() - interval '24 hours'
                     THEN 'failed' ELSE 'pending' END,
                 available_at = CASE
-                  WHEN attempt_count >= 8 OR created_at < now() - interval '24 hours'
+                  WHEN attempt_count >= 8 OR COALESCE(last_retried_at, created_at) < now() - interval '24 hours'
                     THEN available_at
                   ELSE now() + ($2::text || ' seconds')::interval END,
                 locked_at = NULL, lock_token = NULL,
                 last_error_code = CASE
-                  WHEN attempt_count >= 8 OR created_at < now() - interval '24 hours'
+                  WHEN attempt_count >= 8 OR COALESCE(last_retried_at, created_at) < now() - interval '24 hours'
                     THEN 'outbox_dispatch_exhausted'
                   ELSE 'redis_enqueue_failed' END
           WHERE id = $1 AND published_at IS NULL
