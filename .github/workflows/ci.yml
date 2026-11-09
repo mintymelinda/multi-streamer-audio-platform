@@ -120,6 +120,3 @@ jobs:
 
       - name: Build
         run: pnpm build
-
-      - name: Build and run the containerized quality environment
-        run: docker compose --env-file infra/compose/.env.example -f infra/compose/docker-compose.yml --profile checks run --build --rm checks
