@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { ConflictException } from '@nestjs/common';
-import { TwitchWorkspaceRecoveryService } from '../src/integrations/twitch-workspace-recovery.service.ts';
+import {
+  TwitchWorkspaceRecoveryService,
+} from '../src/integrations/twitch-workspace-recovery.service.ts';
 import { EventSubRecoveryService } from '../src/integrations/eventsub-recovery.service.ts';
 import { OutboxRecoveryService } from '../src/outbox/outbox-recovery.service.ts';
 
@@ -18,7 +20,9 @@ function databaseFor(queryHandler) {
   };
 }
 
-test('Twitch recovery resumes only after live authorization, reward, and EventSub reconciliation', async () => {
+test(
+  'Twitch recovery resumes only after live authorization, reward, and EventSub reconciliation',
+  async () => {
   const calls = [];
   const database = databaseFor(async (sql) => {
     calls.push(sql);
@@ -58,10 +62,13 @@ test('Twitch recovery resumes only after live authorization, reward, and EventSu
 
   const result = await service.recover(workspace, actor);
   assert.deepEqual(result, { status: 'connected', recoveryState: 'ready' });
-  assert.equal(calls.some((sql) => sql.includes('UPDATE workspace_integrations')), true);
-});
+    assert.equal(calls.some((sql) => sql.includes('UPDATE workspace_integrations')), true);
+  },
+);
 
-test('Twitch recovery refuses to resume when any EventSub subscription is not enabled', async () => {
+test(
+  'Twitch recovery refuses to resume when any EventSub subscription is not enabled',
+  async () => {
   let resumed = false;
   const database = databaseFor(async (sql) => {
     if (sql.includes('UPDATE workspace_integrations')) resumed = true;
@@ -88,8 +95,9 @@ test('Twitch recovery refuses to resume when any EventSub subscription is not en
   );
 
   await assert.rejects(service.recover(workspace, actor), ConflictException);
-  assert.equal(resumed, false);
-});
+    assert.equal(resumed, false);
+  },
+);
 
 test('EventSub retry records the actor, reason, and transactional outbox event', async () => {
   const statements = [];
@@ -116,7 +124,12 @@ test('EventSub retry records the actor, reason, and transactional outbox event',
     append: async (_client, event) => appended.push(event),
   });
 
-  const result = await service.retry(workspace, actor, deliveryId, 'Verified webhook payload after retry review');
+  const result = await service.retry(
+    workspace,
+    actor,
+    deliveryId,
+    'Verified webhook payload after retry review',
+  );
   assert.deepEqual(result, { deliveryId, status: 'accepted' });
   assert.equal(statements.some((sql) => sql.includes('INSERT INTO audit_events')), true);
   assert.equal(appended[0]?.eventType, 'twitch.eventsub.delivery.retry');
