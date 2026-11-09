@@ -3,6 +3,7 @@ import { Worker, type Job } from 'bullmq';
 import { Redis } from 'ioredis';
 import { readFileSync } from 'node:fs';
 import { Pool } from 'pg';
+import { classifyProcessingFailure, isRetryEligible } from './retry-policy.js';
 import { calculateRetryDelay } from './retry-policy.js';
 
 interface EventSubJob {
@@ -161,7 +162,21 @@ export class EventSubConsumerService implements OnModuleInit, OnModuleDestroy {
     } catch (error) {
       await client.query('ROLLBACK').catch(() => undefined);
       const maxAttempts = Number(job.opts.attempts ?? 1);
-      const terminal = job.attemptsMade + 1 >= maxAttempts;
+      const message = error instanceof Error ? error.message : 'eventsub_processing_failed';
+      const permanent = message.startsWith('invalid_eventsub_') || message === 'eventsub_delivery_not_found';
+      const failureClass = classifyProcessingFailure({
+        kind: message,
+        retryable: !permanent,
+        outcome: 'failed',
+        externalSideEffectStarted: false,
+      });
+      const terminal = !isRetryEligible({
+        failureClass,
+        attempts: job.attemptsMade + 1,
+        maxAttempts,
+        ageMs: Math.max(0, Date.now() - job.timestamp),
+        maxAgeMs: 24 * 60 * 60 * 1_000,
+      });
       // Persist exhaustion before throwing the final error. The previous
       // implementation relied only on BullMQ's async "failed" event, leaving
       // a crash window where a permanently failed job remained "accepted".
