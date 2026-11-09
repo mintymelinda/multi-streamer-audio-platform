@@ -43,12 +43,14 @@ function readRequiredSetting(fileVariable: string, directVariable: string): stri
 }
 
 function retryDelaySeconds(attempt: number): number {
-  return Math.ceil(calculateRetryDelay({
-    attempt: Math.max(1, attempt),
-    baseDelayMs: 5_000,
-    maxDelayMs: 3_600_000,
-    jitterRatio: 0.2,
-  }) / 1_000);
+  return Math.ceil(
+    calculateRetryDelay({
+      attempt: Math.max(1, attempt),
+      baseDelayMs: 5_000,
+      maxDelayMs: 3_600_000,
+      jitterRatio: 0.2,
+    }) / 1_000,
+  );
 }
 
 @Injectable()
@@ -250,9 +252,10 @@ export class OutboxDispatcherService implements OnModuleInit, OnModuleDestroy {
         payload: row.payload,
       };
       const serialized = JSON.stringify(event);
-      const notification = serialized.length <= 7_000
-        ? serialized
-        : JSON.stringify({ ...event, payload: {}, refreshRequired: true });
+      const notification =
+        serialized.length <= 7_000
+          ? serialized
+          : JSON.stringify({ ...event, payload: {}, refreshRequired: true });
       await this.pool.query("SELECT pg_notify('platform_outbox_event', $1)", [notification]);
       await this.pool.query(
         `UPDATE outbox_events
