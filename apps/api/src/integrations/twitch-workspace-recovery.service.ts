@@ -11,6 +11,7 @@ import { OutboxService } from '../outbox/outbox.service.js';
 import { TwitchEventSubService } from './twitch-eventsub.service.js';
 import { TwitchIntegrationService } from './twitch-integration.service.js';
 import { TwitchRewardsService } from './twitch-rewards.service.js';
+import { TwitchHelixService } from './twitch-helix.service.js';
 
 @Injectable()
 export class TwitchWorkspaceRecoveryService {
@@ -19,6 +20,7 @@ export class TwitchWorkspaceRecoveryService {
     @Inject(TwitchIntegrationService) private readonly integration: TwitchIntegrationService,
     @Inject(TwitchEventSubService) private readonly eventSub: TwitchEventSubService,
     @Inject(TwitchRewardsService) private readonly rewards: TwitchRewardsService,
+    @Inject(TwitchHelixService) private readonly helix: TwitchHelixService,
     @Inject(OutboxService) private readonly outbox: OutboxService,
   ) {}
 
@@ -46,9 +48,15 @@ export class TwitchWorkspaceRecoveryService {
       throw new ConflictException('Twitch reward mappings still require attention.');
     }
 
-    const subscriptionsReady = await this.eventSub.hasEnabledSubscriptions(workspace.id, actor.id);
-    if (!subscriptionsReady) {
-      throw new ConflictException('At least one Twitch EventSub subscription must be enabled before recovery.');
+    const remoteSubscriptions = await this.helix.listEventSubSubscriptions(actor.twitchUserId);
+    const subscriptions = await this.eventSub.reconcileWorkspaceSubscriptions(
+      workspace.id,
+      actor.id,
+      actor.twitchUserId,
+      remoteSubscriptions,
+    );
+    if (subscriptions.total === 0 || subscriptions.enabled !== subscriptions.total) {
+      throw new ConflictException('All configured Twitch EventSub subscriptions must be enabled before recovery.');
     }
 
     return this.database.transaction(
