@@ -1,13 +1,15 @@
 import {
   ConnectedSocket,
   MessageBody,
+  SubscribeMessage,
+  WebSocketGateway,
+  WebSocketServer,
+} from '@nestjs/websockets';
+import type {
   OnGatewayConnection,
   OnGatewayDisconnect,
   OnModuleDestroy,
   OnModuleInit,
-  SubscribeMessage,
-  WebSocketGateway,
-  WebSocketServer,
 } from '@nestjs/websockets';
 import {
   ForbiddenException,
@@ -16,7 +18,7 @@ import {
   Logger,
   UnauthorizedException,
 } from '@nestjs/common';
-import { Server, Socket } from 'socket.io';
+import type { Server, Socket } from 'socket.io';
 import { DatabaseService } from '../database/database.service.js';
 import type { VerifiedWorkspaceId } from '@platform/contracts';
 import { AuthService } from '../identity/auth.service.js';
