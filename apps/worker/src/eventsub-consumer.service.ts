@@ -71,7 +71,7 @@ export class EventSubConsumerService implements OnModuleInit, OnModuleDestroy {
         lockDuration: 30_000,
         limiter: { max: 20, duration: 1_000 },
         settings: {
-          backoffStrategy: (attemptsMade: number, type: string) => {
+          backoffStrategy: (attemptsMade: number, type: string | undefined) => {
             if (type !== 'phase2-exponential') return -1;
             return calculateRetryDelay({
               attempt: Math.max(1, attemptsMade),
