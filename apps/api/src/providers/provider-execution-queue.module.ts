@@ -20,6 +20,7 @@ type ExecutionRow = {
   provider_instance_id: string;
   state: ProviderExecutionStateInput['state'];
   attempt: number;
+  dispatch_generation: number;
 };
 
 @Module({
@@ -73,9 +74,13 @@ type ExecutionRow = {
                    )
                    VALUES ($1, $2, $3, 'queued', 0)
                    ON CONFLICT (workspace_id, request_id, provider_instance_id)
-                   DO UPDATE SET updated_at = now()
+                   DO UPDATE SET
+                     state = 'queued', attempt = 0, next_attempt_at = NULL,
+                     last_error_code = NULL,
+                     dispatch_generation = provider_execution_states.dispatch_generation + 1,
+                     updated_at = now()
                    WHERE provider_execution_states.state NOT IN ('completed', 'cancelled')
-                   RETURNING id, workspace_id, request_id, provider_instance_id, state, attempt`,
+                   RETURNING id, workspace_id, request_id, provider_instance_id, state, attempt, dispatch_generation`,
                   [job.workspaceId, job.requestId, job.providerInstanceId],
                 );
                 const row = persisted.rows[0];
@@ -89,12 +94,13 @@ type ExecutionRow = {
                   [
                     job.workspaceId,
                     row.id,
-                    `provider-execution:${job.workspaceId}:${job.requestId}:${job.providerInstanceId}`,
+                    `provider-execution:${job.workspaceId}:${job.requestId}:${job.providerInstanceId}:${row.dispatch_generation}`,
                     JSON.stringify({
                       executionStateId: row.id,
                       requestId: job.requestId,
                       providerInstanceId: job.providerInstanceId,
                       queueName: job.queueName,
+                      dispatchGeneration: row.dispatch_generation,
                     }),
                   ],
                 );
