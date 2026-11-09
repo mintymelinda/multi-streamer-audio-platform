@@ -37,8 +37,7 @@ export async function authorizeWorkspaceSubscription(input: {
     workspaceId: input.requestedWorkspaceId,
   });
   if (
-    !membership ||
-    membership.active !== true ||
+    membership?.active !== true ||
     membership.userId !== userId ||
     membership.workspaceId !== input.requestedWorkspaceId
   ) {
