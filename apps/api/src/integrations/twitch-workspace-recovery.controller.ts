@@ -2,7 +2,6 @@ import {
   NotFoundException,
   Controller,
   Inject,
-  Param,
   Post,
   Req,
   UseGuards,
