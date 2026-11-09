@@ -50,7 +50,7 @@ export function isProviderFailoverAllowed(input: {
   policy?: Partial<ProviderRetryPolicy>;
 }): boolean {
   const policy = { ...DEFAULT_PROVIDER_RETRY_POLICY, ...input.policy };
-  if (!policy.failoverEnabled || !input.retryBudgetRemaining) return false;
+  if (!policy.automaticRetryEnabled || !policy.failoverEnabled || !input.retryBudgetRemaining) return false;
   if (input.failureClass === 'authorization' || input.failureClass === 'uncertain') return false;
   return input.failureClass === 'transient' || policy.failoverOnPermanentFailure;
 }
