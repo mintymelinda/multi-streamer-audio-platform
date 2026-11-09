@@ -236,33 +236,31 @@ export class OutboxDispatcherService implements OnModuleInit, OnModuleDestroy {
           payload: row.payload,
         },
         {
-          jobId: row.id,
+          jobId: `${row.id}-${row.attempt_count}`,
           attempts: 8,
           backoff: { type: 'exponential', delay: 1_000 },
           removeOnComplete: { age: 30 * 24 * 60 * 60, count: 10_000 },
           removeOnFail: false,
         },
       );
-      const published = await this.pool.query(
+      const event = {
+        id: row.id,
+        workspaceId: row.workspace_id,
+        type: row.event_type,
+        payload: row.payload,
+      };
+      const serialized = JSON.stringify(event);
+      const notification = serialized.length <= 7_000
+        ? serialized
+        : JSON.stringify({ ...event, payload: {}, refreshRequired: true });
+      await this.pool.query("SELECT pg_notify('platform_outbox_event', $1)", [notification]);
+      await this.pool.query(
         `UPDATE outbox_events
             SET published_at = now(), dispatch_status = 'published',
                 locked_at = NULL, lock_token = NULL, last_error_code = NULL
           WHERE id = $1 AND published_at IS NULL AND lock_token = $2`,
         [row.id, row.lock_token],
       );
-      if (published.rowCount === 1) {
-        const event = {
-          id: row.id,
-          workspaceId: row.workspace_id,
-          type: row.event_type,
-          payload: row.payload,
-        };
-        const serialized = JSON.stringify(event);
-        const notification = serialized.length <= 7_000
-          ? serialized
-          : JSON.stringify({ ...event, payload: {}, refreshRequired: true });
-        await this.pool.query("SELECT pg_notify('platform_outbox_event', $1)", [notification]);
-      }
     } catch {
       const delay = retryDelaySeconds(row.attempt_count);
       await this.pool.query(
