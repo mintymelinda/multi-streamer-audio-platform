@@ -63,7 +63,9 @@ export class ProviderCredentialsService {
       if (!revoked.revoked) throw new Error('Provider authorization revocation could not be confirmed.');
     }
     await this.database.transaction({ userId: input.actorId, verifiedWorkspaceId: input.workspaceId as never }, async (client) => {
-      await client.query('DELETE FROM provider_credentials WHERE workspace_id = $1 AND provider_instance_id = $2', [input.workspaceId, input.providerInstanceId]);
+      const knownId = this.credentialIds.get(this.instanceKey(input.workspaceId, input.providerInstanceId));
+      if (knownId) await client.query('DELETE FROM provider_credentials WHERE id = $1 AND workspace_id = $2', [knownId, input.workspaceId]);
+      else await client.query('DELETE FROM provider_credentials WHERE workspace_id = $1 AND provider_instance_id = $2', [input.workspaceId, input.providerInstanceId]);
       await this.audit.append(client, { workspaceId: input.workspaceId, actorId: input.actorId, eventType: 'provider.disconnected', providerInstanceId: input.providerInstanceId });
     });
     this.credentialIds.delete(this.instanceKey(input.workspaceId, input.providerInstanceId));
