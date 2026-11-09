@@ -117,6 +117,22 @@ export class TwitchRedemptionRouterService implements OnModuleInit, OnModuleDest
         return;
       }
 
+      const integration = await this.database.transaction(
+        { userId: row.service_actor_user_id, verifiedWorkspaceId: row.workspace_id },
+        (client) =>
+          client.query<{ status: string; recovery_state: string }>(
+            "SELECT status, recovery_state FROM workspace_integrations WHERE workspace_id = $1 AND provider = 'twitch'",
+            [row.workspace_id],
+          ),
+      );
+      if (
+        integration.rows[0]?.status !== 'connected' ||
+        integration.rows[0]?.recovery_state !== 'ready'
+      ) {
+        await this.finish(row, 'pending', null, 'workspace_twitch_authorization_paused');
+        return;
+      }
+
       const event = row.event_payload;
       const reward = event.reward as Record<string, unknown> | undefined;
       const rewardId = typeof reward?.id === 'string' ? reward.id : '';
