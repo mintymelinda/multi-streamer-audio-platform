@@ -12,11 +12,11 @@ These are required operator documentation deliverables for Phase 3. They must be
 
 ## Spotify
 
-- **Technical:** Document supported Web API and player capabilities and restrictions. Do not extract or proxy Spotify streams.
-- **Authorization:** Document OAuth scopes, token refresh, revocation, and authorization-expiry behavior.
-- **Availability:** Document account, device, region, plan, and API availability constraints.
-- **Contractual:** Review current Spotify Developer terms and applicable user/account requirements.
-- **Rights and use:** Verify permitted use and playback model. API access does not convey rights to stream or publicly perform content.
+- **Technical:** The initial adapter supports track search and metadata resolution through Spotify Web API `/search` and `/tracks/{id}`. It accepts a short-lived access token supplied by the credential/token boundary, supports an optional ISO country market, normalizes track IDs/URIs/URLs, and preserves Spotify attribution links. It does not download, proxy, or extract audio.
+- **Authorization:** Spotify Web API requests require OAuth access tokens. Token acquisition, refresh, revocation, and storage remain the responsibility of the integration credential boundary; tokens are never returned in adapter results or errors. Request only scopes required by the enabled feature.
+- **Availability:** Requests are subject to Spotify API availability, application access mode, market availability, and rate limits. HTTP 401 is surfaced as authorization expiry, 403 as denied access, and 429 as rate limiting.
+- **Contractual:** Review current Spotify Developer Terms and endpoint-specific restrictions before enabling the integration.
+- **Rights and use:** Spotify's developer policies prohibit non-interactive broadcasting and synchronizing Spotify content with visual media. Consequently this adapter declares playback, pause, resume, seek, and queue capabilities false. Spotify catalog metadata must link back to Spotify and retain required attribution. Do not use Spotify as an audio source for the Twitch/OBS broadcast path.
 
 ## Lyrion (optional)
 
