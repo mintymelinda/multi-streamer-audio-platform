@@ -42,14 +42,23 @@ test(
     getAccessToken: async () => 'token',
   };
   const eventSub = {
-    reconcileWorkspaceSubscriptions: async () => ({ total: 2, enabled: 2 }),
+    listWorkspaceSubscriptions: async () => [
+      { subscriptionId: 'sub-a', status: 'enabled' },
+    ],
+    reconcileWorkspaceSubscriptions: async () => ({ total: 1, enabled: 1 }),
   };
   const rewards = {
     listRemoteRewards: async () => [],
     listMappings: async () => [{ enabled: true, sync_state: 'synced' }],
   };
   const helix = {
-    listEventSubSubscriptions: async () => [{ id: 'sub-a' }],
+    listEventSubSubscriptions: async () => [{
+      id: 'sub-a',
+      status: 'enabled',
+      type: 'channel.channel_points_custom_reward_redemption.add',
+      version: '1',
+      condition: { broadcaster_user_id: actor.twitchUserId },
+    }],
   };
   const outbox = { append: async () => 'outbox-event-a' };
   const service = new TwitchWorkspaceRecoveryService(
@@ -68,34 +77,51 @@ test(
 );
 
 test(
-  'Twitch recovery refuses to resume when any EventSub subscription is not enabled',
+  'Twitch recovery provisions a missing redemption subscription and waits for callback verification',
   async () => {
-  let resumed = false;
-  const database = databaseFor(async (sql) => {
-    if (sql.includes('UPDATE workspace_integrations')) resumed = true;
-    return { rows: [{ id: 'integration-a' }], rowCount: 1 };
-  });
-  const service = new TwitchWorkspaceRecoveryService(
-    database,
-    {
-      getStatus: async () => ({
-        status: 'connected',
-        recoveryState: 'pending_reconciliation',
-        externalAccountId: actor.twitchUserId,
-        grantedScopes: ['channel:manage:redemptions'],
-      }),
-      getAccessToken: async () => 'token',
-    },
-    { reconcileWorkspaceSubscriptions: async () => ({ total: 2, enabled: 1 }) },
-    {
-      listRemoteRewards: async () => [],
-      listMappings: async () => [],
-    },
-    { listEventSubSubscriptions: async () => [] },
-    { append: async () => 'outbox-event-a' },
-  );
+    let registered = false;
+    let resumed = false;
+    const database = databaseFor(async (sql) => {
+      if (sql.includes('UPDATE workspace_integrations')) resumed = true;
+      return { rows: [{ id: 'integration-a' }], rowCount: 1 };
+    });
+    const service = new TwitchWorkspaceRecoveryService(
+      database,
+      {
+        getStatus: async () => ({
+          status: 'connected',
+          recoveryState: 'pending_reconciliation',
+          externalAccountId: actor.twitchUserId,
+          grantedScopes: ['channel:manage:redemptions'],
+        }),
+        getAccessToken: async () => 'token',
+      },
+      {
+        listWorkspaceSubscriptions: async () => [],
+        reconcileWorkspaceSubscriptions: async () => ({ total: 0, enabled: 0 }),
+        registerSubscription: async () => {
+          registered = true;
+        },
+      },
+      {
+        listRemoteRewards: async () => [],
+        listMappings: async () => [],
+      },
+      {
+        listEventSubSubscriptions: async () => [],
+        createRedemptionEventSubSubscription: async () => ({
+          id: 'sub-new',
+          status: 'webhook_callback_verification_pending',
+          type: 'channel.channel_points_custom_reward_redemption.add',
+          version: '1',
+          condition: { broadcaster_user_id: actor.twitchUserId },
+        }),
+      },
+      { append: async () => 'outbox-event-a' },
+    );
 
-  await assert.rejects(service.recover(workspace, actor), ConflictException);
+    await assert.rejects(service.recover(workspace, actor), ConflictException);
+    assert.equal(registered, true);
     assert.equal(resumed, false);
   },
 );
