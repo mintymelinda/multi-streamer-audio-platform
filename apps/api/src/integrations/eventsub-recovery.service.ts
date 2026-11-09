@@ -90,6 +90,9 @@ export class EventSubRecoveryService {
           `UPDATE twitch_eventsub_deliveries
               SET status = $3,
                   attempts = CASE WHEN $3 = 'accepted' THEN 0 ELSE attempts END,
+                  dispatch_attempts = CASE WHEN $3 = 'accepted' THEN 0 ELSE dispatch_attempts END,
+                  dispatch_generation = CASE WHEN $3 = 'accepted' THEN dispatch_generation + 1 ELSE dispatch_generation END,
+                  last_retried_at = CASE WHEN $3 = 'accepted' THEN now() ELSE last_retried_at END,
                   processed_at = CASE WHEN $3 = 'dismissed' THEN now() ELSE NULL END,
                   last_error = NULL,
                   dispatch_published_at = NULL,
