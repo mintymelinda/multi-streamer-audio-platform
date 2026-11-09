@@ -91,6 +91,7 @@ function containsSensitivePayload(value: unknown): boolean {
   if (Array.isArray(value)) return value.some(containsSensitivePayload);
   if (typeof value !== 'object' || value === null) return false;
   for (const [key, child] of Object.entries(value)) {
+    if (/token|secret|credential|webhookbody|authorization|cookie/i.test(key)) return true;
     if (sensitivePayloadKeys.has(key) || containsSensitivePayload(child)) return true;
   }
   return false;
