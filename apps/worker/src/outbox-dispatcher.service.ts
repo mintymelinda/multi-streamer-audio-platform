@@ -259,7 +259,10 @@ export class OutboxDispatcherService implements OnModuleInit, OnModuleDestroy {
       );
       if (row.event_type === 'provider.execution.queued') {
         const queueName = row.payload.queueName;
-        if (typeof queueName !== 'string' || !/^provider-execution-[A-Za-z0-9._-]{1,200}$/.test(queueName)) {
+        if (
+          typeof queueName !== 'string' ||
+          !/^provider-execution-[A-Za-z0-9._-]{1,200}$/.test(queueName)
+        ) {
           throw new Error('Provider execution queue name is invalid.');
         }
         const providerQueue = new Queue(queueName, { connection: this.redis });

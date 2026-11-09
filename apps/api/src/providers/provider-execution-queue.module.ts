@@ -46,9 +46,7 @@ type ExecutionRow = {
                 ),
             );
             const row = result.rows[0];
-            return row
-              ? { id: row.id, workspaceId: row.workspace_id, status: row.status }
-              : null;
+            return row ? { id: row.id, workspaceId: row.workspace_id, status: row.status } : null;
           },
           enqueueProviderExecution: async (job: ProviderExecutionJob) => {
             const actorId = job.actorId ?? '';
@@ -65,7 +63,12 @@ type ExecutionRow = {
                     FOR SHARE`,
                   [job.workspaceId, job.requestId],
                 );
-                if (!request.rows[0] || ['completed', 'dismissed', 'rejected', 'cancelled', 'failed', 'skipped'].includes(request.rows[0].status)) {
+                if (
+                  !request.rows[0] ||
+                  ['completed', 'dismissed', 'rejected', 'cancelled', 'failed', 'skipped'].includes(
+                    request.rows[0].status,
+                  )
+                ) {
                   throw new Error('The authoritative request is missing or terminal.');
                 }
                 const persisted = await client.query<ExecutionRow>(
@@ -133,7 +136,12 @@ type ExecutionRow = {
                     WHERE workspace_id = $1 AND id = $2 FOR SHARE`,
                   [state.workspaceId, state.requestId],
                 );
-                if (!request.rows[0] || ['completed', 'rejected', 'cancelled', 'failed', 'skipped'].includes(request.rows[0].status)) {
+                if (
+                  !request.rows[0] ||
+                  ['completed', 'rejected', 'cancelled', 'failed', 'skipped'].includes(
+                    request.rows[0].status,
+                  )
+                ) {
                   throw new Error('The authoritative request is missing or terminal.');
                 }
                 const result = await client.query<ExecutionRow>(
