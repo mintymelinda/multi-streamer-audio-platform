@@ -139,8 +139,8 @@ export class ProviderRoutingService {
         return (
           leftPreference - rightPreference ||
           right.instance.priority - left.instance.priority ||
-          left.item.providerId.localeCompare(right.item.providerId) ||
-          left.item.providerInstanceId.localeCompare(right.item.providerInstanceId)
+          compareStable(left.item.providerId, right.item.providerId) ||
+          compareStable(left.item.providerInstanceId, right.item.providerInstanceId)
         );
       });
 
@@ -160,37 +160,26 @@ export class ProviderRoutingService {
       );
       if (!assignment || (Array.isArray(assignment) && assignment.length === 0)) {
         missingOutput = true;
-        considered.push({
-          providerId: candidate.item.providerId,
-          providerInstanceId: candidate.item.providerInstanceId,
-          eligible: false,
-          reason: 'no explicit output assignment exists',
-        });
+        candidate.item.eligible = false;
+        candidate.item.reason = 'no explicit output assignment exists';
         continue;
       }
       if (Array.isArray(assignment)) {
         if (assignment.length !== 1) {
-          considered.push({
-            providerId: candidate.item.providerId,
-            providerInstanceId: candidate.item.providerInstanceId,
-            eligible: false,
-            reason: 'multiple output assignments are ambiguous',
-          });
+          candidate.item.eligible = false;
+          candidate.item.reason = 'multiple output assignments are ambiguous';
           continue;
         }
       }
-      const output = Array.isArray(assignment) ? assignment[0] : assignment;
+      const output = Array.isArray(assignment) ? assignment.at(0) : assignment;
+      if (!output) continue;
       if (
         !output.outputId?.trim() ||
         !output.playerId?.trim() ||
         output.providerInstanceId !== candidate.instance.instanceId
       ) {
-        considered.push({
-          providerId: candidate.item.providerId,
-          providerInstanceId: candidate.item.providerInstanceId,
-          eligible: false,
-          reason: 'output assignment is incomplete or belongs to another provider instance',
-        });
+        candidate.item.eligible = false;
+        candidate.item.reason = 'output assignment is incomplete or belongs to another provider instance';
         continue;
       }
       return {
@@ -226,4 +215,8 @@ function buildRoutingReason(
     ? `workspace preference rank ${(preferred.get(providerId) ?? 0) + 1}`
     : 'no explicit workspace preference';
   return `Selected ${providerId}: ${preference}; provider priority ${priority}; request capabilities and health requirements satisfied.`;
+}
+
+function compareStable(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
 }
