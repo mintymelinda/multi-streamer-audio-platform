@@ -130,11 +130,7 @@ export class ProviderExecutionQueueService {
     requestId: string,
     actorId?: string,
   ): Promise<ProviderExecutionRequest> {
-    const request = await this.dependencies.getRequestFromPostgres(
-      requestId,
-      workspaceId,
-      actorId,
-    );
+    const request = await this.dependencies.getRequestFromPostgres(requestId, workspaceId, actorId);
     if (!request) {
       throw new Error('The authoritative PostgreSQL request does not exist.');
     }
