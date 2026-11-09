@@ -295,7 +295,7 @@ export class TwitchIntegrationService {
             [workspace.id],
           );
           const row = result.rows[0];
-          if (!row || row.status !== 'connected' || !row.external_account_id) {
+          if (row?.status !== 'connected' || !row.external_account_id) {
             throw new UnauthorizedException('The workspace Twitch broadcaster is not connected.');
           }
           if (
