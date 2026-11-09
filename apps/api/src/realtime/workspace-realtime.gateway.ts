@@ -9,7 +9,13 @@ import {
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
-import { ForbiddenException, Inject, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Inject,
+  Injectable,
+  Logger,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { DatabaseService } from '../database/database.service.js';
 import { AuthService } from '../identity/auth.service.js';
@@ -30,7 +36,11 @@ interface WorkspaceSocket extends Socket {
 @WebSocketGateway({ namespace: '/workspace' })
 @Injectable()
 export class WorkspaceRealtimeGateway
-  implements OnGatewayConnection<WorkspaceSocket>, OnGatewayDisconnect<WorkspaceSocket>, OnModuleInit, OnModuleDestroy
+  implements
+    OnGatewayConnection<WorkspaceSocket>,
+    OnGatewayDisconnect<WorkspaceSocket>,
+    OnModuleInit,
+    OnModuleDestroy
 {
   private readonly logger = new Logger(WorkspaceRealtimeGateway.name);
   @WebSocketServer()
@@ -85,7 +95,9 @@ export class WorkspaceRealtimeGateway
         : undefined;
     if (
       typeof workspaceId !== 'string' ||
-      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(workspaceId)
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        workspaceId,
+      )
     ) {
       throw new ForbiddenException('A valid workspace ID is required.');
     }
