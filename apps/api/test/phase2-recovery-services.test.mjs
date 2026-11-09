@@ -83,8 +83,8 @@ test('Twitch recovery refuses to resume when any EventSub subscription is not en
       listRemoteRewards: async () => [],
       listMappings: async () => [],
     },
-    { append: async () => 'outbox-event-a' },
     { listEventSubSubscriptions: async () => [] },
+    { append: async () => 'outbox-event-a' },
   );
 
   await assert.rejects(service.recover(workspace, actor), ConflictException);
