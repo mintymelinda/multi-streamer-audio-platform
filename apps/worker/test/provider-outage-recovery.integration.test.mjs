@@ -114,3 +114,31 @@ test('reconciles an uncertain start before any backup provider can start', async
   assert.equal(result.status, 'reconciled');
   assert.equal(backupStarted, false);
 });
+
+test('uses exponential retry delays when persisting transient provider failures', async () => {
+  const persisted = [];
+  const now = new Date('2026-11-09T12:00:00.000Z');
+  const processor = new ProviderExecutionProcessor({
+    loadAuthoritativeRequest: async () => ({
+      id: 'request-delay',
+      workspaceId: 'workspace-a',
+      mediaId: 'media-a',
+      status: 'approved',
+    }),
+    getCandidates: async () => [
+      { providerInstanceId: 'primary', eligible: true, priority: 1 },
+      { providerInstanceId: 'backup', eligible: true, priority: 2 },
+    ],
+    execute: async () => {
+      throw Object.assign(new Error('temporary outage'), { status: 503 });
+    },
+    persistExecutionState: async (state) => persisted.push(state),
+    now: () => now,
+  });
+
+  await assert.rejects(
+    processor.process({ workspaceId: 'workspace-a', requestId: 'request-delay' }),
+  );
+  assert.equal(persisted[0].nextAttemptAt, '2026-11-09T12:00:05.000Z');
+  assert.equal(persisted[1].nextAttemptAt, '2026-11-09T12:00:10.000Z');
+});

@@ -4,6 +4,7 @@ import {
   isProviderFailoverAllowed,
   selectFailoverCandidate,
   shouldReconcilePlayback,
+  providerRetryDelayMs,
   type FailoverCandidate,
   type ProviderFailureClass,
   type ProviderRetryPolicy,
@@ -229,7 +230,8 @@ export class ProviderExecutionProcessor {
             ...(failureClass === 'transient'
               ? {
                   nextAttemptAt: new Date(
-                    (this.dependencies.now ?? (() => new Date()))().getTime() + policy.baseDelayMs,
+                    (this.dependencies.now ?? (() => new Date()))().getTime() +
+                      providerRetryDelayMs(attempt, policy),
                   ).toISOString(),
                 }
               : {}),
