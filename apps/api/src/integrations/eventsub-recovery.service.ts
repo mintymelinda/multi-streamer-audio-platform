@@ -85,7 +85,9 @@ export class EventSubRecoveryService {
           [workspace.id, deliveryId],
         );
         const delivery = result.rows[0];
-        if (!delivery) throw new ConflictException('Only failed EventSub deliveries can be recovered.');
+        if (!delivery) {
+          throw new ConflictException('Only failed EventSub deliveries can be recovered.');
+        }
 
         const status = action === 'retry' ? 'accepted' : 'dismissed';
         const updated = await client.query(
