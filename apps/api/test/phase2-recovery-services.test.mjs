@@ -172,8 +172,7 @@ test('EventSub retry records the actor, reason, and transactional outbox event',
   );
   assert.equal(
     statements.some(
-      (sql) =>
-        sql.includes('dispatch_generation = CASE') && sql.includes('last_retried_at = CASE'),
+      (sql) => sql.includes('dispatch_generation = CASE') && sql.includes('last_retried_at = CASE'),
     ),
     true,
   );
