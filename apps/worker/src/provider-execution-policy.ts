@@ -8,6 +8,7 @@ export interface ProviderFailureInput {
 }
 
 export interface ProviderRetryPolicy {
+  automaticRetryEnabled: boolean;
   maxAttempts: number;
   baseDelayMs: number;
   maxDelayMs: number;
@@ -16,6 +17,7 @@ export interface ProviderRetryPolicy {
 }
 
 export const DEFAULT_PROVIDER_RETRY_POLICY: Readonly<ProviderRetryPolicy> = {
+  automaticRetryEnabled: true,
   maxAttempts: 3,
   baseDelayMs: 5_000,
   maxDelayMs: 300_000,
@@ -50,11 +52,7 @@ export function isProviderFailoverAllowed(input: {
   policy?: Partial<ProviderRetryPolicy>;
 }): boolean {
   const policy = { ...DEFAULT_PROVIDER_RETRY_POLICY, ...input.policy };
-  if (
-    !policy.automaticRetryEnabled ||
-    !policy.failoverEnabled ||
-    !input.retryBudgetRemaining
-  )
+  if (!policy.automaticRetryEnabled || !policy.failoverEnabled || !input.retryBudgetRemaining)
     return false;
   if (input.failureClass === 'authorization' || input.failureClass === 'uncertain') return false;
   return input.failureClass === 'transient' || policy.failoverOnPermanentFailure;
