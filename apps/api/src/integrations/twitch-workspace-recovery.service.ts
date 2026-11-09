@@ -28,7 +28,9 @@ export class TwitchWorkspaceRecoveryService {
 
   async recover(workspace: WorkspaceRequestContext, actor: AuthenticatedUser) {
     if (workspace.role !== 'owner' || workspace.status !== 'active') {
-      throw new ForbiddenException('Only the active workspace owner can recover Twitch integration.');
+      throw new ForbiddenException(
+        'Only the active workspace owner can recover Twitch integration.',
+      );
     }
 
     const status = await this.integration.getStatus(workspace, actor);
