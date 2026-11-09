@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { VerifiedWorkspaceId } from '@platform/contracts';
 import {
   ConflictException,
@@ -124,7 +125,7 @@ export class EventSubRecoveryService {
           eventType: `twitch.eventsub.delivery.${action}`,
           aggregateType: 'twitch_eventsub_delivery',
           aggregateId: deliveryId,
-          idempotencyKey: `twitch.eventsub.delivery.${action}:${deliveryId}`,
+          idempotencyKey: `twitch.eventsub.delivery.${action}:${deliveryId}:${randomUUID()}`,
           payload: { messageId: delivery.message_id, reason: normalizedReason },
         });
         return { deliveryId, status };
