@@ -260,9 +260,11 @@ export class TwitchHelixService {
     }
 
     if (response.status === 401) {
+      await this.integration.markAuthorizationLost(workspace, actor, 'twitch_api_unauthorized');
       throw new UnauthorizedException('Twitch rejected the workspace broadcaster authorization.');
     }
     if (response.status === 403) {
+      await this.integration.markAuthorizationLost(workspace, actor, 'twitch_api_forbidden');
       throw new ForbiddenException(
         'The Twitch broadcaster is not permitted to manage these rewards.',
       );
