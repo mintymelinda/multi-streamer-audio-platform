@@ -257,6 +257,34 @@ export class OutboxDispatcherService implements OnModuleInit, OnModuleDestroy {
           removeOnFail: false,
         },
       );
+      if (row.event_type === 'provider.execution.queued') {
+        const queueName = row.payload.queueName;
+        if (typeof queueName !== 'string' || !/^provider-execution-[A-Za-z0-9._-]{1,200}$/.test(queueName)) {
+          throw new Error('Provider execution queue name is invalid.');
+        }
+        const providerQueue = new Queue(queueName, { connection: this.redis });
+        try {
+          await providerQueue.add(
+            'provider-execution',
+            {
+              executionStateId: row.aggregate_id,
+              workspaceId: row.workspace_id,
+              requestId: row.payload.requestId,
+              providerInstanceId: row.payload.providerInstanceId,
+              dispatchGeneration: row.payload.dispatchGeneration,
+            },
+            {
+              jobId: `provider-${row.aggregate_id}-${row.payload.dispatchGeneration}`,
+              attempts: 8,
+              backoff: { type: 'exponential', delay: 1_000 },
+              removeOnComplete: { age: 30 * 24 * 60 * 60, count: 10_000 },
+              removeOnFail: false,
+            },
+          );
+        } finally {
+          await providerQueue.close();
+        }
+      }
       const event = {
         id: row.id,
         workspaceId: row.workspace_id,
