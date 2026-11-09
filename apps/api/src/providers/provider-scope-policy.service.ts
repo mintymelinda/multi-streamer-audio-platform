@@ -42,6 +42,7 @@ export class ProviderScopePolicyService {
     const requested = new Set(input.requestedScopes);
     const featureMap = this.requiredScopes[input.providerId.trim().toLowerCase()];
     const allowed = featureMap ? new Set(Object.values(featureMap).flat()) : requested;
+    const granted = new Set(input.grantedScopes);
     const unexpectedScopes = [...granted]
       .filter((scope) => !requested.has(scope) || !allowed.has(scope))
       .sort();
