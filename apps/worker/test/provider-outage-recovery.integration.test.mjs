@@ -142,3 +142,32 @@ test('uses exponential retry delays when persisting transient provider failures'
   assert.equal(persisted[0].nextAttemptAt, '2026-11-09T12:00:05.000Z');
   assert.equal(persisted[1].nextAttemptAt, '2026-11-09T12:00:10.000Z');
 });
+
+test('does not fail over when a provider reports an authorization failure as a result', async () => {
+  const attempted = [];
+  const persisted = [];
+  const processor = new ProviderExecutionProcessor({
+    loadAuthoritativeRequest: async () => ({
+      id: 'request-auth',
+      workspaceId: 'workspace-a',
+      mediaId: 'media-a',
+      status: 'approved',
+    }),
+    getCandidates: async () => [
+      { providerInstanceId: 'primary', eligible: true, priority: 1 },
+      { providerInstanceId: 'backup', eligible: true, priority: 2 },
+    ],
+    execute: async (providerInstanceId) => {
+      attempted.push(providerInstanceId);
+      return { outcome: 'failed', status: 401 };
+    },
+    persistExecutionState: async (state) => persisted.push(state),
+  });
+
+  await assert.rejects(
+    processor.process({ workspaceId: 'workspace-a', requestId: 'request-auth' }),
+  );
+  assert.deepEqual(attempted, ['primary']);
+  assert.equal(persisted[0].failureClass, 'authorization');
+  assert.equal(persisted[0].state, 'failed');
+});
