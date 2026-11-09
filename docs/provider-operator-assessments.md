@@ -2,11 +2,30 @@
 
 These are required operator documentation deliverables for Phase 3. They must be completed and reviewed against the actual adapter implementation and current provider terms before enabling a provider in production. This checklist is not legal advice and does not grant permission.
 
-| Provider              | Technical assessment                                                                                                                         | Authorization                                                                                                                                               | Availability                                                                      | Contractual / terms                                                                  | Rights and use                                                                                                   |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
-| YouTube via Invidious | Document selected Invidious instance/API behavior, supported media resolution, rate limits, failure modes, and instance replacement strategy | Document whether the chosen instance requires credentials and what account access is used; do not assume an Invidious instance grants YouTube authorization | Document instance operator, uptime dependency, fallback, and outage behavior      | Review applicable YouTube terms and the selected Invidious instance's terms/policies | Verify rights for requested media and permitted playback/use; do not treat public availability as a license      |
-| Spotify               | Document supported Web API/player capabilities and restrictions; do not extract or proxy Spotify streams                                     | Document OAuth scopes, token refresh, revocation, and authorization-expiry behavior                                                                         | Document account/device/region/plan constraints and API availability dependencies | Review current Spotify Developer terms and applicable user/account requirements      | Verify permitted use and playback model; API access does not convey rights to stream or publicly perform content |
-| Lyrion (optional)     | Document supported server/player versions, JSON-RPC behavior, player discovery, and command limitations                                      | Document server authentication and local network trust boundaries                                                                                           | Document dependency on operator-managed server/player availability                | Review applicable software licenses and any relevant media/provider terms            | Operator must verify rights to each library source and intended use                                              |
+## YouTube via Invidious
+
+- **Technical:** The initial adapter supports video search and metadata resolution through the documented `/api/v1/search`, `/api/v1/videos/:id`, and `/api/v1/stats` endpoints. Direct playback remains disabled. Up to five operator-configured instances are tried in order, preserving the requested video ID.
+- **Authorization:** The metadata adapter does not request YouTube OAuth credentials. Invidious access does not grant YouTube authorization.
+- **Availability:** Operator-configured instance health is checked; network and server failures can fall back to the next configured instance. Public instances are not trusted by default.
+- **Contractual:** Review applicable YouTube terms and the selected Invidious instance's terms and policies before enabling a playback path.
+- **Rights and use:** Search and metadata do not establish rights to play or broadcast a work. Direct playback capability is intentionally false pending an approved playback design and operator review.
+
+## Spotify
+
+- **Technical:** Document supported Web API and player capabilities and restrictions. Do not extract or proxy Spotify streams.
+- **Authorization:** Document OAuth scopes, token refresh, revocation, and authorization-expiry behavior.
+- **Availability:** Document account, device, region, plan, and API availability constraints.
+- **Contractual:** Review current Spotify Developer terms and applicable user/account requirements.
+- **Rights and use:** Verify permitted use and playback model. API access does not convey rights to stream or publicly perform content.
+
+## Lyrion (optional)
+
+- **Technical:** Document supported server/player versions, JSON-RPC behavior, player discovery, and command limitations.
+- **Authorization:** Document server authentication and local network trust boundaries.
+- **Availability:** Document dependency on operator-managed server/player availability.
+- **Contractual:** Review applicable software licenses and relevant media/provider terms.
+- **Rights and use:** The operator must verify rights to each library source and intended use.
+
 
 For each provider, record: assessment owner, date, source links, known limitations, data processed, scopes/secrets stored, outage and recovery behavior, contractual review status, rights-use review status, and explicit enable/disable decision.
 
