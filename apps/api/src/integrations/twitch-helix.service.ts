@@ -108,7 +108,9 @@ export class TwitchHelixService {
         );
     }
     if (response.status === 429 || response.status >= 500) {
-      throw new ServiceUnavailableException('Twitch EventSub subscription creation is temporarily unavailable.');
+      throw new ServiceUnavailableException(
+          'Twitch EventSub subscription creation is temporarily unavailable.',
+        );
     }
     if (!response.ok) {
       throw new BadGatewayException('Twitch rejected the EventSub subscription request.');
@@ -147,7 +149,9 @@ export class TwitchHelixService {
     }
     if (response.status === 404 || response.status === 204) return;
     if (response.status === 429 || response.status >= 500) {
-      throw new ServiceUnavailableException('Twitch EventSub subscription deletion is temporarily unavailable.');
+      throw new ServiceUnavailableException(
+          'Twitch EventSub subscription deletion is temporarily unavailable.',
+        );
     }
     if (!response.ok) {
       throw new BadGatewayException('Twitch rejected the EventSub subscription deletion.');
@@ -185,7 +189,9 @@ export class TwitchHelixService {
         throw new UnauthorizedException('Twitch app authorization was rejected.');
       }
       if (response.status === 429 || response.status >= 500) {
-        throw new ServiceUnavailableException('Twitch EventSub reconciliation is temporarily unavailable.');
+        throw new ServiceUnavailableException(
+            'Twitch EventSub reconciliation is temporarily unavailable.',
+          );
       }
       if (!response.ok) {
         throw new BadGatewayException('Twitch EventSub subscriptions could not be reconciled.');
