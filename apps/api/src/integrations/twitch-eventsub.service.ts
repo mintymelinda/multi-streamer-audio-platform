@@ -122,6 +122,28 @@ export class TwitchEventSubService {
     );
   }
 
+  async listWorkspaceSubscriptions(
+    workspaceId: VerifiedWorkspaceId,
+    actorUserId: string,
+    eventType: string,
+  ): Promise<Array<{ subscriptionId: string; status: string }>> {
+    const result = await this.database.transaction(
+      { userId: actorUserId, verifiedWorkspaceId: workspaceId },
+      (client) =>
+        client.query<{ subscription_id: string; status: string }>(
+          `SELECT subscription_id, status
+             FROM twitch_eventsub_subscriptions
+            WHERE workspace_id = $1 AND event_type = $2
+            ORDER BY created_at ASC, subscription_id ASC`,
+          [workspaceId, eventType],
+        ),
+    );
+    return result.rows.map((row) => ({
+      subscriptionId: row.subscription_id,
+      status: row.status,
+    }));
+  }
+
   async reconcileWorkspaceSubscriptions(
     workspaceId: VerifiedWorkspaceId,
     actorUserId: string,
