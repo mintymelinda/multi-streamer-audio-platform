@@ -39,7 +39,7 @@ export interface ProviderInstanceServiceOptions {
 @Injectable()
 export class ProviderInstanceService {
   private readonly currentContractVersion: number;
-  private readonly repository?: ProviderInstanceRepository;
+  private readonly repository: ProviderInstanceRepository | undefined;
 
   constructor(options: ProviderInstanceServiceOptions = {}) {
     this.currentContractVersion = options.currentContractVersion ?? PROVIDER_CONTRACT_VERSION;
@@ -74,7 +74,7 @@ export class ProviderInstanceService {
       workspaceId,
       providerId,
       instanceKey,
-      userId: input.userId,
+      ...(input.userId ? { userId: input.userId } : {}),
     });
     if (identity) {
       if (
