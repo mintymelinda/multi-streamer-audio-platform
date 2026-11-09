@@ -15,6 +15,7 @@ import { ProviderInstanceModule } from './providers/provider-instance.module.js'
 import { ProviderCredentialsModule } from './providers/provider-credentials.module.js';
 import { ProviderOutputAssignmentModule } from './providers/provider-output-assignment.module.js';
 import { PlaybackCoordinatorModule } from './playback/playback-coordinator.module.js';
+import { ProviderExecutionQueueModule } from './providers/provider-execution-queue.module.js';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { PlaybackCoordinatorModule } from './playback/playback-coordinator.modul
     ProviderCredentialsModule,
     ProviderOutputAssignmentModule,
     PlaybackCoordinatorModule,
+    ProviderExecutionQueueModule,
     OutboxModule,
     RequestsModule,
     TwitchEventSubModule,
