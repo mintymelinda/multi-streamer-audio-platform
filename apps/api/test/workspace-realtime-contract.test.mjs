@@ -8,9 +8,7 @@ import {
 
 const session = { userId: 'user-a', authenticated: true };
 
-test(
-  'derives room authorization from verified membership, never a client-supplied actor or room',
-  async () => {
+test('derives room authorization from verified membership, never a client-supplied actor or room', async () => {
     const authorize = async ({ userId, workspaceId }) => ({
       userId,
       workspaceId,
@@ -27,8 +25,7 @@ test(
       workspaceId: 'workspace-a',
       role: 'moderator',
     });
-  },
-);
+});
 
 test('rejects unauthenticated, inactive, and cross-workspace subscriptions', async () => {
   const membership = async () => ({
