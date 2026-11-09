@@ -5,7 +5,7 @@ import { DatabaseService } from '../database/database.service.js';
 import type { AuthenticatedUser, WorkspaceRequestContext } from '../identity/http.types.js';
 import { OutboxService } from './outbox.service.js';
 
-export interface FailedOutboxEvent {
+export export interface FailedOutboxEvent {
   id: string;
   event_type: string;
   aggregate_type: string;
