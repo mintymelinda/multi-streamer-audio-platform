@@ -6,6 +6,7 @@ import type { Http2ServerRequest } from 'node:http2';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
+import { IoAdapter } from '@nestjs/platform-socket.io';
 import { ApiExceptionFilter } from './api-exception.filter.js';
 import { AppModule } from './app.module.js';
 
@@ -24,6 +25,8 @@ async function bootstrap(): Promise<void> {
     }),
     { logger: new ConsoleLogger({ json: true }), rawBody: true },
   );
+
+  app.useWebSocketAdapter(new IoAdapter(app));
 
   const openApiConfig = new DocumentBuilder()
     .setTitle('Multi-Streamer Audio Platform API')
