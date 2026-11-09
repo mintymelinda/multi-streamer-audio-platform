@@ -2,9 +2,9 @@ import 'reflect-metadata';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { ConflictException } from '@nestjs/common';
-import { TwitchWorkspaceRecoveryService } from '../src/integrations/twitch-workspace-recovery.service.ts';
-import { EventSubRecoveryService } from '../src/integrations/eventsub-recovery.service.ts';
-import { OutboxRecoveryService } from '../src/outbox/outbox-recovery.service.ts';
+import { TwitchWorkspaceRecoveryService } from '../dist/integrations/twitch-workspace-recovery.service.js';
+import { EventSubRecoveryService } from '../dist/integrations/eventsub-recovery.service.js';
+import { OutboxRecoveryService } from '../dist/outbox/outbox-recovery.service.js';
 
 const workspace = { id: 'workspace-a', role: 'owner', status: 'active' };
 const actor = { id: 'user-a', twitchUserId: 'broadcaster-a' };
