@@ -7,7 +7,11 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import type { AuthenticatedUser, HttpRequest, WorkspaceRequestContext } from '../identity/http.types.js';
+import type {
+  AuthenticatedUser,
+  HttpRequest,
+  WorkspaceRequestContext,
+} from '../identity/http.types.js';
 import { CsrfGuard } from '../identity/csrf.guard.js';
 import { SessionGuard } from '../identity/session.guard.js';
 import {
