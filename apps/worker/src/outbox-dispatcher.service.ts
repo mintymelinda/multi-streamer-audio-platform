@@ -13,6 +13,7 @@ interface OutboxRow {
   aggregate_id: string;
   payload: Record<string, unknown>;
   attempt_count: number;
+  dispatch_generation: number;
   lock_token: string;
 }
 
@@ -24,6 +25,7 @@ interface EventSubDeliveryRow {
   message_type: 'notification' | 'revocation';
   payload: Record<string, unknown>;
   dispatch_attempts: number;
+  dispatch_generation: number;
   dispatch_lock_token: string;
 }
 
@@ -131,7 +133,7 @@ export class OutboxDispatcherService implements OnModuleInit, OnModuleDestroy {
           WHERE event.id = candidates.id
          RETURNING event.id, event.workspace_id, event.event_type,
                    event.aggregate_type, event.aggregate_id, event.payload,
-                   event.attempt_count, event.lock_token`,
+                   event.attempt_count, event.dispatch_generation, event.lock_token`,
       );
       await client.query('COMMIT');
       return result.rows;
@@ -170,7 +172,8 @@ export class OutboxDispatcherService implements OnModuleInit, OnModuleDestroy {
           WHERE delivery.id = candidates.id
          RETURNING delivery.id, delivery.workspace_id, delivery.subscription_id,
                    delivery.message_id, delivery.message_type, delivery.payload,
-                   delivery.dispatch_attempts, delivery.dispatch_lock_token`,
+                   delivery.dispatch_attempts, delivery.dispatch_generation,
+                   delivery.dispatch_lock_token`,
       );
       await client.query('COMMIT');
       return result.rows;
@@ -192,7 +195,7 @@ export class OutboxDispatcherService implements OnModuleInit, OnModuleDestroy {
           messageId: row.message_id,
         },
         {
-          jobId: `eventsub-${row.id}-${row.dispatch_attempts}`,
+          jobId: `eventsub-${row.id}-${row.dispatch_generation}-${row.dispatch_attempts}`,
           attempts: 8,
           backoff: { type: 'phase2-exponential', delay: 1_000 },
           removeOnComplete: { age: 30 * 24 * 60 * 60, count: 10_000 },
@@ -213,10 +216,19 @@ export class OutboxDispatcherService implements OnModuleInit, OnModuleDestroy {
       const delay = retryDelaySeconds(row.dispatch_attempts);
       await this.pool.query(
         `UPDATE twitch_eventsub_deliveries
-            SET next_dispatch_at = now() + ($2::text || ' seconds')::interval,
-                dispatch_locked_at = NULL,
+            SET dispatch_locked_at = NULL,
                 dispatch_lock_token = NULL,
-                dispatch_error_code = 'redis_enqueue_failed'
+                dispatch_error_code = CASE
+                  WHEN dispatch_attempts >= 8 OR COALESCE(last_retried_at, received_at) < now() - interval '24 hours'
+                    THEN 'eventsub_dispatch_exhausted'
+                  ELSE 'redis_enqueue_failed' END,
+                status = CASE
+                  WHEN dispatch_attempts >= 8 OR COALESCE(last_retried_at, received_at) < now() - interval '24 hours'
+                    THEN 'failed' ELSE status END,
+                next_dispatch_at = CASE
+                  WHEN dispatch_attempts >= 8 OR COALESCE(last_retried_at, received_at) < now() - interval '24 hours'
+                    THEN next_dispatch_at
+                  ELSE now() + ($2::text || ' seconds')::interval END
           WHERE id = $1 AND status = 'accepted'
             AND dispatch_published_at IS NULL AND dispatch_lock_token = $3`,
         [row.id, delay, row.dispatch_lock_token],
@@ -238,7 +250,7 @@ export class OutboxDispatcherService implements OnModuleInit, OnModuleDestroy {
           payload: row.payload,
         },
         {
-          jobId: `${row.id}-${row.attempt_count}`,
+          jobId: `${row.id}-${row.dispatch_generation}-${row.attempt_count}`,
           attempts: 8,
           backoff: { type: 'exponential', delay: 1_000 },
           removeOnComplete: { age: 30 * 24 * 60 * 60, count: 10_000 },
