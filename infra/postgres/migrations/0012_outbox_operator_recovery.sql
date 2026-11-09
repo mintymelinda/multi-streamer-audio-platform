@@ -1,6 +1,8 @@
 -- Complete durable operator recovery for transactional outbox dispatch.
 ALTER TABLE outbox_events
   ADD COLUMN last_retried_at timestamptz,
+  ADD COLUMN dispatch_generation integer NOT NULL DEFAULT 0
+    CHECK (dispatch_generation >= 0),
   ADD COLUMN dispatch_status text NOT NULL DEFAULT 'pending'
     CHECK (dispatch_status IN ('pending', 'published', 'failed', 'dismissed'));
 
