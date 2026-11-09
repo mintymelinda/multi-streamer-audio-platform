@@ -9,6 +9,7 @@ import {
 import { DatabaseService } from '../database/database.service.js';
 import { verifyTwitchEventSubSignature } from './twitch-eventsub-signature.js';
 import type { TwitchEventSubSubscription } from './twitch-helix.service.js';
+import { reconcileEventSubSubscriptions } from './twitch-eventsub-reconciliation.js';
 
 type EventSubMessageType = 'webhook_callback_verification' | 'notification' | 'revocation';
 
@@ -140,33 +141,24 @@ export class TwitchEventSubService {
             WHERE workspace_id = $1 FOR UPDATE`,
           [workspaceId],
         );
-        let enabled = 0;
-        for (const subscription of local.rows) {
-          const remote = remoteSubscriptions.find((item) => item.id === subscription.subscription_id);
-          const broadcasterMatches =
-            remote?.condition?.broadcaster_user_id === undefined ||
-            remote.condition.broadcaster_user_id === broadcasterUserId;
-          const matches =
-            remote !== undefined &&
-            remote.type === subscription.event_type &&
-            remote.version === subscription.event_version &&
-            broadcasterMatches;
-          const nextStatus = matches && remote.status === 'enabled'
-            ? 'enabled'
-            : remote
-              ? 'disabled'
-              : 'revoked';
-          if (nextStatus === 'enabled') enabled += 1;
+        const plan = reconcileEventSubSubscriptions(
+          local.rows.map((subscription) => ({
+            subscriptionId: subscription.subscription_id,
+            eventType: subscription.event_type,
+            eventVersion: subscription.event_version,
+          })),
+          remoteSubscriptions,
+          broadcasterUserId,
+        );
+        for (const item of plan) {
           await client.query(
             `UPDATE twitch_eventsub_subscriptions
-                SET status = $3,
-                    revoked_reason = CASE WHEN $3 = 'revoked' THEN 'missing_on_twitch'
-                      WHEN $3 = 'disabled' THEN 'not_enabled_on_twitch' ELSE NULL END,
-                    updated_at = now()
+                SET status = $3, revoked_reason = $4, updated_at = now()
               WHERE workspace_id = $1 AND subscription_id = $2`,
-            [workspaceId, subscription.subscription_id, nextStatus],
+            [workspaceId, item.subscriptionId, item.status, item.reason],
           );
         }
+        const enabled = plan.filter((item) => item.status === 'enabled').length;
         return { total: local.rows.length, enabled };
       },
     );
