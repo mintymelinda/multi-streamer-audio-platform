@@ -28,7 +28,7 @@ services:
       target: checks
     init: true
     working_dir: /workspace
-    command: ["sh", "-lc", "pnpm format:check && pnpm lint && pnpm typecheck && pnpm db:migrations:check && pnpm test && pnpm build"]
+    command:\n      [\n        "sh",\n        "-lc",\n        "pnpm format:check && pnpm lint && pnpm typecheck && pnpm db:migrations:check && pnpm test && pnpm build",\n      ]
 
   postgres:
     image: postgres:18.6
