@@ -1,11 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { VerifiedWorkspaceId } from '@platform/contracts';
-import {
-  ConflictException,
-  Inject,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service.js';
 import type { AuthenticatedUser, WorkspaceRequestContext } from '../identity/http.types.js';
 import { OutboxService } from './outbox.service.js';
