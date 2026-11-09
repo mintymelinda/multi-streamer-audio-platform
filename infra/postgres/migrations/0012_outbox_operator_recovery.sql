@@ -10,3 +10,5 @@ UPDATE outbox_events
 CREATE INDEX outbox_events_failed_workspace
   ON outbox_events (workspace_id, occurred_at DESC)
   WHERE dispatch_status = 'failed';
+
+GRANT UPDATE (dispatch_status) ON outbox_events TO platform_worker;
