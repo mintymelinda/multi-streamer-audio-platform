@@ -39,9 +39,14 @@ BEGIN
   PERFORM set_config('app.user_id', user_a::text, true);
   PERFORM set_config('app.workspace_id', workspace_a::text, true);
   INSERT INTO workspace_integrations (
-    workspace_id, provider, status, recovery_state, paused_at, pause_reason
+    workspace_id, provider, status, recovery_state, paused_at, pause_reason,
+    credential_ciphertext, credential_nonce, credential_auth_tag, wrapped_dek,
+    dek_nonce, dek_auth_tag, kek_version, credential_format_version
   ) VALUES (
-    workspace_a, 'twitch', 'reauth_required', 'paused', now(), 'twitch_authorization_rejected'
+    workspace_a, 'twitch', 'reauth_required', 'paused', now(),
+    'twitch_authorization_rejected',
+    decode('01', 'hex'), decode('02', 'hex'), decode('03', 'hex'), decode('04', 'hex'),
+    decode('05', 'hex'), decode('06', 'hex'), 'test-kek', 1
   ) RETURNING id INTO integration_id;
 
   IF NOT EXISTS (
