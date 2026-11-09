@@ -128,15 +128,17 @@ test('EventSub retry records the actor, reason, and transactional outbox event',
     statements.push(sql);
     if (sql.includes('SELECT id, message_id')) {
       return {
-        rows: [{
-          id: deliveryId,
-          message_id: 'message-a',
-          message_type: 'notification',
-          status: 'failed',
-          attempts: 8,
-          last_error: 'eventsub_processing_exhausted',
-          received_at: new Date(),
-        }],
+        rows: [
+          {
+            id: deliveryId,
+            message_id: 'message-a',
+            message_type: 'notification',
+            status: 'failed',
+            attempts: 8,
+            last_error: 'eventsub_processing_exhausted',
+            received_at: new Date(),
+          },
+        ],
       };
     }
     if (sql.includes('UPDATE twitch_eventsub_deliveries')) {
@@ -156,7 +158,10 @@ test('EventSub retry records the actor, reason, and transactional outbox event',
     'Verified webhook payload after retry review',
   );
   assert.deepEqual(result, { deliveryId, status: 'accepted' });
-  assert.equal(statements.some((sql) => sql.includes('INSERT INTO audit_events')), true);
+  assert.equal(
+    statements.some((sql) => sql.includes('INSERT INTO audit_events')),
+    true,
+  );
   assert.equal(appended[0]?.eventType, 'twitch.eventsub.delivery.retry');
   assert.equal(appended[0]?.payload.reason, 'Verified webhook payload after retry review');
 });
@@ -167,15 +172,17 @@ test('Outbox dismissal is durable and cannot be repeated for a non-failed event'
     if (sql.includes('SELECT id, event_type')) {
       return {
         rows: failed
-          ? [{
-              id: outboxId,
-              event_type: 'request.created',
-              aggregate_type: 'media_request',
-              aggregate_id: 'request-a',
-              attempt_count: 8,
-              last_error_code: 'outbox_dispatch_exhausted',
-              occurred_at: new Date(),
-            }]
+          ? [
+              {
+                id: outboxId,
+                event_type: 'request.created',
+                aggregate_type: 'media_request',
+                aggregate_id: 'request-a',
+                attempt_count: 8,
+                last_error_code: 'outbox_dispatch_exhausted',
+                occurred_at: new Date(),
+              },
+            ]
           : [],
       };
     }
