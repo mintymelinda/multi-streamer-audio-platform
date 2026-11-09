@@ -6,12 +6,21 @@ export interface ProviderScopePolicyOptions {
   requiredScopes?: Record<string, ProviderFeatureScopes>;
 }
 
+export const SPOTIFY_CONNECT_SCOPES = [
+  'user-read-playback-state',
+  'user-modify-playback-state',
+] as const;
+
 @Injectable()
 export class ProviderScopePolicyService {
   private readonly requiredScopes: Record<string, ProviderFeatureScopes>;
 
   constructor(options: ProviderScopePolicyOptions = {}) {
-    this.requiredScopes = options.requiredScopes ?? {};
+    this.requiredScopes = options.requiredScopes ?? {
+      spotify: {
+        'personal-playback': [...SPOTIFY_CONNECT_SCOPES],
+      },
+    };
   }
 
   getRequestedScopes(input: { providerId: string; features: string[] }): string[] {
