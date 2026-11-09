@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Get,
+  NotFoundException,
   Inject,
   Param,
   Post,
@@ -24,12 +25,12 @@ import { WorkspaceAccessGuard } from '../workspaces/workspace-access.guard.js';
 import { OutboxRecoveryService } from './outbox-recovery.service.js';
 
 function actor(request: HttpRequest): AuthenticatedUser {
-  if (!request.user) throw new BadRequestException('Sign-in is required.');
+  if (!request.user) throw new NotFoundException('Sign-in is required.');
   return request.user;
 }
 
 function workspace(request: HttpRequest): WorkspaceRequestContext {
-  if (!request.workspace) throw new BadRequestException('Workspace access is required.');
+  if (!request.workspace) throw new NotFoundException('Workspace access is required.');
   return request.workspace;
 }
 
