@@ -113,7 +113,9 @@ export class TwitchWorkspaceRecoveryService {
         authorizationValid: status.status === 'connected',
         broadcasterIdentityVerified: status.externalAccountId === actor.twitchUserId,
         requiredScopesGranted: hasRequiredTwitchRewardScopes(status.grantedScopes),
-        eventSubReconciled: reconciledSubscriptions.enabledSubscriptionIds.includes(matchingRemote.id),
+        eventSubReconciled: reconciledSubscriptions.enabledSubscriptionIds.includes(
+          matchingRemote.id,
+        ),
         rewardMappingsReconciled: activeMappingsReconciled,
       })
     ) {
