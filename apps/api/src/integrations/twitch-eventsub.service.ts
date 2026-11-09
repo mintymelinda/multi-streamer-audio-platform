@@ -149,7 +149,7 @@ export class TwitchEventSubService {
     actorUserId: string,
     broadcasterUserId: string,
     remoteSubscriptions: TwitchEventSubSubscription[],
-  ): Promise<{ total: number; enabled: number }> {
+  ): Promise<{ total: number; enabled: number; enabledSubscriptionIds: string[] }> {
     return this.database.transaction(
       { userId: actorUserId, verifiedWorkspaceId: workspaceId },
       async (client) => {
@@ -180,8 +180,14 @@ export class TwitchEventSubService {
             [workspaceId, item.subscriptionId, item.status, item.reason],
           );
         }
-        const enabled = plan.filter((item) => item.status === 'enabled').length;
-        return { total: local.rows.length, enabled };
+        const enabledSubscriptionIds = plan
+          .filter((item) => item.status === 'enabled')
+          .map((item) => item.subscriptionId);
+        return {
+          total: local.rows.length,
+          enabled: enabledSubscriptionIds.length,
+          enabledSubscriptionIds,
+        };
       },
     );
   }
