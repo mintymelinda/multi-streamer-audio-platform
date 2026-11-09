@@ -102,7 +102,10 @@ export class ProviderRoutingService {
     const allowed = new Set(rules.allowedProviderIds.map(normalizeProviderId));
     const blocked = new Set(rules.blockedProviderIds.map(normalizeProviderId));
     const preferred = new Map(
-      rules.preferredProviderIds.map((providerId, index) => [normalizeProviderId(providerId), index]),
+      rules.preferredProviderIds.map((providerId, index) => [
+        normalizeProviderId(providerId),
+        index,
+      ]),
     );
     const considered: ProviderRoutingConsideration[] = [];
     const eligible = instances
@@ -179,7 +182,8 @@ export class ProviderRoutingService {
         output.providerInstanceId !== candidate.instance.instanceId
       ) {
         candidate.item.eligible = false;
-        candidate.item.reason = 'output assignment is incomplete or belongs to another provider instance';
+        candidate.item.reason =
+          'output assignment is incomplete or belongs to another provider instance';
         continue;
       }
       return {
@@ -187,7 +191,11 @@ export class ProviderRoutingService {
         providerInstanceId: output.providerInstanceId,
         outputId: output.outputId,
         playerId: output.playerId,
-        reason: buildRoutingReason(candidate.item.providerId, candidate.instance.priority, preferred),
+        reason: buildRoutingReason(
+          candidate.item.providerId,
+          candidate.instance.priority,
+          preferred,
+        ),
         considered,
       };
     }

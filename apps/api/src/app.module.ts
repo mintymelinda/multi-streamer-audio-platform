@@ -14,10 +14,26 @@ import { WorkspacesModule } from './workspaces/workspaces.module.js';
 import { ProviderInstanceModule } from './providers/provider-instance.module.js';
 import { ProviderCredentialsModule } from './providers/provider-credentials.module.js';
 import { ProviderOutputAssignmentModule } from './providers/provider-output-assignment.module.js';
+import { PlaybackCoordinatorModule } from './playback/playback-coordinator.module.js';
+
 @Module({
-  imports: [DatabaseModule, IdentityModule, WorkspacesModule, ProviderInstanceModule, ProviderCredentialsModule,
-    ProviderOutputAssignmentModule, OutboxModule, RequestsModule, TwitchEventSubModule, TwitchRewardsModule,
-    TwitchIntegrationModule, TwitchWorkspaceRecoveryModule, RealtimeModule, OutboxRecoveryModule],
+  imports: [
+    DatabaseModule,
+    IdentityModule,
+    WorkspacesModule,
+    ProviderInstanceModule,
+    ProviderCredentialsModule,
+    ProviderOutputAssignmentModule,
+    PlaybackCoordinatorModule,
+    OutboxModule,
+    RequestsModule,
+    TwitchEventSubModule,
+    TwitchRewardsModule,
+    TwitchIntegrationModule,
+    TwitchWorkspaceRecoveryModule,
+    RealtimeModule,
+    OutboxRecoveryModule,
+  ],
   controllers: [HealthController],
 })
 export class AppModule {}

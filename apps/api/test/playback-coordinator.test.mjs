@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { PlaybackCoordinatorService } from '../dist/playback/playback-coordinator.service.js';
+import {
+  PlaybackCoordinatorService,
+  ProviderCommandRejectedError,
+} from '../dist/playback/playback-coordinator.service.js';
 
 function createCoordinator(overrides = {}) {
   const calls = [];
@@ -23,7 +26,11 @@ function createCoordinator(overrides = {}) {
         calls.push(['play', input]);
         return { outcome: 'started', providerPlaybackId: 'playback-a' };
       },
-      getPlaybackState: async () => ({ status: 'playing', providerPlaybackId: 'playback-a' }),
+      getPlaybackState: async () => ({
+        status: 'playing',
+        providerPlaybackId: 'playback-a',
+        requestId: 'request-a',
+      }),
       pause: async () => ({ outcome: 'paused' }),
       skip: async () => ({ outcome: 'skipped' }),
     }),
@@ -108,7 +115,11 @@ test('reconciles an uncertain provider outcome before permitting a retry', async
         plays += 1;
         return { outcome: 'unknown' };
       },
-      getPlaybackState: async () => ({ status: 'playing', providerPlaybackId: 'playback-a' }),
+      getPlaybackState: async () => ({
+        status: 'playing',
+        providerPlaybackId: 'playback-a',
+        requestId: 'request-a',
+      }),
     }),
   });
   const result = await service.execute({
@@ -151,7 +162,7 @@ test('releases the lease after provider failures and records a recoverable faile
   const { service, leases, operations } = createCoordinator({
     getProviderAdapter: async () => ({
       play: async () => {
-        throw new Error('provider unavailable');
+        throw new ProviderCommandRejectedError('provider unavailable');
       },
     }),
   });
@@ -167,4 +178,169 @@ test('releases the lease after provider failures and records a recoverable faile
   );
   assert.equal(leases.size, 0);
   assert.equal(operations.get('command-fail')?.status, 'failed');
+});
+
+test('does not replay an operation left uncertain after a process interruption', async () => {
+  const prior = {
+    workspaceId: 'workspace-a',
+    providerInstanceId: 'spotify-a',
+    playerId: 'player-a',
+    requestId: 'request-a',
+    command: 'play',
+    idempotencyKey: 'command-interrupted',
+    status: 'executing',
+    createdAt: '2026-11-09T00:00:00.000Z',
+    updatedAt: '2026-11-09T00:00:00.000Z',
+  };
+  let playCalls = 0;
+  let persisted;
+  const service = new PlaybackCoordinatorService({
+    findOperationByIdempotencyKey: async () => prior,
+    persistOperation: async (operation) => {
+      persisted = operation;
+      return operation;
+    },
+    getProviderAdapter: async () => ({
+      play: async () => {
+        playCalls += 1;
+        return { outcome: 'started' };
+      },
+      getPlaybackState: async () => ({ status: 'stopped' }),
+    }),
+    acquireLease: async () => {
+      throw new Error('uncertain operations must not acquire a new command lease');
+    },
+  });
+  const result = await service.execute({
+    workspaceId: 'workspace-a',
+    providerInstanceId: 'spotify-a',
+    playerId: 'player-a',
+    command: 'play',
+    requestId: 'request-a',
+    idempotencyKey: 'command-interrupted',
+  });
+  assert.equal(playCalls, 0);
+  assert.equal(result.status, 'uncertain');
+  assert.equal(persisted.status, 'uncertain');
+});
+
+test('does not reconcile playback belonging to a different request', async () => {
+  const prior = {
+    workspaceId: 'workspace-a',
+    providerInstanceId: 'spotify-a',
+    playerId: 'player-a',
+    requestId: 'request-a',
+    command: 'play',
+    idempotencyKey: 'command-interrupted',
+    status: 'uncertain',
+    createdAt: '2026-11-09T00:00:00.000Z',
+    updatedAt: '2026-11-09T00:00:00.000Z',
+  };
+  const service = new PlaybackCoordinatorService({
+    findOperationByIdempotencyKey: async () => prior,
+    persistOperation: async (operation) => operation,
+    getProviderAdapter: async () => ({
+      getPlaybackState: async () => ({
+        status: 'playing',
+        providerPlaybackId: 'playback-b',
+        requestId: 'request-b',
+      }),
+    }),
+    acquireLease: async () => true,
+  });
+  const result = await service.execute({
+    workspaceId: 'workspace-a',
+    providerInstanceId: 'spotify-a',
+    playerId: 'player-a',
+    command: 'play',
+    requestId: 'request-a',
+    idempotencyKey: 'command-interrupted',
+  });
+  assert.equal(result.status, 'uncertain');
+});
+
+test('redacts provider secrets before persisting command results', async () => {
+  const { service, operations } = createCoordinator({
+    getProviderAdapter: async () => ({
+      play: async () => ({
+        outcome: 'started',
+        accessToken: 'must-not-be-persisted',
+        providerPlaybackId: 'playback-safe',
+      }),
+    }),
+  });
+  await service.execute({
+    workspaceId: 'workspace-a',
+    providerInstanceId: 'spotify-a',
+    playerId: 'player-a',
+    command: 'play',
+    requestId: 'request-a',
+    idempotencyKey: 'command-redaction',
+  });
+  assert.equal(operations.get('command-redaction').result.accessToken, '[REDACTED]');
+});
+
+test('blocks a new idempotency key while a prior output command remains uncertain', async () => {
+  const prior = {
+    workspaceId: 'workspace-a',
+    providerInstanceId: 'spotify-a',
+    playerId: 'player-a',
+    outputId: 'output-a',
+    requestId: 'request-prior',
+    command: 'play',
+    idempotencyKey: 'command-prior',
+    status: 'executing',
+    createdAt: '2026-11-09T00:00:00.000Z',
+    updatedAt: '2026-11-09T00:00:00.000Z',
+  };
+  let newPlayCalls = 0;
+  const service = new PlaybackCoordinatorService({
+    findOperationByIdempotencyKey: async () => null,
+    findUnresolvedOperation: async () => prior,
+    persistOperation: async (operation) => operation,
+    getProviderAdapter: async () => ({
+      play: async () => {
+        newPlayCalls += 1;
+        return { outcome: 'started' };
+      },
+      getPlaybackState: async () => ({ status: 'stopped', requestId: 'request-prior' }),
+    }),
+    acquireLease: async () => {
+      throw new Error('must not acquire a command lease while the earlier outcome is uncertain');
+    },
+  });
+  await assert.rejects(
+    service.execute({
+      workspaceId: 'workspace-a',
+      providerInstanceId: 'spotify-a',
+      playerId: 'player-a',
+      outputId: 'output-a',
+      command: 'play',
+      requestId: 'request-new',
+      idempotencyKey: 'command-new',
+    }),
+    (error) => error.code === 'PLAYBACK_OUTCOME_UNCERTAIN',
+  );
+  assert.equal(newPlayCalls, 0);
+});
+
+test('treats an ambiguous provider exception as uncertain instead of retryable failure', async () => {
+  const { service, operations } = createCoordinator({
+    getProviderAdapter: async () => ({
+      play: async () => {
+        throw new Error('connection timed out after sending command');
+      },
+      getPlaybackState: async () => ({ status: 'stopped', requestId: 'request-a' }),
+    }),
+  });
+  const result = await service.execute({
+    workspaceId: 'workspace-a',
+    providerInstanceId: 'spotify-a',
+    playerId: 'player-a',
+    command: 'play',
+    requestId: 'request-a',
+    idempotencyKey: 'command-timeout',
+  });
+  assert.equal(result.status, 'uncertain');
+  assert.equal(operations.get('command-timeout').status, 'uncertain');
 });
