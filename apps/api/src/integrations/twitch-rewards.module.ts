@@ -18,6 +18,6 @@ import { TwitchRewardsService } from './twitch-rewards.service.js';
   ],
   controllers: [TwitchRewardsController],
   providers: [TwitchRewardsService, TwitchHelixService],
-  exports: [TwitchRewardsService],
+  exports: [TwitchRewardsService, TwitchHelixService],
 })
 export class TwitchRewardsModule {}
