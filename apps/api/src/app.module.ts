@@ -16,6 +16,7 @@ import { ProviderCredentialsModule } from './providers/provider-credentials.modu
 import { ProviderOutputAssignmentModule } from './providers/provider-output-assignment.module.js';
 import { PlaybackCoordinatorModule } from './playback/playback-coordinator.module.js';
 import { ProviderExecutionQueueModule } from './providers/provider-execution-queue.module.js';
+import { PlaybackRecoveryModule } from './playback/playback-recovery.module.js';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { ProviderExecutionQueueModule } from './providers/provider-execution-que
     ProviderOutputAssignmentModule,
     PlaybackCoordinatorModule,
     ProviderExecutionQueueModule,
+    PlaybackRecoveryModule,
     OutboxModule,
     RequestsModule,
     TwitchEventSubModule,
