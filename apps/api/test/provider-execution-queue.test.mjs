@@ -6,9 +6,7 @@ test('provider execution jobs reference an existing authoritative PostgreSQL req
   const jobs = [];
   const service = new ProviderExecutionQueueService({
     getRequestFromPostgres: async (id) =>
-      id === 'request-a'
-        ? { id, status: 'approved', workspaceId: 'workspace-a' }
-        : null,
+      id === 'request-a' ? { id, status: 'approved', workspaceId: 'workspace-a' } : null,
     enqueueProviderExecution: async (job) => jobs.push(job),
   });
   const job = await service.enqueue({

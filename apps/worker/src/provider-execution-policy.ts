@@ -26,7 +26,10 @@ export const DEFAULT_PROVIDER_RETRY_POLICY: Readonly<ProviderRetryPolicy> = {
 export function classifyProviderFailure(input: ProviderFailureInput): ProviderFailureClass {
   if (input.outcome === 'unknown' || input.sideEffectStarted === true) return 'uncertain';
   if (input.status === 401 || input.status === 403) return 'authorization';
-  if (input.code && /^(unsupported_media|invalid_media|not_found|region_blocked)$/i.test(input.code)) {
+  if (
+    input.code &&
+    /^(unsupported_media|invalid_media|not_found|region_blocked)$/i.test(input.code)
+  ) {
     return 'permanent';
   }
   if (

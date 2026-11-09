@@ -67,7 +67,9 @@ import {
           retry: async (request: RecoverablePlaybackRequest, actorId: string) => {
             const providerInstanceId = request.providerInstanceId;
             if (!providerInstanceId) {
-              throw new Error('No previous provider assignment exists; choose a provider with reroute.');
+              throw new Error(
+                'No previous provider assignment exists; choose a provider with reroute.',
+              );
             }
             await requeueFailedRequest(database, request, actorId);
             await executionQueue.enqueue({

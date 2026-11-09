@@ -33,7 +33,12 @@ function workspace(request: HttpRequest): WorkspaceRequestContext {
 }
 
 function recoveryReason(body: unknown): string {
-  if (typeof body !== 'object' || body === null || !('reason' in body) || typeof body.reason !== 'string') {
+  if (
+    typeof body !== 'object' ||
+    body === null ||
+    !('reason' in body) ||
+    typeof body.reason !== 'string'
+  ) {
     throw new BadRequestException('A recovery reason is required.');
   }
   const reason = body.reason.trim();
@@ -65,7 +70,11 @@ export class PlaybackRecoveryController {
 
   @Post('reroute')
   @UseGuards(CsrfGuard)
-  reroute(@Req() request: HttpRequest, @Param('requestId') requestId: string, @Body() body: unknown) {
+  reroute(
+    @Req() request: HttpRequest,
+    @Param('requestId') requestId: string,
+    @Body() body: unknown,
+  ) {
     const record = typeof body === 'object' && body !== null ? body : {};
     const providerInstanceId =
       'providerInstanceId' in record && typeof record.providerInstanceId === 'string'
@@ -94,7 +103,11 @@ export class PlaybackRecoveryController {
 
   @Post('dismiss')
   @UseGuards(CsrfGuard)
-  dismiss(@Req() request: HttpRequest, @Param('requestId') requestId: string, @Body() body: unknown) {
+  dismiss(
+    @Req() request: HttpRequest,
+    @Param('requestId') requestId: string,
+    @Body() body: unknown,
+  ) {
     return this.recovery.dismiss({
       workspaceId: workspace(request).id,
       requestId,

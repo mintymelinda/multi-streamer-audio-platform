@@ -78,19 +78,18 @@ export interface ProviderExecutionProcessorDependencies {
   now?: () => Date;
 }
 
-const activeRequestStatuses = new Set([
-  'approved',
-  'queued',
-  'resolving',
-  'ready',
-  'playing',
-]);
+const activeRequestStatuses = new Set(['approved', 'queued', 'resolving', 'ready', 'playing']);
 
 export class ProviderExecutionProcessor {
-  private readonly inFlight = new Map<string, Promise<ProviderExecutionResult & {
-    providerInstanceId: string;
-    status: string;
-  }>>();
+  private readonly inFlight = new Map<
+    string,
+    Promise<
+      ProviderExecutionResult & {
+        providerInstanceId: string;
+        status: string;
+      }
+    >
+  >();
 
   constructor(private readonly dependencies: ProviderExecutionProcessorDependencies) {}
 
@@ -169,11 +168,9 @@ export class ProviderExecutionProcessor {
         attempted.push(candidate.providerInstanceId);
         attempt += 1;
         try {
-          const result = await this.dependencies.execute(
-            candidate.providerInstanceId,
-            request,
-            { idempotencyKey: input.idempotencyKey },
-          );
+          const result = await this.dependencies.execute(candidate.providerInstanceId, request, {
+            idempotencyKey: input.idempotencyKey,
+          });
           if (shouldReconcilePlayback(result)) {
             return this.reconcileOrStop(request, candidate.providerInstanceId, attempt);
           }
@@ -230,9 +227,11 @@ export class ProviderExecutionProcessor {
             failureClass,
             errorCode: errorCode(error),
             ...(failureClass === 'transient'
-              ? { nextAttemptAt: new Date(
-                  (this.dependencies.now ?? (() => new Date()))().getTime() + policy.baseDelayMs,
-                ).toISOString() }
+              ? {
+                  nextAttemptAt: new Date(
+                    (this.dependencies.now ?? (() => new Date()))().getTime() + policy.baseDelayMs,
+                  ).toISOString(),
+                }
               : {}),
           });
           if (failureClass === 'uncertain') {
@@ -267,7 +266,7 @@ export class ProviderExecutionProcessor {
   ): Promise<ProviderExecutionResult & { providerInstanceId: string; status: string }> {
     let snapshot: ProviderPlaybackSnapshot | null = null;
     try {
-      snapshot = await this.dependencies.reconcile?.({ providerInstanceId, request }) ?? null;
+      snapshot = (await this.dependencies.reconcile?.({ providerInstanceId, request })) ?? null;
     } catch {
       snapshot = null;
     }
@@ -307,7 +306,12 @@ export class ProviderExecutionProcessor {
   }
 }
 
-function errorDetails(error: unknown): { status?: number; code?: string; outcome?: string; sideEffectStarted?: boolean } {
+function errorDetails(error: unknown): {
+  status?: number;
+  code?: string;
+  outcome?: string;
+  sideEffectStarted?: boolean;
+} {
   if (typeof error !== 'object' || error === null) return {};
   const value = error as Record<string, unknown>;
   return {
@@ -322,7 +326,9 @@ function errorDetails(error: unknown): { status?: number; code?: string; outcome
 
 function errorCode(error: unknown): string {
   const code = errorDetails(error).code;
-  return code && /^[a-z0-9_]{1,100}$/i.test(code) ? code.toLowerCase() : 'provider_execution_failed';
+  return code && /^[a-z0-9_]{1,100}$/i.test(code)
+    ? code.toLowerCase()
+    : 'provider_execution_failed';
 }
 
 function required(value: string, field: string): string {

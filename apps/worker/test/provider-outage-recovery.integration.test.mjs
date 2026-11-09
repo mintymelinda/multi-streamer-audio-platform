@@ -65,7 +65,9 @@ test('duplicate delivery and concurrent execution produce only one provider star
     }),
     acquirePlaybackLease: async () => true,
     findPlaybackByRequest: async () =>
-      playCount > 0 ? { status: 'playing', providerPlaybackId: 'playback-a', requestId: 'request-a' } : null,
+      playCount > 0
+        ? { status: 'playing', providerPlaybackId: 'playback-a', requestId: 'request-a' }
+        : null,
     getCandidates: async () => [{ providerInstanceId: 'spotify-a', eligible: true, priority: 1 }],
     execute: async () => {
       playCount += 1;
@@ -74,7 +76,11 @@ test('duplicate delivery and concurrent execution produce only one provider star
     persistExecutionState: async () => undefined,
     releasePlaybackLease: async () => undefined,
   });
-  const input = { workspaceId: 'workspace-a', requestId: 'request-a', idempotencyKey: 'request-a-play' };
+  const input = {
+    workspaceId: 'workspace-a',
+    requestId: 'request-a',
+    idempotencyKey: 'request-a-play',
+  };
   await Promise.all([processor.process(input), processor.process(input)]);
   assert.equal(playCount, 1);
 });
@@ -97,7 +103,11 @@ test('reconciles an uncertain start before any backup provider can start', async
       backupStarted = true;
       return { outcome: 'started' };
     },
-    reconcile: async () => ({ status: 'playing', providerPlaybackId: 'playback-existing', requestId: 'request-a' }),
+    reconcile: async () => ({
+      status: 'playing',
+      providerPlaybackId: 'playback-existing',
+      requestId: 'request-a',
+    }),
     persistExecutionState: async () => undefined,
   });
   const result = await processor.process({ workspaceId: 'workspace-a', requestId: 'request-a' });

@@ -50,18 +50,22 @@ test('manual reroute changes provider selection, never requested media', async (
 
 test('skip and dismiss require actor attribution and a meaningful reason', async () => {
   const { service } = setup();
-  await assert.rejects(service.skip({
-    workspaceId: 'workspace-a',
-    requestId: 'request-a',
-    actorId: 'admin-a',
-    reason: ' ',
-  }));
-  await assert.rejects(service.dismiss({
-    workspaceId: 'workspace-a',
-    requestId: 'request-a',
-    actorId: 'admin-a',
-    reason: '',
-  }));
+  await assert.rejects(
+    service.skip({
+      workspaceId: 'workspace-a',
+      requestId: 'request-a',
+      actorId: 'admin-a',
+      reason: ' ',
+    }),
+  );
+  await assert.rejects(
+    service.dismiss({
+      workspaceId: 'workspace-a',
+      requestId: 'request-a',
+      actorId: 'admin-a',
+      reason: '',
+    }),
+  );
   await service.skip({
     workspaceId: 'workspace-a',
     requestId: 'request-a',
@@ -78,10 +82,12 @@ test('skip and dismiss require actor attribution and a meaningful reason', async
 
 test('rejects recovery actions from unauthorized workspace members', async () => {
   const { service } = setup(false);
-  await assert.rejects(service.retry({
-    workspaceId: 'workspace-a',
-    requestId: 'request-a',
-    actorId: 'viewer-a',
-    reason: 'Provider recovered',
-  }));
+  await assert.rejects(
+    service.retry({
+      workspaceId: 'workspace-a',
+      requestId: 'request-a',
+      actorId: 'viewer-a',
+      reason: 'Provider recovered',
+    }),
+  );
 });

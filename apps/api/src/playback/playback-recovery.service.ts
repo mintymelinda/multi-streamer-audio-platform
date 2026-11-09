@@ -9,10 +9,22 @@ export interface RecoverablePlaybackRequest {
 }
 
 export interface PlaybackRecoveryDependencies {
-  authorize(input: { workspaceId: string; actorId: string; action: string }): Promise<{ allowed: boolean }>;
-  getRequest(input: { workspaceId: string; requestId: string; actorId: string }): Promise<RecoverablePlaybackRequest | null>;
+  authorize(input: {
+    workspaceId: string;
+    actorId: string;
+    action: string;
+  }): Promise<{ allowed: boolean }>;
+  getRequest(input: {
+    workspaceId: string;
+    requestId: string;
+    actorId: string;
+  }): Promise<RecoverablePlaybackRequest | null>;
   retry(request: RecoverablePlaybackRequest, actorId: string): Promise<unknown>;
-  reroute(request: RecoverablePlaybackRequest, providerInstanceId: string, actorId: string): Promise<unknown>;
+  reroute(
+    request: RecoverablePlaybackRequest,
+    providerInstanceId: string,
+    actorId: string,
+  ): Promise<unknown>;
   skip(request: RecoverablePlaybackRequest, actorId: string, reason: string): Promise<unknown>;
   dismiss(request: RecoverablePlaybackRequest, actorId: string, reason: string): Promise<unknown>;
   appendAudit(event: Record<string, unknown>): Promise<unknown>;
@@ -29,7 +41,11 @@ export class PlaybackRecoveryService {
     }
     await this.dependencies.retry(request, input.actorId);
     await this.audit(input, 'retry', reason, request);
-    return { requestId: request.id, mediaId: request.mediaId, providerInstanceId: request.providerInstanceId ?? null };
+    return {
+      requestId: request.id,
+      mediaId: request.mediaId,
+      providerInstanceId: request.providerInstanceId ?? null,
+    };
   }
 
   async reroute(input: RecoveryActionInput & { providerInstanceId: string }) {
@@ -63,7 +79,8 @@ export class PlaybackRecoveryService {
     const actorId = required(input.actorId, 'actorId');
     const reason = requiredReason(input.reason);
     const authorization = await this.dependencies.authorize({ workspaceId, actorId, action });
-    if (!authorization.allowed) throw new ForbiddenException('You cannot recover this workspace request.');
+    if (!authorization.allowed)
+      throw new ForbiddenException('You cannot recover this workspace request.');
     const request = await this.dependencies.getRequest({ workspaceId, requestId, actorId });
     if (!request || request.workspaceId !== workspaceId) {
       throw new NotFoundException('Playback request not found.');
