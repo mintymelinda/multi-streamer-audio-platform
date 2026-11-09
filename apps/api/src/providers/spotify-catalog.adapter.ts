@@ -61,9 +61,9 @@ export class SpotifyCatalogAdapter {
     mediaTypes: ['audio'] as const,
   };
 
-  private readonly accessToken?: string;
-  private readonly getAccessToken?: () => Promise<string | null>;
-  private readonly market?: string;
+  private readonly accessToken: string | undefined;
+  private readonly getAccessToken: (() => Promise<string | null>) | undefined;
+  private readonly market: string | undefined;
   private readonly transport: SpotifyTransport;
   private readonly timeoutMs: number;
 
@@ -234,12 +234,12 @@ function mapTrack(value: unknown): SpotifyTrack | null {
 
 function normalizeTrackId(value: string): string {
   const uriMatch = /^spotify:track:([A-Za-z0-9]{22})$/.exec(value);
-  if (uriMatch) return uriMatch[1];
+  if (uriMatch?.[1]) return uriMatch[1];
   try {
     const url = new URL(value);
     if (url.hostname === 'open.spotify.com') {
       const match = /^\/track\/([A-Za-z0-9]{22})\/?$/.exec(url.pathname);
-      if (match) return match[1];
+      if (match?.[1]) return match[1];
     }
   } catch {
     // Treat the input as a raw Spotify ID below.

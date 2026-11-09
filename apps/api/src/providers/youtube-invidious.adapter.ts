@@ -115,7 +115,7 @@ export class YouTubeInvidiousAdapter {
   }
 
   async resolve(input: { mediaId: string }): Promise<InvidiousVideo> {
-    const mediaId = requiredText(input.mediaId, 'mediaId', 11);
+    const mediaId = typeof input.mediaId === 'string' ? input.mediaId.trim() : '';
     if (!VIDEO_ID.test(mediaId)) {
       throw new InvidiousProviderError('YouTube video ID is invalid.', 'INVALID_MEDIA_ID', 400);
     }
@@ -243,7 +243,7 @@ function isTrustedLocalHost(hostname: string): boolean {
   return (
     first === 10 ||
     first === 127 ||
-    (first === 172 && second >= 16 && second <= 31) ||
+    (first === 172 && second !== undefined && second >= 16 && second <= 31) ||
     (first === 192 && second === 168)
   );
 }
