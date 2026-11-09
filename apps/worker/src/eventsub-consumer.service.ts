@@ -19,7 +19,7 @@ interface DeliveryRow {
   message_type: 'notification' | 'revocation';
   service_actor_user_id: string | null;
   payload: Record<string, unknown>;
-  status: 'accepted' | 'processing' | 'processed' | 'failed';
+  status: 'accepted' | 'processing' | 'processed' | 'failed' | 'dismissed';
   attempts: number;
 }
 interface EventSubEnvelope {
@@ -117,7 +117,11 @@ export class EventSubConsumerService implements OnModuleInit, OnModuleDestroy {
       );
       const delivery = result.rows[0];
       if (!delivery) throw new Error('eventsub_delivery_not_found');
-      if (delivery.status === 'processed' || delivery.status === 'failed') {
+      if (
+        delivery.status === 'processed' ||
+        delivery.status === 'failed' ||
+        delivery.status === 'dismissed'
+      ) {
         await client.query('COMMIT');
         return;
       }
