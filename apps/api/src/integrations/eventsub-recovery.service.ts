@@ -5,7 +5,7 @@ import { DatabaseService } from '../database/database.service.js';
 import type { AuthenticatedUser, WorkspaceRequestContext } from '../identity/http.types.js';
 import { OutboxService } from '../outbox/outbox.service.js';
 
-interface FailedDelivery {
+export interface FailedDelivery {
   id: string;
   message_id: string;
   message_type: string;
