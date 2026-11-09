@@ -25,9 +25,7 @@ for (const [name, Adapter] of adapters) {
     });
     await assert.rejects(adapter.search({ query: 'test' }), (error) => {
       const serialized = JSON.stringify(error);
-      return (
-        !serialized.includes('authorization') && !serialized.includes('credentials')
-      );
+      return !serialized.includes('authorization') && !serialized.includes('credentials');
     });
   });
 }
@@ -53,9 +51,6 @@ function createFailingTransport() {
       throw new Error('provider failed');
     },
   };
-}
-function createUnauthorizedTransport() {
-  return { request: async () => ({ status: 401, data: { error: 'invalid_token' } }) };
 }
 function createPrimaryOutageTransport() {
   return {

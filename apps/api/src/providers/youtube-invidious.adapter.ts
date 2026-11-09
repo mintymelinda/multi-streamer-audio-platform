@@ -97,9 +97,16 @@ export class YouTubeInvidiousAdapter {
 
   async search(input: { query: string }): Promise<InvidiousVideo[]> {
     const query = requiredText(input.query, 'query', 200);
-    const response = await this.requestWithFallback('/api/v1/search', { q: query, type: 'video', page: '1' });
+    const response = await this.requestWithFallback('/api/v1/search', {
+      q: query,
+      type: 'video',
+      page: '1',
+    });
     if (!Array.isArray(response.data)) {
-      throw new InvidiousProviderError('Invidious returned an invalid search response.', 'INVALID_RESPONSE');
+      throw new InvidiousProviderError(
+        'Invidious returned an invalid search response.',
+        'INVALID_RESPONSE',
+      );
     }
     return response.data
       .filter((item): item is Record<string, unknown> => isRecord(item) && item.type === 'video')
@@ -116,11 +123,17 @@ export class YouTubeInvidiousAdapter {
       `/api/v1/videos/${encodeURIComponent(mediaId)}`,
     );
     if (!isRecord(response.data)) {
-      throw new InvidiousProviderError('Invidious returned invalid video metadata.', 'INVALID_RESPONSE');
+      throw new InvidiousProviderError(
+        'Invidious returned invalid video metadata.',
+        'INVALID_RESPONSE',
+      );
     }
     const video = mapVideo(response.data, response.instanceUrl);
     if (!video) {
-      throw new InvidiousProviderError('Invidious video metadata is incomplete.', 'INVALID_RESPONSE');
+      throw new InvidiousProviderError(
+        'Invidious video metadata is incomplete.',
+        'INVALID_RESPONSE',
+      );
     }
     return video;
   }
