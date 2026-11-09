@@ -167,7 +167,8 @@ export class EventSubConsumerService implements OnModuleInit, OnModuleDestroy {
       await client.query('ROLLBACK').catch(() => undefined);
       const maxAttempts = Number(job.opts.attempts ?? 1);
       const message = error instanceof Error ? error.message : 'eventsub_processing_failed';
-      const permanent = message.startsWith('invalid_eventsub_') || message === 'eventsub_delivery_not_found';
+      const permanent =
+        message.startsWith('invalid_eventsub_') || message === 'eventsub_delivery_not_found';
       const failureClass = classifyProcessingFailure({
         kind: message,
         retryable: !permanent,
