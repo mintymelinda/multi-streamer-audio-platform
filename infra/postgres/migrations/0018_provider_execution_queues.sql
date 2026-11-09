@@ -8,6 +8,7 @@ CREATE TABLE provider_execution_states (
   state text NOT NULL DEFAULT 'queued'
     CHECK (state IN ('queued', 'resolving', 'ready', 'playing', 'retry_wait', 'completed', 'failed', 'cancelled')),
   attempt integer NOT NULL DEFAULT 0 CHECK (attempt >= 0),
+  dispatch_generation integer NOT NULL DEFAULT 1 CHECK (dispatch_generation > 0),
   next_attempt_at timestamptz,
   last_error_code text CHECK (last_error_code IS NULL OR last_error_code ~ '^[a-z0-9_]{1,100}$'),
   created_at timestamptz NOT NULL DEFAULT now(),
