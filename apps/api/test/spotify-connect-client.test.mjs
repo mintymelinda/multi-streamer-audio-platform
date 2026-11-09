@@ -12,25 +12,29 @@ function response(status, body, headers = {}) {
 test('maps personal Connect devices', async () => {
   const client = new SpotifyConnectClient(async () =>
     response(200, {
-      devices: [{
-        id: 'device-1',
-        name: 'Desktop speakers',
-        type: 'Computer',
-        is_active: true,
-        is_restricted: false,
-        volume_percent: 35,
-      }],
+      devices: [
+        {
+          id: 'device-1',
+          name: 'Desktop speakers',
+          type: 'Computer',
+          is_active: true,
+          is_restricted: false,
+          volume_percent: 35,
+        },
+      ],
     }),
   );
-  assert.deepEqual(await client.getDevices('token'), [{
-    id: 'device-1',
-    name: 'Desktop speakers',
-    type: 'Computer',
-    isActive: true,
-    isPrivateSession: false,
-    isRestricted: false,
-    volumePercent: 35,
-  }]);
+  assert.deepEqual(await client.getDevices('token'), [
+    {
+      id: 'device-1',
+      name: 'Desktop speakers',
+      type: 'Computer',
+      isActive: true,
+      isPrivateSession: false,
+      isRestricted: false,
+      volumePercent: 35,
+    },
+  ]);
 });
 
 test('returns null when no personal playback session is active', async () => {
@@ -51,12 +55,15 @@ test('issues personal playback commands without using platform queues', async ()
   await client.seek('token', 42000, 'd1');
   await client.transferPlayback('token', 'd2', true);
   assert.deepEqual(JSON.parse(calls[0].options.body), { uris: ['spotify:track:abc'] });
-  assert.match(calls[1].url, /\/pause\?device_id=d1$/);
-  assert.match(calls[2].url, /\/next$/);
-  assert.match(calls[3].url, /\/previous$/);
+  assert.ok(calls[1].url.endsWith('/pause?device_id=d1'));
+  assert.ok(calls[2].url.endsWith('/next'));
+  assert.ok(calls[3].url.endsWith('/previous'));
   assert.match(calls[4].url, /position_ms=42000/);
   assert.deepEqual(JSON.parse(calls[5].options.body), { device_ids: ['d2'], play: true });
-  assert.equal(calls.some(({ url }) => url.includes('queue')), false);
+  assert.equal(
+    calls.some(({ url }) => url.includes('queue')),
+    false,
+  );
 });
 
 test('rejects invalid seek positions and missing device IDs', async () => {

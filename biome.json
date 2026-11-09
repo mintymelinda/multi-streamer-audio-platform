@@ -1,11 +1,7 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.6.5/schema.json",
   "files": {
-    "includes": [
-      "**",
-      "!apps/dashboard/next-env.d.ts",
-      "!apps/overlay/next-env.d.ts"
-    ]
+    "includes": ["**", "!apps/dashboard/next-env.d.ts", "!apps/overlay/next-env.d.ts"]
   },
   "formatter": {
     "enabled": true,
