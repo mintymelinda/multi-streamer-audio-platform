@@ -5,6 +5,7 @@ import {
   isProviderFailoverAllowed,
   selectFailoverCandidate,
   shouldReconcilePlayback,
+  DEFAULT_PROVIDER_RETRY_POLICY,
 } from '../src/provider-execution-policy.ts';
 
 test('classifies transient, authorization, permanent, and uncertain provider failures distinctly', () => {
@@ -14,6 +15,26 @@ test('classifies transient, authorization, permanent, and uncertain provider fai
   assert.equal(
     classifyProviderFailure({ outcome: 'unknown', sideEffectStarted: true }),
     'uncertain',
+  );
+});
+
+test('defaults automatic retries on and respects disabled retry and failover policy', () => {
+  assert.equal(DEFAULT_PROVIDER_RETRY_POLICY.automaticRetryEnabled, true);
+  assert.equal(
+    isProviderFailoverAllowed({
+      failureClass: 'transient',
+      retryBudgetRemaining: true,
+      policy: { automaticRetryEnabled: false },
+    }),
+    false,
+  );
+  assert.equal(
+    isProviderFailoverAllowed({
+      failureClass: 'transient',
+      retryBudgetRemaining: true,
+      policy: { failoverEnabled: false },
+    }),
+    false,
   );
 });
 
