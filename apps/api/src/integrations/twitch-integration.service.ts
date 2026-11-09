@@ -424,13 +424,36 @@ export class TwitchIntegrationService {
       if (error instanceof UnauthorizedException) {
         await this.database.transaction(
           { userId: actor.id, verifiedWorkspaceId: workspace.id },
-          (client) =>
-            client.query(
+          async (client) => {
+            const paused = await client.query<{ id: string }>(
               `UPDATE workspace_integrations
-                  SET status = 'reauth_required', last_error_code = 'token_refresh_or_validation_failed', updated_at = now()
-                WHERE workspace_id = $1 AND provider = 'twitch' AND status <> 'disconnected'`,
+                  SET status = 'reauth_required', recovery_state = 'paused',
+                      paused_at = COALESCE(paused_at, now()),
+                      pause_reason = 'twitch_authorization_rejected',
+                      last_error_code = 'twitch_authorization_rejected', updated_at = now()
+                WHERE workspace_id = $1 AND provider = 'twitch'
+                  AND status = 'connected' AND recovery_state <> 'paused'
+                RETURNING id`,
               [workspace.id],
-            ),
+            );
+            if (paused.rows[0]) {
+              await client.query(
+                `INSERT INTO audit_events
+                  (workspace_id, actor_user_id, event_type, target_type, target_id, details)
+                 VALUES ($1,$2,'twitch.integration.authorization_lost',
+                         'workspace_integration',$3,$4::jsonb)`,
+                [workspace.id, actor.id, paused.rows[0].id, JSON.stringify({ reason: 'twitch_authorization_rejected' })],
+              );
+              await this.outbox.append(client, {
+                workspaceId: workspace.id,
+                eventType: 'twitch.integration.authorization_lost',
+                aggregateType: 'workspace_integration',
+                aggregateId: paused.rows[0].id,
+                idempotencyKey: `twitch.integration.authorization_lost:${paused.rows[0].id}`,
+                payload: { reason: 'twitch_authorization_rejected' },
+              });
+            }
+          },
         );
       }
       throw error;
