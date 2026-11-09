@@ -75,9 +75,22 @@ type ExecutionRow = {
                    VALUES ($1, $2, $3, 'queued', 0)
                    ON CONFLICT (workspace_id, request_id, provider_instance_id)
                    DO UPDATE SET
-                     state = 'queued', attempt = 0, next_attempt_at = NULL,
-                     last_error_code = NULL,
-                     dispatch_generation = provider_execution_states.dispatch_generation + 1,
+                     state = CASE
+                       WHEN provider_execution_states.state IN ('failed', 'retry_wait') THEN 'queued'
+                       ELSE provider_execution_states.state END,
+                     attempt = CASE
+                       WHEN provider_execution_states.state IN ('failed', 'retry_wait') THEN 0
+                       ELSE provider_execution_states.attempt END,
+                     next_attempt_at = CASE
+                       WHEN provider_execution_states.state IN ('failed', 'retry_wait') THEN NULL
+                       ELSE provider_execution_states.next_attempt_at END,
+                     last_error_code = CASE
+                       WHEN provider_execution_states.state IN ('failed', 'retry_wait') THEN NULL
+                       ELSE provider_execution_states.last_error_code END,
+                     dispatch_generation = CASE
+                       WHEN provider_execution_states.state IN ('failed', 'retry_wait')
+                         THEN provider_execution_states.dispatch_generation + 1
+                       ELSE provider_execution_states.dispatch_generation END,
                      updated_at = now()
                    WHERE provider_execution_states.state NOT IN ('completed', 'cancelled')
                    RETURNING id, workspace_id, request_id, provider_instance_id, state, attempt, dispatch_generation`,
