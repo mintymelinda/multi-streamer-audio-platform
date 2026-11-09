@@ -50,9 +50,7 @@ type ExecutionRow = {
               : null;
           },
           enqueueProviderExecution: async (job: ProviderExecutionJob) => {
-            const actorId = job.authoritativeRequest && 'actorId' in job
-              ? String((job as ProviderExecutionJob & { actorId?: string }).actorId ?? '')
-              : '';
+            const actorId = job.actorId ?? '';
             if (!actorId) {
               throw new Error('Authenticated workspace user is required for provider execution.');
             }
@@ -66,7 +64,7 @@ type ExecutionRow = {
                     FOR SHARE`,
                   [job.workspaceId, job.requestId],
                 );
-                if (!request.rows[0] || ['completed', 'rejected', 'cancelled', 'failed', 'skipped'].includes(request.rows[0].status)) {
+                if (!request.rows[0] || ['completed', 'dismissed', 'rejected', 'cancelled', 'failed', 'skipped'].includes(request.rows[0].status)) {
                   throw new Error('The authoritative request is missing or terminal.');
                 }
                 const persisted = await client.query<ExecutionRow>(
