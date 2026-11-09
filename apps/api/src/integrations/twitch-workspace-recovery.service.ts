@@ -102,7 +102,7 @@ export class TwitchWorkspaceRecoveryService {
       );
     }
 
-    await this.eventSub.reconcileWorkspaceSubscriptions(
+    const reconciledSubscriptions = await this.eventSub.reconcileWorkspaceSubscriptions(
       workspace.id,
       actor.id,
       actor.twitchUserId,
@@ -113,7 +113,7 @@ export class TwitchWorkspaceRecoveryService {
         authorizationValid: status.status === 'connected',
         broadcasterIdentityVerified: status.externalAccountId === actor.twitchUserId,
         requiredScopesGranted: hasRequiredTwitchRewardScopes(status.grantedScopes),
-        eventSubReconciled: matchingRemote.status === 'enabled',
+        eventSubReconciled: reconciledSubscriptions.enabledSubscriptionIds.includes(matchingRemote.id),
         rewardMappingsReconciled: activeMappingsReconciled,
       })
     ) {
