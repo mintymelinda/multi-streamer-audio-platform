@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { SpotifyCatalogAdapter } from '../dist/providers/spotify-catalog.adapter.js';
 import { YouTubeInvidiousAdapter } from '../dist/providers/youtube-invidious.adapter.js';
 
-const adapters = [['YouTube/Invidious', YouTubeInvidiousAdapter]];
+const adapters = [
+  ['YouTube/Invidious', YouTubeInvidiousAdapter],
+  ['Spotify', SpotifyCatalogAdapter],
+];
 
 for (const [name, Adapter] of adapters) {
   test(`${name} adapter satisfies the shared provider contract and is replaceable`, async () => {
@@ -21,6 +25,7 @@ for (const [name, Adapter] of adapters) {
 
   test(`${name} adapter maps provider errors without leaking secrets or provider-specific objects`, async () => {
     const adapter = new Adapter({
+      ...(name === 'Spotify' ? { accessToken: 'test-token' } : {}),
       transport: createFailingTransport(),
     });
     await assert.rejects(adapter.search({ query: 'test' }), (error) => {
@@ -29,6 +34,27 @@ for (const [name, Adapter] of adapters) {
     });
   });
 }
+
+test('Spotify metadata integration preserves media identity without enabling playback', async () => {
+  const adapter = new SpotifyCatalogAdapter({
+    accessToken: 'test-token',
+    transport: {
+      request: async () => ({
+        status: 200,
+        data: {
+          id: '11dFghVXANMlKmJXsNCbNl',
+          name: 'Example Track',
+          duration_ms: 180_000,
+          artists: [{ name: 'Example Artist' }],
+          album: { name: 'Example Album', images: [] },
+        },
+      }),
+    },
+  });
+  const result = await adapter.resolve({ mediaId: '11dFghVXANMlKmJXsNCbNl' });
+  assert.equal(result.mediaId, '11dFghVXANMlKmJXsNCbNl');
+  assert.equal(adapter.capabilities.playback, false);
+});
 
 test('Invidious instance outage can be recovered by selecting another configured instance without changing media identity', async () => {
   const adapter = new YouTubeInvidiousAdapter({
@@ -42,9 +68,10 @@ test('Invidious instance outage can be recovered by selecting another configured
 
 function createFakeTransport() {
   return {
-    request: async () => ({ status: 200, data: { items: [], playback: 'ok' } }),
+    request: async () => ({ status: 200, data: { tracks: { items: [] } } }),
   };
 }
+
 function createFailingTransport() {
   return {
     request: async () => {
@@ -52,6 +79,7 @@ function createFailingTransport() {
     },
   };
 }
+
 function createPrimaryOutageTransport() {
   return {
     request: async ({ baseUrl }) => {
