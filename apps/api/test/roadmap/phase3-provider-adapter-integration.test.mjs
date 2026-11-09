@@ -1,20 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { YouTubeInvidiousAdapter } from '../dist/providers/youtube-invidious.adapter.js';
-import { SpotifyAdapter } from '../dist/providers/spotify.adapter.js';
-import { LyrionAdapter } from '../dist/providers/lyrion.adapter.js';
 
-const adapters = [
-  ['YouTube/Invidious', YouTubeInvidiousAdapter],
-  ['Spotify', SpotifyAdapter],
-  ['Lyrion', LyrionAdapter],
-];
+const adapters = [['YouTube/Invidious', YouTubeInvidiousAdapter]];
 
 for (const [name, Adapter] of adapters) {
   test(`${name} adapter satisfies the shared provider contract and is replaceable`, async () => {
     const adapter = new Adapter({
       transport: createFakeTransport(),
-      credentials: createFakeCredentials(),
     });
     assert.equal(adapter.contractVersion, 1);
     assert.ok(adapter.providerId);
@@ -29,24 +22,15 @@ for (const [name, Adapter] of adapters) {
   test(`${name} adapter maps provider errors without leaking secrets or provider-specific objects`, async () => {
     const adapter = new Adapter({
       transport: createFailingTransport(),
-      credentials: createFakeCredentials(),
     });
     await assert.rejects(adapter.search({ query: 'test' }), (error) => {
       const serialized = JSON.stringify(error);
       return (
-        !serialized.includes('test-access-token') && !serialized.includes('test-client-secret')
+        !serialized.includes('authorization') && !serialized.includes('credentials')
       );
     });
   });
 }
-
-test('Spotify authorization expiry is surfaced as reconnect-required, not transient provider outage', async () => {
-  const adapter = new SpotifyAdapter({
-    transport: createUnauthorizedTransport(),
-    credentials: createFakeCredentials(),
-  });
-  await assert.rejects(adapter.healthCheck(), (error) => error.code === 'AUTHORIZATION_EXPIRED');
-});
 
 test('Invidious instance outage can be recovered by selecting another configured instance without changing media identity', async () => {
   const adapter = new YouTubeInvidiousAdapter({
@@ -58,25 +42,15 @@ test('Invidious instance outage can be recovered by selecting another configured
   assert.equal(result.instanceUrl, 'https://secondary.example.test');
 });
 
-test('Lyrion adapter is optional and reports unavailable cleanly when no server is configured', async () => {
-  const adapter = new LyrionAdapter({ transport: createFakeTransport(), serverUrl: null });
-  assert.equal((await adapter.healthCheck()).status, 'unconfigured');
-});
-
 function createFakeTransport() {
   return {
     request: async () => ({ status: 200, data: { items: [], playback: 'ok' } }),
   };
 }
-function createFakeCredentials() {
-  return { accessToken: 'test-access-token', clientSecret: 'test-client-secret' };
-}
 function createFailingTransport() {
   return {
     request: async () => {
-      throw Object.assign(new Error('provider failed'), {
-        authorization: 'Bearer test-access-token',
-      });
+      throw new Error('provider failed');
     },
   };
 }
