@@ -42,6 +42,7 @@ interface ConsumedOAuthState {
 
 export interface TwitchIntegrationStatus {
   status: 'connected' | 'reauth_required' | 'disconnected' | 'error';
+  recoveryState: 'ready' | 'paused' | 'pending_reconciliation';
   externalAccountId: string | null;
   grantedScopes: string[];
   tokenExpiresAt: Date | null;
@@ -184,14 +185,17 @@ export class TwitchIntegrationService {
       async (client) => {
         await client.query(
           `INSERT INTO workspace_integrations
-            (id, workspace_id, provider, status, external_account_id, granted_scopes,
+            (id, workspace_id, provider, status, recovery_state, external_account_id, granted_scopes,
              credential_ciphertext, credential_nonce, credential_auth_tag, wrapped_dek,
              dek_nonce, dek_auth_tag, kek_version, credential_format_version,
              token_expires_at, last_validated_at, last_error_code, connected_at, disconnected_at)
-           VALUES ($1,$2,'twitch','connected',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,now(),NULL,now(),NULL)
+           VALUES ($1,$2,'twitch','connected','pending_reconciliation',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,now(),NULL,now(),NULL)
            ON CONFLICT (workspace_id, provider) DO UPDATE SET
              id = EXCLUDED.id,
              status = 'connected',
+             recovery_state = 'pending_reconciliation',
+             paused_at = NULL,
+             pause_reason = NULL,
              external_account_id = EXCLUDED.external_account_id,
              granted_scopes = EXCLUDED.granted_scopes,
              credential_ciphertext = EXCLUDED.credential_ciphertext,
@@ -525,6 +529,7 @@ export class TwitchIntegrationService {
       (client) =>
         client.query<{
           status: TwitchIntegrationStatus['status'];
+          recovery_state: TwitchIntegrationStatus['recoveryState'];
           external_account_id: string | null;
           granted_scopes: string[];
           token_expires_at: Date | null;
@@ -532,7 +537,7 @@ export class TwitchIntegrationService {
           last_error_code: string | null;
           connected_at: Date | null;
         }>(
-          "SELECT status, external_account_id, granted_scopes, token_expires_at, last_validated_at, last_error_code, connected_at FROM workspace_integrations WHERE workspace_id = $1 AND provider = 'twitch'",
+          "SELECT status, recovery_state, external_account_id, granted_scopes, token_expires_at, last_validated_at, last_error_code, connected_at FROM workspace_integrations WHERE workspace_id = $1 AND provider = 'twitch'",
           [workspace.id],
         ),
     );
@@ -540,6 +545,7 @@ export class TwitchIntegrationService {
     return row
       ? {
           status: row.status,
+          recoveryState: row.recovery_state,
           externalAccountId: row.external_account_id,
           grantedScopes: row.granted_scopes,
           tokenExpiresAt: row.token_expires_at,
@@ -549,6 +555,7 @@ export class TwitchIntegrationService {
         }
       : {
           status: 'disconnected',
+          recoveryState: 'paused',
           externalAccountId: null,
           grantedScopes: [],
           tokenExpiresAt: null,
