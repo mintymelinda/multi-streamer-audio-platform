@@ -9,13 +9,7 @@ export interface RetryDelayOptions {
 }
 
 export function calculateRetryDelay(options: RetryDelayOptions): number {
-  const {
-    attempt,
-    baseDelayMs,
-    maxDelayMs,
-    jitterRatio = 0,
-    random = Math.random,
-  } = options;
+  const { attempt, baseDelayMs, maxDelayMs, jitterRatio = 0, random = Math.random } = options;
 
   if (
     !Number.isInteger(attempt) ||
