@@ -3,6 +3,7 @@ import { Worker, type Job } from 'bullmq';
 import { Redis } from 'ioredis';
 import { readFileSync } from 'node:fs';
 import { Pool } from 'pg';
+import { calculateRetryDelay } from './retry-policy.js';
 
 interface EventSubJob {
   deliveryId: string;
@@ -69,6 +70,17 @@ export class EventSubConsumerService implements OnModuleInit, OnModuleDestroy {
         concurrency: 8,
         lockDuration: 30_000,
         limiter: { max: 20, duration: 1_000 },
+        settings: {
+          backoffStrategy: (attemptsMade: number, type: string) => {
+            if (type !== 'phase2-exponential') return -1;
+            return calculateRetryDelay({
+              attempt: Math.max(1, attemptsMade),
+              baseDelayMs: 1_000,
+              maxDelayMs: 60_000,
+              jitterRatio: 0.2,
+            });
+          },
+        },
       },
     );
     this.worker.on('failed', (job) => {
