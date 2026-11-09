@@ -37,12 +37,12 @@ export class TwitchWorkspaceRecoveryService {
     }
 
     await this.integration.getAccessToken(workspace, actor);
-    const remoteRewards = await this.rewards.listRemoteRewards(workspace, actor);
+    await this.rewards.listRemoteRewards(workspace, actor);
     const mappings = await this.rewards.listMappings(workspace, actor);
     const activeMappingsReconciled = mappings.every(
       (mapping) => !mapping.enabled || mapping.sync_state === 'synced',
     );
-    if (!activeMappingsReconciled || remoteRewards.length < 0) {
+    if (!activeMappingsReconciled) {
       throw new ConflictException('Twitch reward mappings still require attention.');
     }
 
