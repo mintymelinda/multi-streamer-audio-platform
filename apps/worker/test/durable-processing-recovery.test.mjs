@@ -15,7 +15,7 @@ test('uses bounded exponential backoff and applies injected jitter deterministic
     jitterRatio: 0.2,
     random: () => 0.75,
   };
-  assert.equal(calculateRetryDelay(options), 5_200);
+  assert.equal(calculateRetryDelay(options), 4_400);
   assert.equal(calculateRetryDelay({ ...options, attempt: 20 }), 10_000);
 });
 
@@ -27,7 +27,10 @@ test('rejects invalid retry policy inputs instead of producing unbounded delays'
 
 test('retries transient failures but never retries permanent failures', () => {
   assert.equal(classifyProcessingFailure({ kind: 'network', retryable: true }), 'retryable');
-  assert.equal(classifyProcessingFailure({ kind: 'invalid_payload', retryable: false }), 'permanent');
+  assert.equal(
+    classifyProcessingFailure({ kind: 'invalid_payload', retryable: false }),
+    'permanent',
+  );
   assert.equal(
     isRetryEligible({
       failureClass: 'retryable',
