@@ -18,6 +18,7 @@ import {
 } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { DatabaseService } from '../database/database.service.js';
+import type { VerifiedWorkspaceId } from '@platform/contracts';
 import { AuthService } from '../identity/auth.service.js';
 import { parseCookies, sessionCookieName } from '../identity/security.js';
 import {
@@ -132,7 +133,7 @@ export class WorkspaceRealtimeGateway
     await client.join(room);
 
     const latest = await this.database.transaction(
-      { userId: identity.id, verifiedWorkspaceId: authorization.workspaceId as never },
+      { userId: identity.id, verifiedWorkspaceId: authorization.workspaceId as VerifiedWorkspaceId },
       (db) =>
         db.query<{ id: string; occurred_at: Date }>(
           `SELECT id, occurred_at FROM outbox_events
