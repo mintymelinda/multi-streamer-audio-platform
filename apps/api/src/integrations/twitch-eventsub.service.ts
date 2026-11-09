@@ -120,6 +120,21 @@ export class TwitchEventSubService {
     );
   }
 
+  async hasEnabledSubscriptions(
+    workspaceId: VerifiedWorkspaceId,
+    actorUserId: string,
+  ): Promise<boolean> {
+    const result = await this.database.transaction(
+      { userId: actorUserId, verifiedWorkspaceId: workspaceId },
+      (client) =>
+        client.query<{ enabled_count: string }>(
+          "SELECT count(*)::text AS enabled_count FROM twitch_eventsub_subscriptions WHERE workspace_id = $1 AND status = 'enabled'",
+          [workspaceId],
+        ),
+    );
+    return Number(result.rows[0]?.enabled_count ?? 0) > 0;
+  }
+
   async receive(
     headers: Record<string, string | string[] | undefined>,
     rawBody: Buffer,
