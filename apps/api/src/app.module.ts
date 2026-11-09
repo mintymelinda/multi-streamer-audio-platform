@@ -13,23 +13,11 @@ import { OutboxRecoveryModule } from './outbox/outbox-recovery.module.js';
 import { WorkspacesModule } from './workspaces/workspaces.module.js';
 import { ProviderInstanceModule } from './providers/provider-instance.module.js';
 import { ProviderCredentialsModule } from './providers/provider-credentials.module.js';
-
+import { ProviderOutputAssignmentModule } from './providers/provider-output-assignment.module.js';
 @Module({
-  imports: [
-    DatabaseModule,
-    IdentityModule,
-    WorkspacesModule,
-    ProviderInstanceModule,
-    ProviderCredentialsModule,
-    OutboxModule,
-    RequestsModule,
-    TwitchEventSubModule,
-    TwitchRewardsModule,
-    TwitchIntegrationModule,
-    TwitchWorkspaceRecoveryModule,
-    RealtimeModule,
-    OutboxRecoveryModule,
-  ],
+  imports: [DatabaseModule, IdentityModule, WorkspacesModule, ProviderInstanceModule, ProviderCredentialsModule,
+    ProviderOutputAssignmentModule, OutboxModule, RequestsModule, TwitchEventSubModule, TwitchRewardsModule,
+    TwitchIntegrationModule, TwitchWorkspaceRecoveryModule, RealtimeModule, OutboxRecoveryModule],
   controllers: [HealthController],
 })
 export class AppModule {}

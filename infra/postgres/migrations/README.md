@@ -7,9 +7,9 @@ Schema migrations are immutable, ordered SQL files named `NNNN_short_description
 - Keep migrations transactional where PostgreSQL supports it.
 - Prefer expand/contract changes so application and worker versions can overlap safely during deployment.
 - Include tenant ownership columns, RLS policies, forced RLS, indexes, and default privileges in the migration that creates tenant data.
-- The application runtime role must not own tables and must not have `BYPASSRLS`.
+- The application runtime role must not own protected tables or have `BYPASSRLS`.
 - The migrator is a separate schema owner with no superuser or `BYPASSRLS` privilege.
-- The application must authenticate the user and verify workspace membership before setting transaction-local `app.user_id` and `app.workspace_id`. RLS is an additional boundary, not a substitute for authorization.
+- The application must authenticate the user and verify workspace membership before setting transaction-local `app.user_id` and `app.workspace_id`. RLS is an additional boundary, not a substitute for application authorization.
 - Use transaction-local settings only. Never use session-level `SET` for tenant context with pooled connections.
 - CI applies every migration using the migrator role and executes tenant-isolation tests using the restricted runtime role.
 
@@ -25,8 +25,8 @@ Start the local services with `pnpm dev:infra`, then apply the role bootstrap an
 - `0009_twitch_workspace_authorization.sql` distinguishes platform sign-in OAuth state from workspace broadcaster authorization and binds each workspace grant to the initiating user and workspace.
 - `0011_phase2_recovery_state.sql` persists Twitch authorization pause/reconciliation state and operator-dismissed EventSub delivery outcomes.
 - `0012_outbox_operator_recovery.sql` persists terminal outbox dispatch states and grants the restricted worker only the additional dispatch-state update permission.
-
 - `0014_provider_instances.sql` establishes stable workspace-scoped provider identity, versioned adapter contracts, declared capabilities, and non-secret connection health metadata.
 - `0015_provider_credentials.sql` establishes workspace-scoped envelope-encrypted provider credentials, granted-scope metadata, authorization expiry, and revocation lifecycle state.
+- `0016_provider_output_assignments.sql` establishes explicit workspace-scoped provider/player output ownership, with unique active ownership per workspace/output, player, and provider instance.
 
 New tenant-owned tables must follow the same pattern. Never put plaintext provider credentials in integration rows, audit details, outbox payloads, logs, or job messages.
