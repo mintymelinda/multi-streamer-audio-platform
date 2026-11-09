@@ -1,8 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {
-  reconcileEventSubSubscriptions,
-} from '../src/integrations/twitch-eventsub-reconciliation.ts';
+import { reconcileEventSubSubscriptions } from '../src/integrations/twitch-eventsub-reconciliation.ts';
 
 const local = [
   {
@@ -59,13 +57,15 @@ test('reconciles only remote enabled subscriptions with matching identity and me
 test('does not treat metadata mismatch or remote absence as a valid recovery subscription', () => {
   const result = reconcileEventSubSubscriptions(
     [{ subscriptionId: 'sub-1', eventType: 'channel.update', eventVersion: '1' }],
-    [{
-      id: 'sub-1',
-      status: 'enabled',
-      type: 'channel.update',
-      version: '2',
-      condition: {},
-    }],
+    [
+      {
+        id: 'sub-1',
+        status: 'enabled',
+        type: 'channel.update',
+        version: '2',
+        condition: {},
+      },
+    ],
     'broadcaster-1',
   );
   assert.equal(result[0]?.status, 'disabled');
