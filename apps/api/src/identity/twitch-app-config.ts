@@ -30,6 +30,36 @@ export function getTwitchIntegrationRedirectUri(): string {
   return parsed.toString();
 }
 
+export function getTwitchEventSubCallbackUrl(): string {
+  const callbackUrl = process.env.TWITCH_EVENTSUB_CALLBACK_URL?.trim();
+  if (!callbackUrl) {
+    throw new Error(
+      'Twitch EventSub is not configured. Set TWITCH_EVENTSUB_CALLBACK_URL to the registered /webhooks/twitch/eventsub URL.',
+    );
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(callbackUrl);
+  } catch {
+    throw new Error('TWITCH_EVENTSUB_CALLBACK_URL must be an absolute HTTPS URL.');
+  }
+  if (parsed.protocol !== 'https:' && parsed.hostname !== 'localhost') {
+    throw new Error('TWITCH_EVENTSUB_CALLBACK_URL must use HTTPS.');
+  }
+  if (
+    parsed.pathname !== '/webhooks/twitch/eventsub' ||
+    parsed.search ||
+    parsed.hash ||
+    parsed.username ||
+    parsed.password
+  ) {
+    throw new Error(
+      'TWITCH_EVENTSUB_CALLBACK_URL must use the exact /webhooks/twitch/eventsub path without credentials, query, or fragment.',
+    );
+  }
+  return parsed.toString();
+}
+
 export function getTwitchAppConfig(): TwitchAppConfig {
   const clientId = process.env.TWITCH_CLIENT_ID?.trim();
   const redirectUri = process.env.TWITCH_REDIRECT_URI?.trim();
