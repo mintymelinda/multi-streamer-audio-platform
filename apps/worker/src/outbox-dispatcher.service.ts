@@ -269,7 +269,7 @@ export class OutboxDispatcherService implements OnModuleInit, OnModuleDestroy {
       await this.pool.query(
         `UPDATE outbox_events
             SET dispatch_status = CASE
-                  WHEN attempt_count >= 8 OR created_at < now() - interval '24 hours'
+                  WHEN attempt_count >= 8 OR COALESCE(last_retried_at, created_at) < now() - interval '24 hours'
                     THEN 'failed' ELSE 'pending' END,
                 available_at = CASE
                   WHEN attempt_count >= 8 OR created_at < now() - interval '24 hours'
