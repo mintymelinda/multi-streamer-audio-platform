@@ -1,5 +1,5 @@
 import {
-  Body,
+  NotFoundException,
   Controller,
   Inject,
   Param,
@@ -18,12 +18,12 @@ import { WorkspaceAccessGuard } from '../workspaces/workspace-access.guard.js';
 import { TwitchWorkspaceRecoveryService } from './twitch-workspace-recovery.service.js';
 
 function actor(request: HttpRequest): AuthenticatedUser {
-  if (!request.user) throw new Error('Authenticated user context is missing.');
+  if (!request.user) throw new NotFoundException('Sign-in is required.');
   return request.user;
 }
 
 function workspace(request: HttpRequest): WorkspaceRequestContext {
-  if (!request.workspace) throw new Error('Verified workspace context is missing.');
+  if (!request.workspace) throw new NotFoundException('Workspace access is required.');
   return request.workspace;
 }
 
