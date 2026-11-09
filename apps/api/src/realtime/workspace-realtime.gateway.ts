@@ -8,9 +8,8 @@ import {
 import type {
   OnGatewayConnection,
   OnGatewayDisconnect,
-  OnModuleDestroy,
-  OnModuleInit,
 } from '@nestjs/websockets';
+import type { OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import {
   ForbiddenException,
   Inject,
