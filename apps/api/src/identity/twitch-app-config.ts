@@ -30,6 +30,14 @@ export function getTwitchIntegrationRedirectUri(): string {
   return parsed.toString();
 }
 
+export function getTwitchEventSubCallbackUrl(): string {
+  const callbackUrl = new URL(getTwitchIntegrationRedirectUri());
+  callbackUrl.pathname = '/webhooks/twitch/eventsub';
+  callbackUrl.search = '';
+  callbackUrl.hash = '';
+  return callbackUrl.toString();
+}
+
 export function getTwitchAppConfig(): TwitchAppConfig {
   const clientId = process.env.TWITCH_CLIENT_ID?.trim();
   const redirectUri = process.env.TWITCH_REDIRECT_URI?.trim();

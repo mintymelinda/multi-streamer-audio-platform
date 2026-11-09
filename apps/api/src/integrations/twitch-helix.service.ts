@@ -1,5 +1,6 @@
 import {
   BadGatewayException,
+  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -8,7 +9,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import type { AuthenticatedUser, WorkspaceRequestContext } from '../identity/http.types.js';
-import { getTwitchAppConfig } from '../identity/twitch-app-config.js';
+import { getTwitchAppConfig, getTwitchEventSubCallbackUrl } from '../identity/twitch-app-config.js';
 import { TwitchIntegrationService } from './twitch-integration.service.js';
 
 export interface TwitchCustomReward {
@@ -42,12 +43,214 @@ export interface UpdateTwitchCustomReward {
 
 type HelixMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE';
 
+export interface TwitchEventSubSubscription {
+  id: string;
+  status: string;
+  type: string;
+  version: string;
+  condition: Record<string, unknown>;
+}
+
+interface TwitchAppTokenResponse {
+  access_token?: string;
+  expires_in?: number;
+}
+
 @Injectable()
 export class TwitchHelixService {
+  private appToken: { value: string; expiresAt: number } | undefined;
+
   constructor(
     @Inject(TwitchIntegrationService)
     private readonly integration: TwitchIntegrationService,
   ) {}
+
+  async createRedemptionEventSubSubscription(
+    broadcasterUserId: string,
+    signingSecret: string,
+  ): Promise<TwitchEventSubSubscription> {
+    const config = getTwitchAppConfig();
+    const appToken = await this.getAppAccessToken(config.clientId, config.clientSecret);
+    const body = {
+      type: 'channel.channel_points_custom_reward_redemption.add',
+      version: '1',
+      condition: { broadcaster_user_id: broadcasterUserId },
+      transport: {
+        method: 'webhook',
+        callback: getTwitchEventSubCallbackUrl(),
+        secret: signingSecret,
+      },
+    };
+    let response: Response;
+    try {
+      response = await fetch('https://api.twitch.tv/helix/eventsub/subscriptions', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${appToken}`,
+          'Client-Id': config.clientId,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(10_000),
+      });
+    } catch {
+      throw new ServiceUnavailableException(
+        'Twitch EventSub subscription creation is temporarily unavailable.',
+      );
+    }
+    if (response.status === 401) {
+      this.appToken = undefined;
+      throw new UnauthorizedException('Twitch app authorization was rejected.');
+    }
+    if (response.status === 409) {
+      throw new ConflictException(
+        'A matching Twitch EventSub subscription already exists and must be reconciled.',
+      );
+    }
+    if (response.status === 429 || response.status >= 500) {
+      throw new ServiceUnavailableException(
+        'Twitch EventSub subscription creation is temporarily unavailable.',
+      );
+    }
+    if (!response.ok) {
+      throw new BadGatewayException('Twitch rejected the EventSub subscription request.');
+    }
+    const payload = (await response.json()) as { data?: TwitchEventSubSubscription[] };
+    const subscription = payload.data?.[0];
+    if (!subscription?.id) {
+      throw new BadGatewayException('Twitch did not return the created EventSub subscription.');
+    }
+    return subscription;
+  }
+
+  async deleteEventSubSubscription(subscriptionId: string): Promise<void> {
+    const config = getTwitchAppConfig();
+    const appToken = await this.getAppAccessToken(config.clientId, config.clientSecret);
+    const url = new URL('https://api.twitch.tv/helix/eventsub/subscriptions');
+    url.searchParams.set('id', subscriptionId);
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${appToken}`,
+          'Client-Id': config.clientId,
+        },
+        signal: AbortSignal.timeout(10_000),
+      });
+    } catch {
+      throw new ServiceUnavailableException(
+        'Twitch EventSub subscription deletion is temporarily unavailable.',
+      );
+    }
+    if (response.status === 401) {
+      this.appToken = undefined;
+      throw new UnauthorizedException('Twitch app authorization was rejected.');
+    }
+    if (response.status === 404 || response.status === 204) return;
+    if (response.status === 429 || response.status >= 500) {
+      throw new ServiceUnavailableException(
+        'Twitch EventSub subscription deletion is temporarily unavailable.',
+      );
+    }
+    if (!response.ok) {
+      throw new BadGatewayException('Twitch rejected the EventSub subscription deletion.');
+    }
+  }
+
+  async listEventSubSubscriptions(
+    broadcasterUserId: string,
+  ): Promise<TwitchEventSubSubscription[]> {
+    const config = getTwitchAppConfig();
+    const appToken = await this.getAppAccessToken(config.clientId, config.clientSecret);
+    const subscriptions: TwitchEventSubSubscription[] = [];
+    const cursors = new Set<string>();
+    let cursor: string | undefined;
+    do {
+      const url = new URL('https://api.twitch.tv/helix/eventsub/subscriptions');
+      url.searchParams.set('user_id', broadcasterUserId);
+      if (cursor) url.searchParams.set('after', cursor);
+      let response: Response;
+      try {
+        response = await fetch(url, {
+          headers: {
+            Authorization: `Bearer ${appToken}`,
+            'Client-Id': config.clientId,
+          },
+          signal: AbortSignal.timeout(10_000),
+        });
+      } catch {
+        throw new ServiceUnavailableException(
+          'Twitch EventSub reconciliation is temporarily unavailable.',
+        );
+      }
+      if (response.status === 401) {
+        this.appToken = undefined;
+        throw new UnauthorizedException('Twitch app authorization was rejected.');
+      }
+      if (response.status === 429 || response.status >= 500) {
+        throw new ServiceUnavailableException(
+          'Twitch EventSub reconciliation is temporarily unavailable.',
+        );
+      }
+      if (!response.ok) {
+        throw new BadGatewayException('Twitch EventSub subscriptions could not be reconciled.');
+      }
+      const payload = (await response.json()) as {
+        data?: TwitchEventSubSubscription[];
+        pagination?: { cursor?: string };
+      };
+      if (!Array.isArray(payload.data)) {
+        throw new BadGatewayException('Twitch returned an invalid EventSub subscription response.');
+      }
+      subscriptions.push(...payload.data);
+      cursor = payload.pagination?.cursor;
+      if (cursor && cursors.has(cursor)) {
+        throw new BadGatewayException('Twitch returned a repeated EventSub pagination cursor.');
+      }
+      if (cursor) cursors.add(cursor);
+    } while (cursor);
+    return subscriptions;
+  }
+
+  private async getAppAccessToken(clientId: string, clientSecret: string): Promise<string> {
+    if (this.appToken && this.appToken.expiresAt > Date.now() + 60_000) {
+      return this.appToken.value;
+    }
+    const body = new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      grant_type: 'client_credentials',
+    });
+    let response: Response;
+    try {
+      response = await fetch('https://id.twitch.tv/oauth2/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body,
+        signal: AbortSignal.timeout(10_000),
+      });
+    } catch {
+      throw new ServiceUnavailableException('Twitch app authorization is temporarily unavailable.');
+    }
+    if (!response.ok) {
+      throw new ServiceUnavailableException('Twitch app authorization is temporarily unavailable.');
+    }
+    const token = (await response.json()) as TwitchAppTokenResponse;
+    if (
+      !token.access_token ||
+      typeof token.expires_in !== 'number' ||
+      !Number.isFinite(token.expires_in) ||
+      token.expires_in <= 0
+    ) {
+      throw new BadGatewayException('Twitch did not return a valid app access token.');
+    }
+    this.appToken = {
+      value: token.access_token,
+      expiresAt: Date.now() + token.expires_in * 1_000,
+    };
+    return token.access_token;
+  }
 
   async listCustomRewards(
     workspace: WorkspaceRequestContext,
@@ -130,6 +333,11 @@ export class TwitchHelixService {
     if (status.status !== 'connected' || !status.externalAccountId) {
       throw new UnauthorizedException('The workspace Twitch broadcaster is not connected.');
     }
+    if (method !== 'GET' && status.recoveryState !== 'ready') {
+      throw new ConflictException(
+        'Twitch write operations are paused until workspace recovery is complete.',
+      );
+    }
     const accessToken = await this.integration.getAccessToken(workspace, actor);
     const { clientId } = getTwitchAppConfig();
     const url = new URL('https://api.twitch.tv/helix/channel_points/custom_rewards');
@@ -155,9 +363,11 @@ export class TwitchHelixService {
     }
 
     if (response.status === 401) {
+      await this.integration.markAuthorizationLost(workspace, actor, 'twitch_api_unauthorized');
       throw new UnauthorizedException('Twitch rejected the workspace broadcaster authorization.');
     }
     if (response.status === 403) {
+      await this.integration.markAuthorizationLost(workspace, actor, 'twitch_api_forbidden');
       throw new ForbiddenException(
         'The Twitch broadcaster is not permitted to manage these rewards.',
       );

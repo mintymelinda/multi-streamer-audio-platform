@@ -4,7 +4,9 @@ import { randomUUID } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import type { Http2ServerRequest } from 'node:http2';
 import { NestFactory } from '@nestjs/core';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
+import { IoAdapter } from '@nestjs/platform-socket.io';
 import { ApiExceptionFilter } from './api-exception.filter.js';
 import { AppModule } from './app.module.js';
 
@@ -23,6 +25,16 @@ async function bootstrap(): Promise<void> {
     }),
     { logger: new ConsoleLogger({ json: true }), rawBody: true },
   );
+
+  app.useWebSocketAdapter(new IoAdapter(app));
+
+  const openApiConfig = new DocumentBuilder()
+    .setTitle('Multi-Streamer Audio Platform API')
+    .setDescription('Workspace-scoped request, moderation, Twitch integration, and recovery API.')
+    .setVersion('1.0.0')
+    .build();
+  const openApiDocument = SwaggerModule.createDocument(app, openApiConfig);
+  SwaggerModule.setup('openapi', app, openApiDocument, { jsonDocumentUrl: 'openapi-json' });
 
   app.useGlobalFilters(new ApiExceptionFilter());
   app.enableShutdownHooks();

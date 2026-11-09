@@ -48,6 +48,32 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
     return this.pool.query<T>(sql, values);
   }
 
+  async listen(
+    channel: string,
+    handler: (payload: string | undefined) => void,
+  ): Promise<() => Promise<void>> {
+    if (!/^[a-z_][a-z0-9_]{0,62}$/.test(channel)) {
+      throw new Error('PostgreSQL notification channel name is invalid.');
+    }
+    const client = await this.pool.connect();
+    const onNotification = (message: { channel: string; payload?: string | undefined }) => {
+      if (message.channel === channel) handler(message.payload);
+    };
+    try {
+      client.on('notification', onNotification);
+      await client.query(`LISTEN ${channel}`);
+    } catch (error) {
+      client.removeListener('notification', onNotification);
+      client.release();
+      throw error;
+    }
+    return async () => {
+      client.removeListener('notification', onNotification);
+      await client.query(`UNLISTEN ${channel}`).catch(() => undefined);
+      client.release();
+    };
+  }
+
   async transaction<T>(
     context: DatabaseContext,
     operation: (client: PoolClient) => Promise<T>,

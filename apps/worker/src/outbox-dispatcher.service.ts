@@ -3,6 +3,7 @@ import { Queue } from 'bullmq';
 import { Redis } from 'ioredis';
 import { readFileSync } from 'node:fs';
 import { Pool } from 'pg';
+import { calculateRetryDelay } from './retry-policy.js';
 
 interface OutboxRow {
   id: string;
@@ -12,6 +13,7 @@ interface OutboxRow {
   aggregate_id: string;
   payload: Record<string, unknown>;
   attempt_count: number;
+  dispatch_generation: number;
   lock_token: string;
 }
 
@@ -23,6 +25,7 @@ interface EventSubDeliveryRow {
   message_type: 'notification' | 'revocation';
   payload: Record<string, unknown>;
   dispatch_attempts: number;
+  dispatch_generation: number;
   dispatch_lock_token: string;
 }
 
@@ -42,8 +45,14 @@ function readRequiredSetting(fileVariable: string, directVariable: string): stri
 }
 
 function retryDelaySeconds(attempt: number): number {
-  const exponent = Math.max(0, Math.min(attempt - 1, 10));
-  return Math.min(3600, 5 * 2 ** exponent);
+  return Math.ceil(
+    calculateRetryDelay({
+      attempt: Math.max(1, attempt),
+      baseDelayMs: 5_000,
+      maxDelayMs: 3_600_000,
+      jitterRatio: 0.2,
+    }) / 1_000,
+  );
 }
 
 @Injectable()
@@ -108,7 +117,8 @@ export class OutboxDispatcherService implements OnModuleInit, OnModuleDestroy {
         `WITH candidates AS (
            SELECT id
              FROM outbox_events
-            WHERE published_at IS NULL
+            WHERE dispatch_status = 'pending'
+              AND published_at IS NULL
               AND available_at <= now()
               AND (locked_at IS NULL OR locked_at < now() - interval '60 seconds')
             ORDER BY occurred_at ASC, id ASC
@@ -123,7 +133,7 @@ export class OutboxDispatcherService implements OnModuleInit, OnModuleDestroy {
           WHERE event.id = candidates.id
          RETURNING event.id, event.workspace_id, event.event_type,
                    event.aggregate_type, event.aggregate_id, event.payload,
-                   event.attempt_count, event.lock_token`,
+                   event.attempt_count, event.dispatch_generation, event.lock_token`,
       );
       await client.query('COMMIT');
       return result.rows;
@@ -162,7 +172,8 @@ export class OutboxDispatcherService implements OnModuleInit, OnModuleDestroy {
           WHERE delivery.id = candidates.id
          RETURNING delivery.id, delivery.workspace_id, delivery.subscription_id,
                    delivery.message_id, delivery.message_type, delivery.payload,
-                   delivery.dispatch_attempts, delivery.dispatch_lock_token`,
+                   delivery.dispatch_attempts, delivery.dispatch_generation,
+                   delivery.dispatch_lock_token`,
       );
       await client.query('COMMIT');
       return result.rows;
@@ -184,9 +195,9 @@ export class OutboxDispatcherService implements OnModuleInit, OnModuleDestroy {
           messageId: row.message_id,
         },
         {
-          jobId: `eventsub-${row.id}`,
+          jobId: `eventsub-${row.id}-${row.dispatch_generation}-${row.dispatch_attempts}`,
           attempts: 8,
-          backoff: { type: 'exponential', delay: 1_000 },
+          backoff: { type: 'phase2-exponential', delay: 1_000 },
           removeOnComplete: { age: 30 * 24 * 60 * 60, count: 10_000 },
           removeOnFail: false,
         },
@@ -205,10 +216,19 @@ export class OutboxDispatcherService implements OnModuleInit, OnModuleDestroy {
       const delay = retryDelaySeconds(row.dispatch_attempts);
       await this.pool.query(
         `UPDATE twitch_eventsub_deliveries
-            SET next_dispatch_at = now() + ($2::text || ' seconds')::interval,
-                dispatch_locked_at = NULL,
+            SET dispatch_locked_at = NULL,
                 dispatch_lock_token = NULL,
-                dispatch_error_code = 'redis_enqueue_failed'
+                dispatch_error_code = CASE
+                  WHEN dispatch_attempts >= 8 OR COALESCE(last_retried_at, received_at) < now() - interval '24 hours'
+                    THEN 'eventsub_dispatch_exhausted'
+                  ELSE 'redis_enqueue_failed' END,
+                status = CASE
+                  WHEN dispatch_attempts >= 8 OR COALESCE(last_retried_at, received_at) < now() - interval '24 hours'
+                    THEN 'failed' ELSE status END,
+                next_dispatch_at = CASE
+                  WHEN dispatch_attempts >= 8 OR COALESCE(last_retried_at, received_at) < now() - interval '24 hours'
+                    THEN next_dispatch_at
+                  ELSE now() + ($2::text || ' seconds')::interval END
           WHERE id = $1 AND status = 'accepted'
             AND dispatch_published_at IS NULL AND dispatch_lock_token = $3`,
         [row.id, delay, row.dispatch_lock_token],
@@ -230,17 +250,29 @@ export class OutboxDispatcherService implements OnModuleInit, OnModuleDestroy {
           payload: row.payload,
         },
         {
-          jobId: row.id,
+          jobId: `${row.id}-${row.dispatch_generation}-${row.attempt_count}`,
           attempts: 8,
           backoff: { type: 'exponential', delay: 1_000 },
           removeOnComplete: { age: 30 * 24 * 60 * 60, count: 10_000 },
           removeOnFail: false,
         },
       );
+      const event = {
+        id: row.id,
+        workspaceId: row.workspace_id,
+        type: row.event_type,
+        payload: row.payload,
+      };
+      const serialized = JSON.stringify(event);
+      const notification =
+        serialized.length <= 7_000
+          ? serialized
+          : JSON.stringify({ ...event, payload: {}, refreshRequired: true });
+      await this.pool.query("SELECT pg_notify('platform_outbox_event', $1)", [notification]);
       await this.pool.query(
         `UPDATE outbox_events
-            SET published_at = now(), locked_at = NULL, lock_token = NULL,
-                last_error_code = NULL
+            SET published_at = now(), dispatch_status = 'published',
+                locked_at = NULL, lock_token = NULL, last_error_code = NULL
           WHERE id = $1 AND published_at IS NULL AND lock_token = $2`,
         [row.id, row.lock_token],
       );
@@ -248,10 +280,20 @@ export class OutboxDispatcherService implements OnModuleInit, OnModuleDestroy {
       const delay = retryDelaySeconds(row.attempt_count);
       await this.pool.query(
         `UPDATE outbox_events
-            SET available_at = now() + ($2::text || ' seconds')::interval,
+            SET dispatch_status = CASE
+                  WHEN attempt_count >= 8 OR COALESCE(last_retried_at, created_at) < now() - interval '24 hours'
+                    THEN 'failed' ELSE 'pending' END,
+                available_at = CASE
+                  WHEN attempt_count >= 8 OR COALESCE(last_retried_at, created_at) < now() - interval '24 hours'
+                    THEN available_at
+                  ELSE now() + ($2::text || ' seconds')::interval END,
                 locked_at = NULL, lock_token = NULL,
-                last_error_code = 'redis_enqueue_failed'
-          WHERE id = $1 AND published_at IS NULL AND lock_token = $3`,
+                last_error_code = CASE
+                  WHEN attempt_count >= 8 OR COALESCE(last_retried_at, created_at) < now() - interval '24 hours'
+                    THEN 'outbox_dispatch_exhausted'
+                  ELSE 'redis_enqueue_failed' END
+          WHERE id = $1 AND published_at IS NULL
+            AND dispatch_status = 'pending' AND lock_token = $3`,
         [row.id, delay, row.lock_token],
       );
       this.logger.warn(`Outbox event ${row.id} enqueue failed; retry scheduled.`);

@@ -3,6 +3,7 @@ import { Worker, type Job } from 'bullmq';
 import { Redis } from 'ioredis';
 import { readFileSync } from 'node:fs';
 import { Pool } from 'pg';
+import { calculateRetryDelay, classifyProcessingFailure, isRetryEligible } from './retry-policy.js';
 
 interface EventSubJob {
   deliveryId: string;
@@ -17,7 +18,7 @@ interface DeliveryRow {
   message_type: 'notification' | 'revocation';
   service_actor_user_id: string | null;
   payload: Record<string, unknown>;
-  status: 'accepted' | 'processing' | 'processed' | 'failed';
+  status: 'accepted' | 'processing' | 'processed' | 'failed' | 'dismissed';
   attempts: number;
 }
 interface EventSubEnvelope {
@@ -69,6 +70,17 @@ export class EventSubConsumerService implements OnModuleInit, OnModuleDestroy {
         concurrency: 8,
         lockDuration: 30_000,
         limiter: { max: 20, duration: 1_000 },
+        settings: {
+          backoffStrategy: (attemptsMade: number, type?: string) => {
+            if (type !== 'phase2-exponential') return -1;
+            return calculateRetryDelay({
+              attempt: Math.max(1, attemptsMade),
+              baseDelayMs: 1_000,
+              maxDelayMs: 60_000,
+              jitterRatio: 0.2,
+            });
+          },
+        },
       },
     );
     this.worker.on('failed', (job) => {
@@ -104,7 +116,11 @@ export class EventSubConsumerService implements OnModuleInit, OnModuleDestroy {
       );
       const delivery = result.rows[0];
       if (!delivery) throw new Error('eventsub_delivery_not_found');
-      if (delivery.status === 'processed' || delivery.status === 'failed') {
+      if (
+        delivery.status === 'processed' ||
+        delivery.status === 'failed' ||
+        delivery.status === 'dismissed'
+      ) {
         await client.query('COMMIT');
         return;
       }
@@ -149,7 +165,22 @@ export class EventSubConsumerService implements OnModuleInit, OnModuleDestroy {
     } catch (error) {
       await client.query('ROLLBACK').catch(() => undefined);
       const maxAttempts = Number(job.opts.attempts ?? 1);
-      const terminal = job.attemptsMade + 1 >= maxAttempts;
+      const message = error instanceof Error ? error.message : 'eventsub_processing_failed';
+      const permanent =
+        message.startsWith('invalid_eventsub_') || message === 'eventsub_delivery_not_found';
+      const failureClass = classifyProcessingFailure({
+        kind: message,
+        retryable: !permanent,
+        outcome: 'failed',
+        externalSideEffectStarted: false,
+      });
+      const terminal = !isRetryEligible({
+        failureClass,
+        attempts: job.attemptsMade + 1,
+        maxAttempts,
+        ageMs: Math.max(0, Date.now() - job.timestamp),
+        maxAgeMs: 24 * 60 * 60 * 1_000,
+      });
       // Persist exhaustion before throwing the final error. The previous
       // implementation relied only on BullMQ's async "failed" event, leaving
       // a crash window where a permanently failed job remained "accepted".

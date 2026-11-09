@@ -1,8 +1,8 @@
 import { Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import type { VerifiedWorkspaceId } from '@platform/contracts';
-import { DatabaseService } from '../database/database.service.js';
+import type { DatabaseService } from '../database/database.service.js';
 import type { WorkspaceRequestContext } from '../identity/http.types.js';
-import { RequestsService } from '../requests/requests.service.js';
+import type { RequestsService } from '../requests/requests.service.js';
 import { buildTwitchRedemptionRequest } from './twitch-redemption-routing.js';
 
 interface IntakeRow {
@@ -117,6 +117,22 @@ export class TwitchRedemptionRouterService implements OnModuleInit, OnModuleDest
         return;
       }
 
+      const integration = await this.database.transaction(
+        { userId: row.service_actor_user_id, verifiedWorkspaceId: row.workspace_id },
+        (client) =>
+          client.query<{ status: string; recovery_state: string }>(
+            "SELECT status, recovery_state FROM workspace_integrations WHERE workspace_id = $1 AND provider = 'twitch'",
+            [row.workspace_id],
+          ),
+      );
+      if (
+        integration.rows[0]?.status !== 'connected' ||
+        integration.rows[0]?.recovery_state !== 'ready'
+      ) {
+        await this.finish(row, 'pending', null, 'workspace_twitch_authorization_paused');
+        return;
+      }
+
       const event = row.event_payload;
       const reward = event.reward as Record<string, unknown> | undefined;
       const rewardId = typeof reward?.id === 'string' ? reward.id : '';
@@ -143,8 +159,7 @@ export class TwitchRedemptionRouterService implements OnModuleInit, OnModuleDest
       );
       const mapping = mappingResult.rows[0];
       if (
-        !mapping ||
-        !mapping.enabled ||
+        !mapping?.enabled ||
         mapping.sync_state !== 'synced' ||
         mapping.feature_key !== 'media_request'
       ) {

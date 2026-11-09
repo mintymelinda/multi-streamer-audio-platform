@@ -21,6 +21,10 @@ import {
 } from '../security/integration-credential-crypto.js';
 import { OutboxService } from '../outbox/outbox.service.js';
 import { hasRequiredTwitchRewardScopes } from './twitch-integration-scopes.js';
+import {
+  classifyTwitchAuthorizationFailure,
+  shouldPauseTwitchWorkspace,
+} from './twitch-authorization-recovery.js';
 
 interface TwitchTokenResponse {
   access_token?: string;
@@ -42,6 +46,7 @@ interface ConsumedOAuthState {
 
 export interface TwitchIntegrationStatus {
   status: 'connected' | 'reauth_required' | 'disconnected' | 'error';
+  recoveryState: 'ready' | 'paused' | 'pending_reconciliation';
   externalAccountId: string | null;
   grantedScopes: string[];
   tokenExpiresAt: Date | null;
@@ -184,14 +189,17 @@ export class TwitchIntegrationService {
       async (client) => {
         await client.query(
           `INSERT INTO workspace_integrations
-            (id, workspace_id, provider, status, external_account_id, granted_scopes,
+            (id, workspace_id, provider, status, recovery_state, external_account_id, granted_scopes,
              credential_ciphertext, credential_nonce, credential_auth_tag, wrapped_dek,
              dek_nonce, dek_auth_tag, kek_version, credential_format_version,
              token_expires_at, last_validated_at, last_error_code, connected_at, disconnected_at)
-           VALUES ($1,$2,'twitch','connected',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,now(),NULL,now(),NULL)
+           VALUES ($1,$2,'twitch','connected','pending_reconciliation',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,now(),NULL,now(),NULL)
            ON CONFLICT (workspace_id, provider) DO UPDATE SET
              id = EXCLUDED.id,
              status = 'connected',
+             recovery_state = 'pending_reconciliation',
+             paused_at = NULL,
+             pause_reason = NULL,
              external_account_id = EXCLUDED.external_account_id,
              granted_scopes = EXCLUDED.granted_scopes,
              credential_ciphertext = EXCLUDED.credential_ciphertext,
@@ -290,7 +298,7 @@ export class TwitchIntegrationService {
             [workspace.id],
           );
           const row = result.rows[0];
-          if (!row || row.status !== 'connected' || !row.external_account_id) {
+          if (row?.status !== 'connected' || !row.external_account_id) {
             throw new UnauthorizedException('The workspace Twitch broadcaster is not connected.');
           }
           if (
@@ -417,20 +425,69 @@ export class TwitchIntegrationService {
         },
       );
     } catch (error) {
-      if (error instanceof UnauthorizedException) {
-        await this.database.transaction(
-          { userId: actor.id, verifiedWorkspaceId: workspace.id },
-          (client) =>
-            client.query(
-              `UPDATE workspace_integrations
-                  SET status = 'reauth_required', last_error_code = 'token_refresh_or_validation_failed', updated_at = now()
-                WHERE workspace_id = $1 AND provider = 'twitch' AND status <> 'disconnected'`,
-              [workspace.id],
-            ),
-        );
+      const status =
+        typeof error === 'object' &&
+        error !== null &&
+        'getStatus' in error &&
+        typeof error.getStatus === 'function'
+          ? error.getStatus()
+          : undefined;
+      if (classifyTwitchAuthorizationFailure({ status }) === 'reauth_required') {
+        await this.markAuthorizationLost(workspace, actor, 'twitch_authorization_rejected');
       }
       throw error;
     }
+  }
+
+  async markAuthorizationLost(
+    workspace: WorkspaceRequestContext,
+    actor: AuthenticatedUser,
+    reason: string,
+  ): Promise<void> {
+    const safeReason = /^[a-z0-9_]{1,80}$/.test(reason) ? reason : 'twitch_authorization_rejected';
+    await this.database.transaction(
+      { userId: actor.id, verifiedWorkspaceId: workspace.id },
+      async (client) => {
+        const current = await client.query<{ status: string }>(
+          `SELECT status FROM workspace_integrations
+            WHERE workspace_id = $1 AND provider = 'twitch' FOR UPDATE`,
+          [workspace.id],
+        );
+        if (
+          !shouldPauseTwitchWorkspace({
+            currentStatus: current.rows[0]?.status ?? 'disconnected',
+            failure: 'reauth_required',
+          })
+        )
+          return;
+        const paused = await client.query<{ id: string }>(
+          `UPDATE workspace_integrations
+              SET status = 'reauth_required', recovery_state = 'paused',
+                  paused_at = COALESCE(paused_at, now()), pause_reason = $2,
+                  last_error_code = $2, updated_at = now()
+            WHERE workspace_id = $1 AND provider = 'twitch'
+              AND status = 'connected' AND recovery_state <> 'paused'
+            RETURNING id`,
+          [workspace.id, safeReason],
+        );
+        if (!paused.rows[0]) return;
+        await client.query(
+          `INSERT INTO audit_events
+            (workspace_id, actor_user_id, event_type, target_type, target_id, details)
+           VALUES ($1,$2,'twitch.integration.authorization_lost',
+                   'workspace_integration',$3,$4::jsonb)`,
+          [workspace.id, actor.id, paused.rows[0].id, JSON.stringify({ reason: safeReason })],
+        );
+        await this.outbox.append(client, {
+          workspaceId: workspace.id,
+          eventType: 'twitch.integration.authorization_lost',
+          aggregateType: 'workspace_integration',
+          aggregateId: paused.rows[0].id,
+          idempotencyKey: `twitch.integration.authorization_lost:${paused.rows[0].id}`,
+          payload: { reason: safeReason },
+        });
+      },
+    );
   }
 
   private async refreshAndValidate(
@@ -525,6 +582,7 @@ export class TwitchIntegrationService {
       (client) =>
         client.query<{
           status: TwitchIntegrationStatus['status'];
+          recovery_state: TwitchIntegrationStatus['recoveryState'];
           external_account_id: string | null;
           granted_scopes: string[];
           token_expires_at: Date | null;
@@ -532,7 +590,7 @@ export class TwitchIntegrationService {
           last_error_code: string | null;
           connected_at: Date | null;
         }>(
-          "SELECT status, external_account_id, granted_scopes, token_expires_at, last_validated_at, last_error_code, connected_at FROM workspace_integrations WHERE workspace_id = $1 AND provider = 'twitch'",
+          "SELECT status, recovery_state, external_account_id, granted_scopes, token_expires_at, last_validated_at, last_error_code, connected_at FROM workspace_integrations WHERE workspace_id = $1 AND provider = 'twitch'",
           [workspace.id],
         ),
     );
@@ -540,6 +598,7 @@ export class TwitchIntegrationService {
     return row
       ? {
           status: row.status,
+          recoveryState: row.recovery_state,
           externalAccountId: row.external_account_id,
           grantedScopes: row.granted_scopes,
           tokenExpiresAt: row.token_expires_at,
@@ -549,6 +608,7 @@ export class TwitchIntegrationService {
         }
       : {
           status: 'disconnected',
+          recoveryState: 'paused',
           externalAccountId: null,
           grantedScopes: [],
           tokenExpiresAt: null,

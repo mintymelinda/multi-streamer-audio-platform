@@ -37,7 +37,7 @@ function setup() {
   process.env.TWITCH_CLIENT_SECRET_FILE = secretPath;
   const integration = {
     async getStatus() {
-      return { status: 'connected', externalAccountId: 'broadcaster-123' };
+      return { status: 'connected', recoveryState: 'ready', externalAccountId: 'broadcaster-123' };
     },
     async getAccessToken() {
       return 'test-access-token';

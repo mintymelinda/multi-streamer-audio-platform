@@ -8,6 +8,8 @@ import {
 } from '../security/integration-credential-crypto.js';
 import { DatabaseService } from '../database/database.service.js';
 import { verifyTwitchEventSubSignature } from './twitch-eventsub-signature.js';
+import type { TwitchEventSubSubscription } from './twitch-helix.service.js';
+import { reconcileEventSubSubscriptions } from './twitch-eventsub-reconciliation.js';
 
 type EventSubMessageType = 'webhook_callback_verification' | 'notification' | 'revocation';
 
@@ -120,6 +122,91 @@ export class TwitchEventSubService {
     );
   }
 
+  async listWorkspaceSubscriptions(
+    workspaceId: VerifiedWorkspaceId,
+    actorUserId: string,
+    eventType: string,
+  ): Promise<Array<{ subscriptionId: string; status: string }>> {
+    const result = await this.database.transaction(
+      { userId: actorUserId, verifiedWorkspaceId: workspaceId },
+      (client) =>
+        client.query<{ subscription_id: string; status: string }>(
+          `SELECT subscription_id, status
+             FROM twitch_eventsub_subscriptions
+            WHERE workspace_id = $1 AND event_type = $2
+            ORDER BY created_at ASC, subscription_id ASC`,
+          [workspaceId, eventType],
+        ),
+    );
+    return result.rows.map((row) => ({
+      subscriptionId: row.subscription_id,
+      status: row.status,
+    }));
+  }
+
+  async reconcileWorkspaceSubscriptions(
+    workspaceId: VerifiedWorkspaceId,
+    actorUserId: string,
+    broadcasterUserId: string,
+    remoteSubscriptions: TwitchEventSubSubscription[],
+  ): Promise<{ total: number; enabled: number; enabledSubscriptionIds: string[] }> {
+    return this.database.transaction(
+      { userId: actorUserId, verifiedWorkspaceId: workspaceId },
+      async (client) => {
+        const local = await client.query<{
+          subscription_id: string;
+          event_type: string;
+          event_version: string;
+        }>(
+          `SELECT subscription_id, event_type, event_version
+             FROM twitch_eventsub_subscriptions
+            WHERE workspace_id = $1 FOR UPDATE`,
+          [workspaceId],
+        );
+        const plan = reconcileEventSubSubscriptions(
+          local.rows.map((subscription) => ({
+            subscriptionId: subscription.subscription_id,
+            eventType: subscription.event_type,
+            eventVersion: subscription.event_version,
+          })),
+          remoteSubscriptions,
+          broadcasterUserId,
+        );
+        for (const item of plan) {
+          await client.query(
+            `UPDATE twitch_eventsub_subscriptions
+                SET status = $3, revoked_reason = $4, updated_at = now()
+              WHERE workspace_id = $1 AND subscription_id = $2`,
+            [workspaceId, item.subscriptionId, item.status, item.reason],
+          );
+        }
+        const enabledSubscriptionIds = plan
+          .filter((item) => item.status === 'enabled')
+          .map((item) => item.subscriptionId);
+        return {
+          total: local.rows.length,
+          enabled: enabledSubscriptionIds.length,
+          enabledSubscriptionIds,
+        };
+      },
+    );
+  }
+
+  async hasEnabledSubscriptions(
+    workspaceId: VerifiedWorkspaceId,
+    actorUserId: string,
+  ): Promise<boolean> {
+    const result = await this.database.transaction(
+      { userId: actorUserId, verifiedWorkspaceId: workspaceId },
+      (client) =>
+        client.query<{ enabled_count: string }>(
+          "SELECT count(*)::text AS enabled_count FROM twitch_eventsub_subscriptions WHERE workspace_id = $1 AND status = 'enabled'",
+          [workspaceId],
+        ),
+    );
+    return Number(result.rows[0]?.enabled_count ?? 0) > 0;
+  }
+
   async receive(
     headers: Record<string, string | string[] | undefined>,
     rawBody: Buffer,
@@ -212,7 +299,7 @@ export class TwitchEventSubService {
       }
       await this.database.transaction({ twitchLookupId: subscriptionId }, async (client) => {
         await client.query(
-          "UPDATE twitch_eventsub_subscriptions SET status = 'enabled', updated_at = now() WHERE subscription_id = $1",
+          "UPDATE twitch_eventsub_subscriptions SET status = 'enabled', revoked_reason = NULL, updated_at = now() WHERE subscription_id = $1",
           [subscriptionId],
         );
       });
