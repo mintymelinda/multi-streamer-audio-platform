@@ -57,8 +57,8 @@ test(
     integration,
     eventSub,
     rewards,
-    outbox,
     helix,
+    outbox,
   );
 
   const result = await service.recover(workspace, actor);
