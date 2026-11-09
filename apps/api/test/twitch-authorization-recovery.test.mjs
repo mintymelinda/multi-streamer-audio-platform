@@ -60,7 +60,7 @@ test('pauses only on definitive authorization loss and only once per state trans
 });
 
 test(
-  'recovery is blocked until authorization, broadcaster identity, scopes, subscriptions, and rewards reconcile',
+  'recovery waits for authorization, identity, scopes, subscriptions, and reward reconciliation',
   () => {
     const complete = {
       authorizationValid: true,
@@ -76,7 +76,7 @@ test(
   },
 );
 
-test('recovery cannot be triggered by a transient outage or a token refresh without reconciliation', () => {
+test('a transient outage or token refresh cannot trigger recovery without reconciliation', () => {
   assert.equal(canResumeTwitchWorkspace({ authorizationValid: true }), false);
   assert.equal(
     canResumeTwitchWorkspace({
