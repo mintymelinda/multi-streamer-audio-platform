@@ -9,22 +9,22 @@ import {
 const session = { userId: 'user-a', authenticated: true };
 
 test('derives room authorization from verified membership, never a client-supplied actor or room', async () => {
-    const authorize = async ({ userId, workspaceId }) => ({
-      userId,
-      workspaceId,
-      role: 'moderator',
-      active: true,
-    });
-    const result = await authorizeWorkspaceSubscription({
-      session,
-      requestedWorkspaceId: 'workspace-a',
-      authorizeMembership: authorize,
-    });
-    assert.deepEqual(result, {
-      userId: 'user-a',
-      workspaceId: 'workspace-a',
-      role: 'moderator',
-    });
+  const authorize = async ({ userId, workspaceId }) => ({
+    userId,
+    workspaceId,
+    role: 'moderator',
+    active: true,
+  });
+  const result = await authorizeWorkspaceSubscription({
+    session,
+    requestedWorkspaceId: 'workspace-a',
+    authorizeMembership: authorize,
+  });
+  assert.deepEqual(result, {
+    userId: 'user-a',
+    workspaceId: 'workspace-a',
+    role: 'moderator',
+  });
 });
 
 test('rejects unauthenticated, inactive, and cross-workspace subscriptions', async () => {
