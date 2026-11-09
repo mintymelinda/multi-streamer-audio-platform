@@ -1,11 +1,4 @@
-import {
-  Controller,
-  Get,
-  Inject,
-  NotFoundException,
-  Req,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Inject, NotFoundException, Req, UseGuards } from '@nestjs/common';
 import type { VerifiedWorkspaceId } from '@platform/contracts';
 import type {
   AuthenticatedUser,
