@@ -42,12 +42,117 @@ export interface UpdateTwitchCustomReward {
 
 type HelixMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE';
 
+export interface TwitchEventSubSubscription {
+  id: string;
+  status: string;
+  type: string;
+  version: string;
+  condition: Record<string, unknown>;
+}
+
+interface TwitchAppTokenResponse {
+  access_token?: string;
+  expires_in?: number;
+}
+
 @Injectable()
 export class TwitchHelixService {
+  private appToken: { value: string; expiresAt: number } | undefined;
+
   constructor(
     @Inject(TwitchIntegrationService)
     private readonly integration: TwitchIntegrationService,
   ) {}
+
+  async listEventSubSubscriptions(
+    broadcasterUserId: string,
+  ): Promise<TwitchEventSubSubscription[]> {
+    const config = getTwitchAppConfig();
+    const appToken = await this.getAppAccessToken(config.clientId, config.clientSecret);
+    const subscriptions: TwitchEventSubSubscription[] = [];
+    const cursors = new Set<string>();
+    let cursor: string | undefined;
+    do {
+      const url = new URL('https://api.twitch.tv/helix/eventsub/subscriptions');
+      url.searchParams.set('user_id', broadcasterUserId);
+      if (cursor) url.searchParams.set('after', cursor);
+      let response: Response;
+      try {
+        response = await fetch(url, {
+          headers: {
+            Authorization: `Bearer ${appToken}`,
+            'Client-Id': config.clientId,
+          },
+          signal: AbortSignal.timeout(10_000),
+        });
+      } catch {
+        throw new ServiceUnavailableException('Twitch EventSub reconciliation is temporarily unavailable.');
+      }
+      if (response.status === 401) {
+        this.appToken = undefined;
+        throw new UnauthorizedException('Twitch app authorization was rejected.');
+      }
+      if (response.status === 429 || response.status >= 500) {
+        throw new ServiceUnavailableException('Twitch EventSub reconciliation is temporarily unavailable.');
+      }
+      if (!response.ok) {
+        throw new BadGatewayException('Twitch EventSub subscriptions could not be reconciled.');
+      }
+      const payload = (await response.json()) as {
+        data?: TwitchEventSubSubscription[];
+        pagination?: { cursor?: string };
+      };
+      if (!Array.isArray(payload.data)) {
+        throw new BadGatewayException('Twitch returned an invalid EventSub subscription response.');
+      }
+      subscriptions.push(...payload.data);
+      cursor = payload.pagination?.cursor;
+      if (cursor && cursors.has(cursor)) {
+        throw new BadGatewayException('Twitch returned a repeated EventSub pagination cursor.');
+      }
+      if (cursor) cursors.add(cursor);
+    } while (cursor);
+    return subscriptions;
+  }
+
+  private async getAppAccessToken(clientId: string, clientSecret: string): Promise<string> {
+    if (this.appToken && this.appToken.expiresAt > Date.now() + 60_000) {
+      return this.appToken.value;
+    }
+    const body = new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      grant_type: 'client_credentials',
+    });
+    let response: Response;
+    try {
+      response = await fetch('https://id.twitch.tv/oauth2/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body,
+        signal: AbortSignal.timeout(10_000),
+      });
+    } catch {
+      throw new ServiceUnavailableException('Twitch app authorization is temporarily unavailable.');
+    }
+    if (!response.ok) {
+      throw new ServiceUnavailableException('Twitch app authorization is temporarily unavailable.');
+    }
+    const token = (await response.json()) as TwitchAppTokenResponse;
+    if (
+      !token.access_token ||
+      typeof token.expires_in !== 'number' ||
+      !Number.isFinite(token.expires_in) ||
+      token.expires_in <= 0
+    ) {
+      throw new BadGatewayException('Twitch did not return a valid app access token.');
+    }
+    this.appToken = {
+      value: token.access_token,
+      expiresAt: Date.now() + token.expires_in * 1_000,
+    };
+    return token.access_token;
+  }
 
   async listCustomRewards(
     workspace: WorkspaceRequestContext,
