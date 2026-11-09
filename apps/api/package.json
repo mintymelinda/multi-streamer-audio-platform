@@ -14,7 +14,11 @@
     "@platform/contracts": "workspace:*",
     "reflect-metadata": "0.2.2",
     "rxjs": "7.8.2",
-    "pg": "8.23.1"
+    "pg": "8.23.1",
+    "@nestjs/platform-socket.io": "12.4.0",
+    "@nestjs/swagger": "12.2.0",
+    "@nestjs/websockets": "12.4.0",
+    "socket.io": "4.8.1"
   },
   "devDependencies": {
     "@types/node": "26.6.6",
