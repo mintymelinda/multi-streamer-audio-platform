@@ -5,11 +5,10 @@ import { OutboxModule } from '../outbox/outbox.module.js';
 import { WorkspacesModule } from '../workspaces/workspaces.module.js';
 import { TwitchIntegrationController } from './twitch-integration.controller.js';
 import { TwitchIntegrationService } from './twitch-integration.service.js';
-import { TwitchWorkspaceRecoveryController } from './twitch-workspace-recovery.controller.js';
 
 @Module({
   imports: [DatabaseModule, IdentityModule, OutboxModule, WorkspacesModule],
-  controllers: [TwitchIntegrationController, TwitchWorkspaceRecoveryController],
+  controllers: [TwitchIntegrationController],
   providers: [TwitchIntegrationService],
   exports: [TwitchIntegrationService],
 })
