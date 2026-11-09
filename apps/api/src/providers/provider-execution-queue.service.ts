@@ -23,6 +23,7 @@ export interface ProviderExecutionJob {
   requestId: string;
   providerInstanceId: string;
   authoritativeRequest: ProviderExecutionRequest;
+  actorId?: string;
 }
 
 export interface ProviderExecutionStateInput {
@@ -48,6 +49,7 @@ export interface ProviderExecutionQueueDependencies {
 
 const terminalRequestStatuses = new Set([
   'completed',
+  'dismissed',
   'rejected',
   'cancelled',
   'failed',
@@ -87,6 +89,7 @@ export class ProviderExecutionQueueService {
       requestId,
       providerInstanceId,
       authoritativeRequest: request,
+      ...(input.actorId ? { actorId: input.actorId } : {}),
     };
 
     await this.dependencies.enqueueProviderExecution(job);
@@ -157,7 +160,7 @@ function executionJobId(workspaceId: string, requestId: string, providerInstance
 }
 
 function providerQueueName(providerInstanceId: string): string {
-  if (!/^[A-Za-z0-9._:-]{1,200}$/.test(providerInstanceId)) {
+  if (!/^[A-Za-z0-9._-]{1,200}$/.test(providerInstanceId)) {
     throw new TypeError('providerInstanceId contains unsupported queue-name characters.');
   }
   return `provider-execution-${providerInstanceId}`;
