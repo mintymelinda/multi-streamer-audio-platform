@@ -3,6 +3,7 @@ import { Queue } from 'bullmq';
 import { Redis } from 'ioredis';
 import { readFileSync } from 'node:fs';
 import { Pool } from 'pg';
+import { calculateRetryDelay } from './retry-policy.js';
 
 interface OutboxRow {
   id: string;
@@ -42,8 +43,12 @@ function readRequiredSetting(fileVariable: string, directVariable: string): stri
 }
 
 function retryDelaySeconds(attempt: number): number {
-  const exponent = Math.max(0, Math.min(attempt - 1, 10));
-  return Math.min(3600, 5 * 2 ** exponent);
+  return Math.ceil(calculateRetryDelay({
+    attempt: Math.max(1, attempt),
+    baseDelayMs: 5_000,
+    maxDelayMs: 3_600_000,
+    jitterRatio: 0.2,
+  }) / 1_000);
 }
 
 @Injectable()
@@ -184,7 +189,7 @@ export class OutboxDispatcherService implements OnModuleInit, OnModuleDestroy {
           messageId: row.message_id,
         },
         {
-          jobId: `eventsub-${row.id}`,
+          jobId: `eventsub-${row.id}-${row.dispatch_attempts}`,
           attempts: 8,
           backoff: { type: 'exponential', delay: 1_000 },
           removeOnComplete: { age: 30 * 24 * 60 * 60, count: 10_000 },
