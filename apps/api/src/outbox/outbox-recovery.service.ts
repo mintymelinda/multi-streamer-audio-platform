@@ -93,6 +93,7 @@ export class OutboxRecoveryService {
               SET dispatch_status = $3,
                   attempt_count = CASE WHEN $3 = 'pending' THEN 0 ELSE attempt_count END,
                   last_retried_at = CASE WHEN $3 = 'pending' THEN now() ELSE last_retried_at END,
+                  dispatch_generation = CASE WHEN $3 = 'pending' THEN dispatch_generation + 1 ELSE dispatch_generation END,
                   available_at = now(),
                   published_at = NULL,
                   locked_at = NULL,
