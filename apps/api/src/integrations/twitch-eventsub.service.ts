@@ -8,6 +8,7 @@ import {
 } from '../security/integration-credential-crypto.js';
 import { DatabaseService } from '../database/database.service.js';
 import { verifyTwitchEventSubSignature } from './twitch-eventsub-signature.js';
+import type { TwitchEventSubSubscription } from './twitch-helix.service.js';
 
 type EventSubMessageType = 'webhook_callback_verification' | 'notification' | 'revocation';
 
@@ -116,6 +117,57 @@ export class TwitchEventSubService {
             'Twitch subscription ID is already assigned to another workspace.',
           );
         }
+      },
+    );
+  }
+
+  async reconcileWorkspaceSubscriptions(
+    workspaceId: VerifiedWorkspaceId,
+    actorUserId: string,
+    broadcasterUserId: string,
+    remoteSubscriptions: TwitchEventSubSubscription[],
+  ): Promise<{ total: number; enabled: number }> {
+    return this.database.transaction(
+      { userId: actorUserId, verifiedWorkspaceId: workspaceId },
+      async (client) => {
+        const local = await client.query<{
+          subscription_id: string;
+          event_type: string;
+          event_version: string;
+        }>(
+          `SELECT subscription_id, event_type, event_version
+             FROM twitch_eventsub_subscriptions
+            WHERE workspace_id = $1 FOR UPDATE`,
+          [workspaceId],
+        );
+        let enabled = 0;
+        for (const subscription of local.rows) {
+          const remote = remoteSubscriptions.find((item) => item.id === subscription.subscription_id);
+          const broadcasterMatches =
+            remote?.condition?.broadcaster_user_id === undefined ||
+            remote.condition.broadcaster_user_id === broadcasterUserId;
+          const matches =
+            remote !== undefined &&
+            remote.type === subscription.event_type &&
+            remote.version === subscription.event_version &&
+            broadcasterMatches;
+          const nextStatus = matches && remote.status === 'enabled'
+            ? 'enabled'
+            : remote
+              ? 'disabled'
+              : 'revoked';
+          if (nextStatus === 'enabled') enabled += 1;
+          await client.query(
+            `UPDATE twitch_eventsub_subscriptions
+                SET status = $3,
+                    revoked_reason = CASE WHEN $3 = 'revoked' THEN 'missing_on_twitch'
+                      WHEN $3 = 'disabled' THEN 'not_enabled_on_twitch' ELSE NULL END,
+                    updated_at = now()
+              WHERE workspace_id = $1 AND subscription_id = $2`,
+            [workspaceId, subscription.subscription_id, nextStatus],
+          );
+        }
+        return { total: local.rows.length, enabled };
       },
     );
   }
