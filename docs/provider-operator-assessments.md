@@ -26,7 +26,6 @@ These are required operator documentation deliverables for Phase 3. They must be
 - **Contractual:** Review applicable software licenses and relevant media/provider terms.
 - **Rights and use:** The operator must verify rights to each library source and intended use.
 
-
 For each provider, record: assessment owner, date, source links, known limitations, data processed, scopes/secrets stored, outage and recovery behavior, contractual review status, rights-use review status, and explicit enable/disable decision.
 
 The platform owner's acceptance of operational risk is not provider authorization, a license, or rights-holder permission. A provider remains disabled if required assessment fields are incomplete or if authorization/contractual/rights-use review has not been completed.

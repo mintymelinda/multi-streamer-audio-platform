@@ -117,15 +117,19 @@ export class SpotifyCatalogAdapter {
       ...this.marketQuery(),
     });
     if (!isRecord(response.data) || !isRecord(response.data.tracks)) {
-      throw new SpotifyProviderError('Spotify returned an invalid search response.', 'INVALID_RESPONSE');
+      throw new SpotifyProviderError(
+        'Spotify returned an invalid search response.',
+        'INVALID_RESPONSE',
+      );
     }
     const items = response.data.tracks.items;
     if (!Array.isArray(items)) {
-      throw new SpotifyProviderError('Spotify returned an invalid track collection.', 'INVALID_RESPONSE');
+      throw new SpotifyProviderError(
+        'Spotify returned an invalid track collection.',
+        'INVALID_RESPONSE',
+      );
     }
-    return items
-      .map(mapTrack)
-      .filter((track): track is SpotifyTrack => track !== null);
+    return items.map(mapTrack).filter((track): track is SpotifyTrack => track !== null);
   }
 
   async resolve(input: { mediaId: string }): Promise<SpotifyTrack> {
@@ -133,9 +137,15 @@ export class SpotifyCatalogAdapter {
     if (!SPOTIFY_ID.test(mediaId)) {
       throw new SpotifyProviderError('Spotify track ID is invalid.', 'INVALID_MEDIA_ID', 400);
     }
-    const response = await this.request(`/tracks/${encodeURIComponent(mediaId)}`, this.marketQuery());
+    const response = await this.request(
+      `/tracks/${encodeURIComponent(mediaId)}`,
+      this.marketQuery(),
+    );
     if (!isRecord(response.data)) {
-      throw new SpotifyProviderError('Spotify returned invalid track metadata.', 'INVALID_RESPONSE');
+      throw new SpotifyProviderError(
+        'Spotify returned invalid track metadata.',
+        'INVALID_RESPONSE',
+      );
     }
     const track = mapTrack(response.data);
     if (!track) {
@@ -175,7 +185,11 @@ export class SpotifyCatalogAdapter {
       throw new SpotifyProviderError('Spotify request failed.', 'PROVIDER_UNAVAILABLE');
     }
     if (response.status === 401) {
-      throw new SpotifyProviderError('Spotify authorization has expired.', 'AUTHORIZATION_EXPIRED', 401);
+      throw new SpotifyProviderError(
+        'Spotify authorization has expired.',
+        'AUTHORIZATION_EXPIRED',
+        401,
+      );
     }
     if (response.status === 403) {
       throw new SpotifyProviderError('Spotify denied this API operation.', 'FORBIDDEN', 403);
@@ -187,7 +201,11 @@ export class SpotifyCatalogAdapter {
       throw new SpotifyProviderError('Spotify rate limit was reached.', 'RATE_LIMITED', 429);
     }
     if (response.status < 200 || response.status >= 300) {
-      throw new SpotifyProviderError('Spotify API request failed.', 'UPSTREAM_ERROR', response.status);
+      throw new SpotifyProviderError(
+        'Spotify API request failed.',
+        'UPSTREAM_ERROR',
+        response.status,
+      );
     }
     return response;
   }
@@ -215,7 +233,9 @@ function mapTrack(value: unknown): SpotifyTrack | null {
   const album = isRecord(albumValue) && typeof albumValue.name === 'string' ? albumValue.name : '';
   const durationMs = value.duration_ms;
   if (!SPOTIFY_ID.test(mediaId) || !title || !artist || !album) return null;
-  if (typeof durationMs !== 'number' || !Number.isSafeInteger(durationMs) || durationMs <= 0) return null;
+  if (typeof durationMs !== 'number' || !Number.isSafeInteger(durationMs) || durationMs <= 0) {
+    return null;
+  }
   const images = isRecord(albumValue) && Array.isArray(albumValue.images) ? albumValue.images : [];
   const image = images.find(
     (item) => isRecord(item) && typeof item.url === 'string' && item.url.startsWith('https://'),

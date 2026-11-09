@@ -72,7 +72,11 @@ test('reports unconfigured and expired authorization states', async () => {
 });
 
 test('maps forbidden, missing, and rate-limited responses without exposing tokens', async () => {
-  for (const [status, code] of [[403, 'FORBIDDEN'], [404, 'MEDIA_NOT_FOUND'], [429, 'RATE_LIMITED']]) {
+  for (const [status, code] of [
+    [403, 'FORBIDDEN'],
+    [404, 'MEDIA_NOT_FOUND'],
+    [429, 'RATE_LIMITED'],
+  ]) {
     const adapter = new SpotifyCatalogAdapter({
       accessToken: 'never-leak-this-token',
       transport: transportFor(async () => ({ status, data: {} })),
