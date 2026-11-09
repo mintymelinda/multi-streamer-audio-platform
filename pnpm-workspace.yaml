@@ -1,8 +1,0 @@
-packages:
-  - "apps/*"
-  - "packages/*"
-
-# BullMQ's optional native msgpack accelerator is not required; use its JS fallback.
-ignoredBuiltDependencies:
-  - msgpackr-extract
-strictDepBuilds: false
