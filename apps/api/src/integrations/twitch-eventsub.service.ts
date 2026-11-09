@@ -293,7 +293,7 @@ export class TwitchEventSubService {
       }
       await this.database.transaction({ twitchLookupId: subscriptionId }, async (client) => {
         await client.query(
-          "UPDATE twitch_eventsub_subscriptions SET status = 'enabled', updated_at = now() WHERE subscription_id = $1",
+          "UPDATE twitch_eventsub_subscriptions SET status = 'enabled', revoked_reason = NULL, updated_at = now() WHERE subscription_id = $1",
           [subscriptionId],
         );
       });
