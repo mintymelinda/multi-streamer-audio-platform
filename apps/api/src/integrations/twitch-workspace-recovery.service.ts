@@ -12,6 +12,8 @@ import { TwitchEventSubService } from './twitch-eventsub.service.js';
 import { TwitchIntegrationService } from './twitch-integration.service.js';
 import { TwitchRewardsService } from './twitch-rewards.service.js';
 import { TwitchHelixService } from './twitch-helix.service.js';
+import { canResumeTwitchWorkspace } from './twitch-authorization-recovery.js';
+import { hasRequiredTwitchRewardScopes } from './twitch-integration-scopes.js';
 
 @Injectable()
 export class TwitchWorkspaceRecoveryService {
@@ -44,10 +46,6 @@ export class TwitchWorkspaceRecoveryService {
     const activeMappingsReconciled = mappings.every(
       (mapping) => !mapping.enabled || mapping.sync_state === 'synced',
     );
-    if (!activeMappingsReconciled) {
-      throw new ConflictException('Twitch reward mappings still require attention.');
-    }
-
     const remoteSubscriptions = await this.helix.listEventSubSubscriptions(actor.twitchUserId);
     const subscriptions = await this.eventSub.reconcileWorkspaceSubscriptions(
       workspace.id,
@@ -55,8 +53,17 @@ export class TwitchWorkspaceRecoveryService {
       actor.twitchUserId,
       remoteSubscriptions,
     );
-    if (subscriptions.total === 0 || subscriptions.enabled !== subscriptions.total) {
-      throw new ConflictException('All configured Twitch EventSub subscriptions must be enabled before recovery.');
+    if (!canResumeTwitchWorkspace({
+      authorizationValid: status.status === 'connected',
+      broadcasterIdentityVerified: status.externalAccountId === actor.twitchUserId,
+      requiredScopesGranted: hasRequiredTwitchRewardScopes(status.grantedScopes),
+      eventSubReconciled:
+        subscriptions.total > 0 && subscriptions.enabled === subscriptions.total,
+      rewardMappingsReconciled: activeMappingsReconciled,
+    })) {
+      throw new ConflictException(
+        'Twitch authorization, subscriptions, and reward mappings must all reconcile before recovery.',
+      );
     }
 
     return this.database.transaction(
