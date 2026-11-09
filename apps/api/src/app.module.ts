@@ -12,6 +12,7 @@ import { RealtimeModule } from './realtime/realtime.module.js';
 import { OutboxRecoveryModule } from './outbox/outbox-recovery.module.js';
 import { WorkspacesModule } from './workspaces/workspaces.module.js';
 import { ProviderInstanceModule } from './providers/provider-instance.module.js';
+import { ProviderCredentialsModule } from './providers/provider-credentials.module.js';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { ProviderInstanceModule } from './providers/provider-instance.module.js'
     IdentityModule,
     WorkspacesModule,
     ProviderInstanceModule,
+    ProviderCredentialsModule,
     OutboxModule,
     RequestsModule,
     TwitchEventSubModule,
