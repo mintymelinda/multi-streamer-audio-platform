@@ -21,6 +21,7 @@ DECLARE
   workspace_b uuid := gen_random_uuid();
   integration_id uuid;
   delivery_id uuid;
+  outbox_id uuid;
 BEGIN
   PERFORM set_config('app.user_id', user_a::text, true);
   INSERT INTO platform_users (id, twitch_user_id) VALUES (user_a, '950000001');
@@ -110,6 +111,37 @@ BEGIN
     RAISE EXCEPTION 'EventSub delivery could not be dismissed';
   END IF;
 
+  INSERT INTO outbox_events (
+    workspace_id, event_type, aggregate_type, aggregate_id, idempotency_key,
+    payload, attempt_count, dispatch_status, last_error_code
+  ) VALUES (
+    workspace_a, 'test.recovery', 'test', 'recovery-event', 'recovery-event-a',
+    '{}'::jsonb, 8, 'failed', 'outbox_dispatch_exhausted'
+  ) RETURNING id INTO outbox_id;
+  IF NOT EXISTS (
+    SELECT 1 FROM outbox_events WHERE id = outbox_id AND dispatch_status = 'failed'
+  ) THEN
+    RAISE EXCEPTION 'Terminal outbox failure was not persisted';
+  END IF;
+  UPDATE outbox_events
+     SET dispatch_status = 'pending', attempt_count = 0,
+         available_at = now(), published_at = NULL
+   WHERE workspace_id = workspace_a AND id = outbox_id AND dispatch_status = 'failed';
+  IF NOT EXISTS (
+    SELECT 1 FROM outbox_events WHERE id = outbox_id
+      AND dispatch_status = 'pending' AND attempt_count = 0
+  ) THEN
+    RAISE EXCEPTION 'Failed outbox event could not be retried';
+  END IF;
+  UPDATE outbox_events
+     SET dispatch_status = 'dismissed', published_at = now()
+   WHERE workspace_id = workspace_a AND id = outbox_id AND dispatch_status = 'pending';
+  IF NOT EXISTS (
+    SELECT 1 FROM outbox_events WHERE id = outbox_id AND dispatch_status = 'dismissed'
+  ) THEN
+    RAISE EXCEPTION 'Outbox event could not be dismissed';
+  END IF;
+
   PERFORM set_config('app.user_id', user_b::text, true);
   PERFORM set_config('app.workspace_id', workspace_b::text, true);
   IF (SELECT count(*) FROM workspace_integrations WHERE id = integration_id) <> 0 THEN
@@ -117,6 +149,9 @@ BEGIN
   END IF;
   IF (SELECT count(*) FROM twitch_eventsub_deliveries WHERE id = delivery_id) <> 0 THEN
     RAISE EXCEPTION 'EventSub recovery state leaked across workspaces';
+  END IF;
+  IF (SELECT count(*) FROM outbox_events WHERE id = outbox_id) <> 0 THEN
+    RAISE EXCEPTION 'Outbox recovery state leaked across workspaces';
   END IF;
 END;
 $$;
