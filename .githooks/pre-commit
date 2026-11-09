@@ -3,4 +3,5 @@ set -eu
 
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
-node scripts/post-commit-format.mjs
+
+node scripts/pre-commit-format.mjs

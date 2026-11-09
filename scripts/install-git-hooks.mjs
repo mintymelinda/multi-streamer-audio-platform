@@ -1,11 +1,13 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { chmodSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const root = process.cwd();
 if (!existsSync(resolve(root, '.git'))) {
   process.exit(0);
 }
+
+chmodSync(resolve(root, '.githooks/pre-commit'), 0o755);
 
 const result = spawnSync('git', ['config', '--local', 'core.hooksPath', '.githooks'], {
   cwd: root,
