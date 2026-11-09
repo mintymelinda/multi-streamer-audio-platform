@@ -37,8 +37,8 @@ test('Invidious instance outage can be recovered by selecting another configured
     instances: ['https://primary.example.test', 'https://secondary.example.test'],
     transport: createPrimaryOutageTransport(),
   });
-  const result = await adapter.resolve({ mediaId: 'youtube-video-123' });
-  assert.equal(result.mediaId, 'youtube-video-123');
+  const result = await adapter.resolve({ mediaId: 'abcdefghijk' });
+  assert.equal(result.mediaId, 'abcdefghijk');
   assert.equal(result.instanceUrl, 'https://secondary.example.test');
 });
 
@@ -61,7 +61,15 @@ function createPrimaryOutageTransport() {
   return {
     request: async ({ baseUrl }) => {
       if (baseUrl.includes('primary')) throw new Error('connection refused');
-      return { status: 200, data: { mediaId: 'youtube-video-123' } };
+      return {
+        status: 200,
+        data: {
+          videoId: 'abcdefghijk',
+          title: 'Example Track',
+          author: 'Example Artist',
+          lengthSeconds: 180,
+        },
+      };
     },
   };
 }
