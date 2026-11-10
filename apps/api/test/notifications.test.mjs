@@ -110,13 +110,13 @@ test('uses a five-minute group window and claims recipient-scoped deduplication 
   const claim = calls.find((call) => call.sql.includes('INSERT INTO user_notification_deduplication'));
   const notification = calls.find((call) => call.sql.includes('INSERT INTO user_notifications'));
   assert.ok(claim);
-  assert.match(claim.sql, /ON CONFLICT \\(recipient_user_id, dedupe_key\\) DO NOTHING/);
+  assert.ok(claim.sql.includes('ON CONFLICT (recipient_user_id, dedupe_key) DO NOTHING'));
   assert.equal(claim.values[0], 'user-a');
   assert.equal(claim.values[1], null);
   assert.equal(claim.values[2], 'invite:event-123');
   assert.match(claim.values[3], /^[0-9a-f-]{36}$/i);
   assert.ok(notification);
-  assert.match(notification.sql, /floor\\(extract\\(epoch FROM now\\(\\)\\) \\/ 300\\)/);
+  assert.ok(notification.sql.includes('floor(extract(epoch FROM now()) / 300)'));
 });
 
 test('suppresses duplicate notification delivery before inserting inbox or email rows', async () => {
