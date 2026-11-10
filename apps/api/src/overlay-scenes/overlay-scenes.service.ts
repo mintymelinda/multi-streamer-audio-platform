@@ -207,7 +207,11 @@ export class OverlayScenesService {
     });
   }
 
-  async publishDraft(workspaceId: VerifiedWorkspaceId, userId: string, sceneId: string) {
+  async publishDraft(workspaceId: VerifiedWorkspaceId, userId: string, sceneId: string, expectedRevisionInput: unknown) {
+    if (!Number.isSafeInteger(expectedRevisionInput) || (expectedRevisionInput as number) < 0) {
+      throw new BadRequestException('A valid draft revision is required to publish.');
+    }
+    const expectedRevision = expectedRevisionInput as number;
     return this.database.transaction({ userId, verifiedWorkspaceId: workspaceId }, async (client) => {
       const updated = await client.query<{
         id: string;
@@ -220,12 +224,16 @@ export class OverlayScenesService {
             SET published_state = draft_state,
                 published_at = now(),
                 updated_at = now()
-          WHERE id = $1 AND workspace_id = $2
+          WHERE id = $1 AND workspace_id = $2 AND draft_revision = $3
           RETURNING id, name, published_state, draft_revision, published_at`,
-        [sceneId, workspaceId],
+        [sceneId, workspaceId, expectedRevision],
       );
       const scene = updated.rows[0];
-      if (!scene) throw new NotFoundException('Scene not found.');
+      if (!scene) {
+        const exists = await client.query('SELECT 1 FROM overlay_scenes WHERE id = $1 AND workspace_id = $2', [sceneId, workspaceId]);
+        if (exists.rowCount === 0) throw new NotFoundException('Scene not found.');
+        throw new ConflictException('This scene draft changed elsewhere. Reload it before publishing.');
+      }
       await this.outbox.append(client, {
         workspaceId,
         eventType: 'overlay.scene.published',
