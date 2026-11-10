@@ -51,7 +51,7 @@ type ExecutionRow = {
                     LIMIT 1`,
                   [workspaceId, providerId],
                 );
-                if (restriction.rowCount > 0) {
+                if ((restriction.rowCount ?? 0) > 0) {
                   const error = new Error('This provider path is disabled by workspace rights policy.');
                   Object.assign(error, { code: 'PROVIDER_PATH_DISABLED' });
                   throw error;
@@ -64,7 +64,7 @@ type ExecutionRow = {
                    LIMIT 1`,
                   [workspaceId, requestId],
                 );
-                if (blocked.rowCount > 0) {
+                if ((blocked.rowCount ?? 0) > 0) {
                   const error = new Error('This media item is blocked by workspace rights policy.');
                   Object.assign(error, { code: 'RIGHTS_CONTENT_BLOCKED' });
                   throw error;
