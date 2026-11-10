@@ -1,6 +1,6 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import { WebSocketGateway, WebSocketServer } from '@nestjs/websockets';
-import type { OnGatewayConnection, OnGatewayDisconnect, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import type { OnGatewayConnection, OnGatewayDisconnect } from '@nestjs/websockets';
 import type { Server, Socket } from 'socket.io';
 import { DatabaseService } from '../database/database.service.js';
 import { OverlayRuntimeService } from './overlay-runtime.service.js';
