@@ -124,9 +124,9 @@ export class NotificationsService {
     );
     const row = result.rows[0];
     if (!row) return { emailAddress: null, verified: false, emailEnabled: false, categoryPreferences: {}, priorityPreferences: {} };
-    const address = String(row.email_address);
-    const [local, domain] = address.split('@');
-    const masked = local.length < 3 ? `${local[0] ?? '*'}***@${domain}` : `${local.slice(0, 2)}***@${domain}`;
+    const address = row.email_address ? String(row.email_address) : null;
+    const [local, domain] = address?.split('@') ?? ['', ''];
+    const masked = address ? (local.length < 3 ? `${local[0] ?? '*'}***@${domain}` : `${local.slice(0, 2)}***@${domain}`) : null;
     return { emailAddress: masked, verified: Boolean(row.verified_at), emailEnabled: row.email_enabled,
       categoryPreferences: row.category_preferences, priorityPreferences: row.priority_preferences };
   }
@@ -190,7 +190,7 @@ export class NotificationsService {
     const categories = ['account', 'platform', 'security', 'team', 'provider', 'playback', 'queue', 'system'];
     const priorities = ['low', 'normal', 'high', 'critical'];
     const currentResult = await this.database.transaction({ userId }, (client) => client.query(
-      'SELECT verified_at, email_enabled, category_preferences, priority_preferences FROM user_notification_email_settings WHERE user_id = $1',
+      'SELECT email_address, verified_at, email_enabled, category_preferences, priority_preferences FROM user_notification_email_settings WHERE user_id = $1',
       [userId],
     ));
     const current = currentResult.rows[0];
@@ -211,10 +211,14 @@ export class NotificationsService {
     if (typeof enabled !== 'boolean') throw new BadRequestException('Email notifications must be enabled or disabled.');
     if (enabled && !current?.verified_at) throw new BadRequestException('Verify an email address before enabling email notifications.');
     const result = await this.database.transaction({ userId }, (client) => client.query(
-      `UPDATE user_notification_email_settings SET email_enabled = $2, category_preferences = $3::jsonb,
-         priority_preferences = $4::jsonb, updated_at = now() WHERE user_id = $1
+      `INSERT INTO user_notification_email_settings
+        (user_id, email_address, email_enabled, category_preferences, priority_preferences, updated_at)
+       VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, now())
+       ON CONFLICT (user_id) DO UPDATE SET email_enabled = EXCLUDED.email_enabled,
+         category_preferences = EXCLUDED.category_preferences, priority_preferences = EXCLUDED.priority_preferences,
+         updated_at = now()
        RETURNING email_enabled, category_preferences, priority_preferences, verified_at`,
-      [userId, enabled, JSON.stringify(categoryPreferences), JSON.stringify(priorityPreferences)],
+      [userId, current?.email_address ?? null, enabled, JSON.stringify(categoryPreferences), JSON.stringify(priorityPreferences)],
     ));
     const row = result.rows[0];
     return { emailEnabled: row.email_enabled, verified: Boolean(row.verified_at),

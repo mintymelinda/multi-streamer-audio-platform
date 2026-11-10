@@ -55,7 +55,7 @@ export class NotificationsController {
     if (typeof body !== 'object' || body === null || Array.isArray(body)) {
       throw new BadRequestException('Email preferences must be an object.');
     }
-    return this.notifications.updateEmailSettings(this.userId(request), body);
+    return this.notifications.updateEmailSettings(this.userId(request), body as { emailEnabled?: unknown; categoryPreferences?: unknown; priorityPreferences?: unknown });
   }
 
   @Get('unread-count')

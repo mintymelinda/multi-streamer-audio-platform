@@ -70,6 +70,7 @@ export class EmailDispatcherService implements OnModuleInit, OnModuleDestroy {
         throw error;
       } finally { client.release(); }
       for (const row of rows) await this.deliver(row);
+      await this.pool.query(\`DELETE FROM email_outbox WHERE status IN ('sent', 'failed') AND created_at < now() - interval '30 days'\`);
     } finally { this.running = false; }
   }
   private async deliver(row: EmailRow): Promise<void> {
@@ -83,7 +84,7 @@ export class EmailDispatcherService implements OnModuleInit, OnModuleDestroy {
       if (!response.ok) throw new Error(`Email provider returned HTTP ${response.status}`);
       await this.pool.query(
         `UPDATE email_outbox SET status = 'sent', sent_at = now(), locked_at = NULL,
-           recipient_email = '', subject = '', text_body = '', html_body = '', last_error = NULL WHERE id = $1`, [row.id],
+           recipient_email = 'redacted', subject = 'Sent email', text_body = 'Sent email payload purged', html_body = '<p>Sent email payload purged</p>', last_error = NULL WHERE id = $1`, [row.id],
       );
     } catch (error) {
       const message = (error instanceof Error ? error.message : 'Unknown email delivery error').slice(0, 500);

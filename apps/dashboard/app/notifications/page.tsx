@@ -41,6 +41,7 @@ export default function NotificationsPage() {
   const [retentionDays, setRetentionDays] = useState(90);
   const [preferenceMessage, setPreferenceMessage] = useState("");
   const [emailAddress, setEmailAddress] = useState("");
+  const [savedEmailAddress, setSavedEmailAddress] = useState<string | null>(null);
   const [emailVerified, setEmailVerified] = useState(false);
   const [emailEnabled, setEmailEnabled] = useState(false);
   const [emailCategories, setEmailCategories] = useState<Record<string, boolean>>({});
@@ -67,7 +68,7 @@ export default function NotificationsPage() {
       .then((preferences) => { setCategoryPreferences(preferences.category_preferences ?? {}); setRetentionDays(preferences.retention_days ?? 90); })
       .catch((cause) => setPreferenceMessage(cause instanceof Error ? cause.message : "Could not load preferences."));
     request<{ emailAddress: string | null; verified: boolean; emailEnabled: boolean; categoryPreferences: Record<string, boolean>; priorityPreferences: Record<string, boolean> }>("/me/notifications/email")
-      .then((settings) => { setEmailAddress(settings.emailAddress ?? ""); setEmailVerified(settings.verified); setEmailEnabled(settings.emailEnabled); setEmailCategories(settings.categoryPreferences ?? {}); setEmailPriorities(settings.priorityPreferences ?? {}); })
+      .then((settings) => { setSavedEmailAddress(settings.emailAddress); setEmailVerified(settings.verified); setEmailEnabled(settings.emailEnabled); setEmailCategories(settings.categoryPreferences ?? {}); setEmailPriorities(settings.priorityPreferences ?? {}); })
       .catch((cause) => setEmailMessage(cause instanceof Error ? cause.message : "Could not load email settings."));
   }, []);
   useEffect(() => { void load(); }, [load]);
@@ -134,7 +135,7 @@ export default function NotificationsPage() {
         event.preventDefault(); setBusy(true); setEmailMessage("");
         try {
           await request("/me/notifications/email/verification", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ emailAddress }) });
-          setEmailVerified(false); setEmailEnabled(false); setEmailMessage("Verification email queued. Check your inbox and enter the code below.");
+          setSavedEmailAddress(emailAddress); setEmailVerified(false); setEmailEnabled(false); setEmailMessage("Verification email queued. Check your inbox and enter the code below.");
         } catch (cause) { setEmailMessage(cause instanceof Error ? cause.message : "Could not request verification."); }
         finally { setBusy(false); }
       }}>

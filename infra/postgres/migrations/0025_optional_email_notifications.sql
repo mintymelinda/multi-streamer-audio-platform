@@ -1,7 +1,7 @@
 -- Phase 4 item 41: separately verified, opt-in notification email.
 CREATE TABLE user_notification_email_settings (
   user_id uuid PRIMARY KEY REFERENCES platform_users(id) ON DELETE CASCADE,
-  email_address text NOT NULL CHECK (length(email_address) BETWEEN 3 AND 320),
+  email_address text CHECK (email_address IS NULL OR length(email_address) BETWEEN 3 AND 320),
   verified_at timestamptz,
   verification_token_hash text,
   verification_expires_at timestamptz,
