@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { SpotifyCatalogAdapter } from '../dist/providers/spotify-catalog.adapter.js';
 import { YouTubeInvidiousAdapter } from '../dist/providers/youtube-invidious.adapter.js';
+import { ProviderRoutingService } from '../dist/providers/provider-routing.service.js';
 
 const adapters = [
   ['YouTube/Invidious', YouTubeInvidiousAdapter],
@@ -96,3 +97,68 @@ function createPrimaryOutageTransport() {
     },
   };
 }
+
+test('capability routing does not advertise metadata-only adapters as playback providers', async () => {
+  const youtube = new YouTubeInvidiousAdapter({
+    instances: ['https://invidious.example.test'],
+    transport: createFakeTransport(),
+  });
+  const spotify = new SpotifyCatalogAdapter({
+    accessToken: 'test-token',
+    transport: createFakeTransport(),
+  });
+  const adapters = [youtube, spotify];
+  const service = new ProviderRoutingService({
+    listProviderInstances: async () => adapters.map((adapter) => ({
+      providerId: adapter.providerId,
+      instanceId: `${adapter.providerId}-instance`,
+      enabled: true,
+      health: 'healthy',
+      priority: 1,
+      capabilities: adapter.capabilities,
+    })),
+    getWorkspaceRules: async () => ({
+      allowedProviderIds: ['youtube', 'spotify'],
+      blockedProviderIds: [],
+      preferredProviderIds: [],
+    }),
+    getOutputAssignment: async () => {
+      throw new Error('metadata-only providers must be rejected before output lookup');
+    },
+  });
+
+  await assert.rejects(
+    service.route({
+      workspaceId: 'workspace-a',
+      request: {
+        id: 'request-a',
+        workspaceId: 'workspace-a',
+        mediaType: 'audio',
+        durationSeconds: 180,
+        sourceProviderId: null,
+      },
+    }),
+    (error) => error.code === 'NO_ELIGIBLE_PROVIDER',
+  );
+});
+
+test('Spotify authorization expiry is classified without exposing the access token', async () => {
+  const adapter = new SpotifyCatalogAdapter({
+    accessToken: 'private-test-token',
+    transport: {
+      request: async () => ({ status: 401, data: { error: 'invalid_token' } }),
+    },
+  });
+  await assert.rejects(adapter.search({ query: 'test' }), (error) => {
+    assert.equal(error.code, 'AUTHORIZATION_EXPIRED');
+    assert.equal(JSON.stringify(error).includes('private-test-token'), false);
+    return true;
+  });
+});
+
+test('Invidious does not silently treat a missing configured instance as healthy', async () => {
+  const adapter = new YouTubeInvidiousAdapter({
+    transport: createFakeTransport(),
+  });
+  assert.deepEqual(await adapter.healthCheck(), { status: 'unconfigured' });
+});
