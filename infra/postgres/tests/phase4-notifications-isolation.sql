@@ -8,7 +8,6 @@ DECLARE
   user_c uuid := gen_random_uuid();
   workspace_a uuid := gen_random_uuid();
   notification_a_id uuid := gen_random_uuid();
-  duplicate_notification_id uuid := gen_random_uuid();
 BEGIN
   PERFORM set_config('app.user_id', user_a::text, true);
   INSERT INTO platform_users (id, twitch_user_id) VALUES (user_a, '930000001');
@@ -63,13 +62,14 @@ BEGIN
 
   INSERT INTO user_notification_deduplication
     (recipient_user_id, workspace_id, dedupe_key, notification_id)
-  VALUES (user_b, workspace_a, 'role-change:event-1', duplicate_notification_id)
+  VALUES (user_b, workspace_a, 'role-change:event-1', notification_a_id)
   ON CONFLICT (recipient_user_id, dedupe_key) DO NOTHING;
   IF (SELECT count(*) FROM user_notification_deduplication
        WHERE recipient_user_id = user_b AND dedupe_key = 'role-change:event-1') <> 1 THEN
     RAISE EXCEPTION 'recipient-scoped notification deduplication did not suppress duplicate delivery';
   END IF;
 
+  PERFORM set_config('app.user_id', user_b::text, true);
   INSERT INTO user_notifications
     (recipient_user_id, workspace_id, category, event_type, title, group_key, group_window)
   VALUES (user_b, workspace_a, 'team', 'team.member_role_changed', 'Next window',
