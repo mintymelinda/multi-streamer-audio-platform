@@ -56,7 +56,7 @@ export class RightsComplianceService {
             LIMIT 1`,
           [input.workspaceId, this.policy.currentVersion],
         );
-        return result.rowCount > 0;
+        return (result.rowCount ?? 0) > 0;
       },
     );
     if (!accepted) {
