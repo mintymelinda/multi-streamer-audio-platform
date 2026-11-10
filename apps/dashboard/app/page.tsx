@@ -134,7 +134,7 @@ export default function HomePage() {
         <div className="brand"><span>♫</span> Streamer Audio</div>
         <div className="top-actions">
           <label className="workspace-picker"><span>WORKSPACE</span><select value={selectedId} onChange={(event) => setSelectedId(event.target.value)}>{workspaces.map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}</select></label>
-          <button className="icon-button" onClick={() => void load(true)} disabled={refreshing} aria-label="Refresh dashboard">↻</button>
+          <nav className="page-nav"><a href="/team">Team</a><a href="/invitations">Invitations</a></nav><button className="icon-button" onClick={() => void load(true)} disabled={refreshing} aria-label="Refresh dashboard">↻</button>
         </div>
       </header>
       <section className="welcome">

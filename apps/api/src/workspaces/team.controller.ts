@@ -68,6 +68,20 @@ export class TeamController {
     return this.team.createInvitation(user, workspace.id, username, role, workspace.role);
   }
 
+  @Post('invitations/:invitationId/resend')
+  resendInvitation(@Req() request: HttpRequest, @Param('invitationId') invitationId: string) {
+    const user = requireAuthenticatedUser(request);
+    const workspace = requireWorkspaceContext(request);
+    return this.team.resendInvitation(user, workspace.id, invitationId);
+  }
+
+  @Get('audit')
+  listAuditEvents(@Req() request: HttpRequest) {
+    const user = requireAuthenticatedUser(request);
+    const workspace = requireWorkspaceContext(request);
+    return this.team.listAuditEvents(user.id, workspace.id);
+  }
+
   @Delete('invitations/:invitationId')
   cancelInvitation(@Req() request: HttpRequest, @Param('invitationId') invitationId: string) {
     const user = requireAuthenticatedUser(request);
