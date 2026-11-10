@@ -41,6 +41,7 @@ Start the local services with `pnpm dev:infra`, then apply the role bootstrap an
 - `0027_account_data_exports.sql` adds queued personal account exports, RLS-protected export payloads, worker-only generation, authenticated downloads, and seven-day expiry.
 - `0028_user_appearance_preferences.sql` adds account-wide light/dark theme and accent-color preferences with self-only RLS, and grants the account-export worker scoped read access.
 - `0029_overlay_scenes.sql` adds workspace-owned scene identities and hashed, independently revocable OBS access tokens with forced workspace RLS.
+- `0030_overlay_scene_runtime.sql` adds the published-state snapshot column and migrator-owned, narrowly scoped token/active-scene lookup functions for the read-only overlay runtime.
 
 New tenant-owned tables must follow the same pattern. Never put plaintext provider credentials in integration rows, audit details, outbox payloads, logs, or job messages.
 
