@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Inject, Param, Patch, Query, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Inject, Param, Patch, Post, Query, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
 import type { HttpRequest } from '../identity/http.types.js';
 import { CsrfGuard } from '../identity/csrf.guard.js';
 import { SessionGuard } from '../identity/session.guard.js';
@@ -31,6 +31,31 @@ export class NotificationsController {
     }
     const input = body as { categoryPreferences?: unknown; retentionDays?: unknown };
     return this.notifications.updatePreferences(this.userId(request), input);
+  }
+
+  @Get('email')
+  emailSettings(@Req() request: HttpRequest) {
+    return this.notifications.emailSettings(this.userId(request));
+  }
+
+  @Post('email/verification')
+  requestEmailVerification(@Req() request: HttpRequest, @Body() body: unknown) {
+    const emailAddress = typeof body === 'object' && body !== null && 'emailAddress' in body ? body.emailAddress : undefined;
+    return this.notifications.requestEmailVerification(this.userId(request), emailAddress);
+  }
+
+  @Post('email/verify')
+  verifyEmailAddress(@Req() request: HttpRequest, @Body() body: unknown) {
+    const token = typeof body === 'object' && body !== null && 'token' in body ? body.token : undefined;
+    return this.notifications.verifyEmailAddress(this.userId(request), token);
+  }
+
+  @Patch('email')
+  updateEmailSettings(@Req() request: HttpRequest, @Body() body: unknown) {
+    if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+      throw new BadRequestException('Email preferences must be an object.');
+    }
+    return this.notifications.updateEmailSettings(this.userId(request), body as { emailEnabled?: unknown; categoryPreferences?: unknown; priorityPreferences?: unknown });
   }
 
   @Get('unread-count')

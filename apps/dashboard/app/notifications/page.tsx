@@ -40,6 +40,14 @@ export default function NotificationsPage() {
   const [categoryPreferences, setCategoryPreferences] = useState<Record<string, boolean>>({});
   const [retentionDays, setRetentionDays] = useState(90);
   const [preferenceMessage, setPreferenceMessage] = useState("");
+  const [emailAddress, setEmailAddress] = useState("");
+  const [savedEmailAddress, setSavedEmailAddress] = useState<string | null>(null);
+  const [emailVerified, setEmailVerified] = useState(false);
+  const [emailEnabled, setEmailEnabled] = useState(false);
+  const [emailCategories, setEmailCategories] = useState<Record<string, boolean>>({});
+  const [emailPriorities, setEmailPriorities] = useState<Record<string, boolean>>({});
+  const [verificationToken, setVerificationToken] = useState("");
+  const [emailMessage, setEmailMessage] = useState("");
 
   const load = useCallback(async () => {
     setError("");
@@ -59,6 +67,9 @@ export default function NotificationsPage() {
     request<{ category_preferences: Record<string, boolean>; retention_days: number }>("/me/notifications/preferences")
       .then((preferences) => { setCategoryPreferences(preferences.category_preferences ?? {}); setRetentionDays(preferences.retention_days ?? 90); })
       .catch((cause) => setPreferenceMessage(cause instanceof Error ? cause.message : "Could not load preferences."));
+    request<{ emailAddress: string | null; verified: boolean; emailEnabled: boolean; categoryPreferences: Record<string, boolean>; priorityPreferences: Record<string, boolean> }>("/me/notifications/email")
+      .then((settings) => { setSavedEmailAddress(settings.emailAddress); setEmailVerified(settings.verified); setEmailEnabled(settings.emailEnabled); setEmailCategories(settings.categoryPreferences ?? {}); setEmailPriorities(settings.priorityPreferences ?? {}); })
+      .catch((cause) => setEmailMessage(cause instanceof Error ? cause.message : "Could not load email settings."));
   }, []);
   useEffect(() => { void load(); }, [load]);
 
@@ -116,6 +127,59 @@ export default function NotificationsPage() {
         }}>Save preferences</button>
       </div>
       {preferenceMessage && <p role="status">{preferenceMessage}</p>}
+    </section>
+    <section className="panel team-panel">
+      <div className="panel-heading"><div><p className="eyebrow">OPTIONAL DELIVERY</p><h2>Email notifications</h2></div></div>
+      <p className="subheading">Email is separate from Twitch sign-in. Verify an address you choose, then opt in to the categories and priorities you want delivered.</p>
+      <form className="notification-filters" onSubmit={async (event) => {
+        event.preventDefault(); setBusy(true); setEmailMessage("");
+        try {
+          await request("/me/notifications/email/verification", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ emailAddress }) });
+          setSavedEmailAddress(emailAddress); setEmailVerified(false); setEmailEnabled(false); setEmailMessage("Verification email queued. Check your inbox and enter the code below.");
+        } catch (cause) { setEmailMessage(cause instanceof Error ? cause.message : "Could not request verification."); }
+        finally { setBusy(false); }
+      }}>
+        <label>Email address<input type="email" required value={emailAddress} onChange={(event) => setEmailAddress(event.target.value)} placeholder="you@example.com" /></label>
+        <button className="secondary-button" disabled={busy}>Send verification code</button>
+      </form>
+      <form className="notification-filters" onSubmit={async (event) => {
+        event.preventDefault(); setBusy(true); setEmailMessage("");
+        try {
+          await request("/me/notifications/email/verify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: verificationToken }) });
+          setEmailVerified(true); setEmailMessage("Email address verified. Choose your delivery preferences and save.");
+        } catch (cause) { setEmailMessage(cause instanceof Error ? cause.message : "Could not verify email address."); }
+        finally { setBusy(false); }
+      }}>
+        <label>Verification code<input value={verificationToken} onChange={(event) => setVerificationToken(event.target.value)} placeholder="Paste the code from your email" /></label>
+        <button className="secondary-button" disabled={busy || !verificationToken}>Verify address</button>
+      </form>
+      <p>{emailVerified ? "Email address verified." : "Email address not verified."}</p>
+      <label className="notification-unread"><input type="checkbox" checked={emailEnabled} disabled={!emailVerified} onChange={(event) => setEmailEnabled(event.target.checked)} /> Enable email notifications</label>
+      <p className="subheading">Choose categories and priorities. Nothing is emailed until the address is verified and email delivery is enabled.</p>
+      <div className="notification-filters">
+        <strong>Categories</strong>
+        {["account","platform","security","team","provider","playback","queue","system"].map((value) => <label className="notification-unread" key={value}>
+          <input type="checkbox" checked={emailCategories[value] === true} onChange={(event) => setEmailCategories((current) => ({ ...current, [value]: event.target.checked }))} /> {displayCategory(value)}
+        </label>)}
+        <strong>Priorities</strong>
+        {["low","normal","high","critical"].map((value) => <label className="notification-unread" key={value}>
+          <input type="checkbox" checked={emailPriorities[value] === true} onChange={(event) => setEmailPriorities((current) => ({ ...current, [value]: event.target.checked }))} /> {value}
+        </label>)}
+        <button className="secondary-button" disabled={busy || (emailEnabled && !emailVerified)} onClick={async () => {
+          setBusy(true); setEmailMessage("");
+          try {
+            const saved = await request<{ emailEnabled: boolean; verified: boolean; categoryPreferences: Record<string, boolean>; priorityPreferences: Record<string, boolean> }>("/me/notifications/email", {
+              method: "PATCH", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ emailEnabled, categoryPreferences: emailCategories, priorityPreferences: emailPriorities }),
+            });
+            setEmailEnabled(saved.emailEnabled); setEmailVerified(saved.verified);
+            setEmailCategories(saved.categoryPreferences); setEmailPriorities(saved.priorityPreferences);
+            setEmailMessage("Email preferences saved.");
+          } catch (cause) { setEmailMessage(cause instanceof Error ? cause.message : "Could not save email preferences."); }
+          finally { setBusy(false); }
+        }}>Save email preferences</button>
+      </div>
+      {emailMessage && <p role="status">{emailMessage}</p>}
     </section>
     <section className="panel team-panel">
       <div className="panel-heading"><div><p className="eyebrow">INBOX</p><h2>Notification history</h2></div><button className="secondary-button" onClick={() => void markAllRead()} disabled={busy || unreadCount === 0}>Mark all read</button></div>
