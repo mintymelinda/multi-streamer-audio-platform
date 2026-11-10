@@ -35,6 +35,15 @@ BEGIN
   IF (SELECT count(*) FROM overlay_scenes WHERE id = scene_a) <> 1 THEN
     RAISE EXCEPTION 'workspace owner cannot read their scene';
   END IF;
+  IF (SELECT count(*) FROM get_overlay_scene_snapshot(scene_a, repeat('a', 64))) <> 1 THEN
+    RAISE EXCEPTION 'valid scene token cannot read its published snapshot';
+  END IF;
+  IF (SELECT count(*) FROM get_overlay_scene_snapshot(scene_a, repeat('b', 64))) <> 0 THEN
+    RAISE EXCEPTION 'invalid scene token read a published snapshot';
+  END IF;
+  IF (SELECT count(*) FROM get_active_overlay_scene_ids(workspace_a)) <> 1 THEN
+    RAISE EXCEPTION 'active scene lookup omitted a live scene';
+  END IF;
 
   PERFORM set_config('app.user_id', user_b::text, true);
   PERFORM set_config('app.workspace_id', workspace_b::text, true);
