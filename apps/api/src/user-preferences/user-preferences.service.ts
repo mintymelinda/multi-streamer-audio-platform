@@ -23,27 +23,41 @@ export class UserPreferencesService {
       ),
     );
     const row = result.rows[0];
-    return row ? { theme: row.theme as AppearancePreferences['theme'], accentColor: row.accent_color as AppearancePreferences['accentColor'] } : DEFAULT_PREFERENCES;
+    return row
+      ? {
+          theme: row.theme as AppearancePreferences['theme'],
+          accentColor: row.accent_color as AppearancePreferences['accentColor'],
+        }
+      : DEFAULT_PREFERENCES;
   }
 
-  async updateAppearance(userId: string, input: { theme?: unknown; accentColor?: unknown }): Promise<AppearancePreferences> {
+  async updateAppearance(
+    userId: string,
+    input: { theme?: unknown; accentColor?: unknown },
+  ): Promise<AppearancePreferences> {
     if (input.theme !== undefined && !(THEMES as readonly unknown[]).includes(input.theme)) {
       throw new BadRequestException('Theme must be dark or light.');
     }
-    if (input.accentColor !== undefined && !(ACCENT_COLORS as readonly unknown[]).includes(input.accentColor)) {
+    if (
+      input.accentColor !== undefined &&
+      !(ACCENT_COLORS as readonly unknown[]).includes(input.accentColor)
+    ) {
       throw new BadRequestException('Choose a supported accent color.');
     }
-    const current = await this.getAppearance(userId);
-    const theme = (input.theme ?? current.theme) as AppearancePreferences['theme'];
-    const accentColor = (input.accentColor ?? current.accentColor) as AppearancePreferences['accentColor'];
+
     const result = await this.database.transaction({ userId }, (client) =>
-      client.query<{ theme: AppearancePreferences['theme']; accent_color: AppearancePreferences['accentColor'] }>(
+      client.query<{
+        theme: AppearancePreferences['theme'];
+        accent_color: AppearancePreferences['accentColor'];
+      }>(
         `INSERT INTO user_appearance_preferences (user_id, theme, accent_color, updated_at)
-         VALUES ($1, $2, $3, now())
-         ON CONFLICT (user_id) DO UPDATE SET theme = EXCLUDED.theme,
-           accent_color = EXCLUDED.accent_color, updated_at = now()
+         VALUES ($1, COALESCE($2, 'dark'), COALESCE($3, 'violet'), now())
+         ON CONFLICT (user_id) DO UPDATE SET
+           theme = COALESCE($2, user_appearance_preferences.theme),
+           accent_color = COALESCE($3, user_appearance_preferences.accent_color),
+           updated_at = now()
          RETURNING theme, accent_color`,
-        [userId, theme, accentColor],
+        [userId, input.theme ?? null, input.accentColor ?? null],
       ),
     );
     return { theme: result.rows[0].theme, accentColor: result.rows[0].accent_color };

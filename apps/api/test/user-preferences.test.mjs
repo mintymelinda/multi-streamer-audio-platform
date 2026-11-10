@@ -12,7 +12,13 @@ function harness(rows = []) {
           calls.push({ sql, values });
           if (sql.includes('SELECT theme, accent_color')) return { rows, rowCount: rows.length };
           if (sql.includes('RETURNING theme, accent_color')) {
-            return { rows: [{ theme: values[1], accent_color: values[2] }], rowCount: 1 };
+            return {
+              rows: [{
+                theme: values[1] ?? rows[0]?.theme ?? 'dark',
+                accent_color: values[2] ?? rows[0]?.accent_color ?? 'violet',
+              }],
+              rowCount: 1,
+            };
           }
           return { rows: [], rowCount: 0 };
         },
@@ -34,17 +40,23 @@ test('loads persisted appearance preferences for the signed-in user', async () =
   assert.deepEqual(await service.getAppearance('user-a'), { theme: 'light', accentColor: 'teal' });
 });
 
-test('updates only supplied values while preserving other preferences', async () => {
+test('updates one setting without overwriting the other setting', async () => {
   const { service, calls } = harness([{ theme: 'light', accent_color: 'teal' }]);
-  assert.deepEqual(await service.updateAppearance('user-a', { accentColor: 'rose' }), { theme: 'light', accentColor: 'rose' });
+  assert.deepEqual(
+    await service.updateAppearance('user-a', { accentColor: 'rose' }),
+    { theme: 'light', accentColor: 'rose' },
+  );
   const write = calls.find((call) => call.sql?.includes('ON CONFLICT (user_id)'));
-  assert.deepEqual(write.values, ['user-a', 'light', 'rose']);
-  assert.deepEqual(calls[0].context, { userId: 'user-a' });
+  assert.deepEqual(write.values, ['user-a', null, 'rose']);
+  assert.match(write.sql, /theme = COALESCE\(\$2, user_appearance_preferences\.theme\)/);
 });
 
 test('persists both appearance settings for a user without an existing row', async () => {
   const { service, calls } = harness();
-  assert.deepEqual(await service.updateAppearance('user-a', { theme: 'light', accentColor: 'blue' }), { theme: 'light', accentColor: 'blue' });
+  assert.deepEqual(
+    await service.updateAppearance('user-a', { theme: 'light', accentColor: 'blue' }),
+    { theme: 'light', accentColor: 'blue' },
+  );
   const write = calls.find((call) => call.sql?.includes('ON CONFLICT (user_id)'));
   assert.deepEqual(write.values, ['user-a', 'light', 'blue']);
 });
@@ -56,8 +68,8 @@ test('rejects unsupported theme and accent values before writing', async () => {
   assert.equal(calls.some((call) => call.sql?.includes('INSERT INTO user_appearance_preferences')), false);
 });
 
-test('uses a self-scoped database transaction for reads and writes', async () => {
+test('uses a self-scoped database transaction for writes', async () => {
   const { service, calls } = harness();
   await service.updateAppearance('user-a', { theme: 'light' });
-  assert.ok(calls.filter((call) => call.context).every((call) => call.context.userId === 'user-a'));
+  assert.deepEqual(calls[0].context, { userId: 'user-a' });
 });
