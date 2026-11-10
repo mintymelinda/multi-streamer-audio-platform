@@ -14,12 +14,13 @@ interface AccountExportInput {
   notifications: Record<string, unknown>[];
   notificationPreferences: Record<string, unknown> | null;
   emailPreferences: Record<string, unknown> | null;
+  appearancePreferences: Record<string, unknown> | null;
   exportedAt: string;
 }
 export function buildAccountExportDocument(input: AccountExportInput) {
   return {
     format: 'multi-streamer-audio-platform.account-export',
-    schemaVersion: 1,
+    schemaVersion: 2,
     exportedAt: input.exportedAt,
     scope: 'personal-account-data',
     account: input.account,
@@ -28,6 +29,7 @@ export function buildAccountExportDocument(input: AccountExportInput) {
     notifications: input.notifications,
     notificationPreferences: input.notificationPreferences,
     emailNotificationPreferences: input.emailPreferences,
+    appearancePreferences: input.appearancePreferences,
     exclusions: [
       'Workspace-owned content and configuration are not part of this personal account export.',
       'Authentication sessions, OAuth state, credential material, token hashes, and delivery secrets are never exported.',
@@ -121,7 +123,7 @@ export class AccountExportService implements OnModuleInit, OnModuleDestroy {
     try {
       await client.query('BEGIN');
       await client.query("SELECT set_config('app.user_id', $1, true)", [job.user_id]);
-      const [account, memberships, invitations, notifications, notificationPreferences, emailPreferences] = await Promise.all([
+      const [account, memberships, invitations, notifications, notificationPreferences, emailPreferences, appearancePreferences] = await Promise.all([
         client.query(
           'SELECT id, twitch_user_id, status, created_at, updated_at FROM platform_users WHERE id = $1',
           [job.user_id],
@@ -153,6 +155,10 @@ export class AccountExportService implements OnModuleInit, OnModuleDestroy {
              FROM user_notification_email_settings WHERE user_id = $1`,
           [job.user_id],
         ),
+        client.query(
+          'SELECT theme, accent_color, updated_at FROM user_appearance_preferences WHERE user_id = $1',
+          [job.user_id],
+        ),
       ]);
       document = buildAccountExportDocument({
         account: account.rows[0] ?? null,
@@ -161,6 +167,7 @@ export class AccountExportService implements OnModuleInit, OnModuleDestroy {
         notifications: notifications.rows,
         notificationPreferences: notificationPreferences.rows[0] ?? null,
         emailPreferences: emailPreferences.rows[0] ?? null,
+        appearancePreferences: appearancePreferences.rows[0] ?? null,
         exportedAt: new Date().toISOString(),
       });
       await client.query('COMMIT');

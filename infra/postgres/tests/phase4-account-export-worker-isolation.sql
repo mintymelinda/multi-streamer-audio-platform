@@ -10,6 +10,8 @@ BEGIN
   INSERT INTO platform_users (id, twitch_user_id) VALUES
     (user_a, '960000001'), (user_b, '960000002');
   INSERT INTO user_data_exports (id, user_id) VALUES (export_a, user_a);
+  INSERT INTO user_appearance_preferences (user_id, theme, accent_color)
+  VALUES (user_a, 'light', 'teal');
   PERFORM set_config('test.account_export_user_a', user_a::text, true);
   PERFORM set_config('test.account_export_user_b', user_b::text, true);
   PERFORM set_config('test.account_export_id', export_a::text, true);
@@ -40,6 +42,9 @@ BEGIN
   END IF;
 
   PERFORM set_config('app.user_id', user_a::text, true);
+  IF (SELECT count(*) FROM user_appearance_preferences WHERE user_id = user_a) <> 1 THEN
+    RAISE EXCEPTION 'worker cannot read the requesting account appearance preferences';
+  END IF;
   UPDATE user_data_exports
      SET status = 'processing', locked_at = now(), started_at = now(), attempt_count = 1
    WHERE id = export_a;
@@ -68,6 +73,9 @@ BEGIN
   END IF;
   IF (SELECT count(*) FROM user_notifications WHERE recipient_user_id = user_a) <> 0 THEN
     RAISE EXCEPTION 'worker notification RLS leaked another account';
+  END IF;
+  IF (SELECT count(*) FROM user_appearance_preferences WHERE user_id = user_a) <> 0 THEN
+    RAISE EXCEPTION 'worker appearance preference RLS leaked another account';
   END IF;
 END;
 $$;

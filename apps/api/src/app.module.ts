@@ -20,10 +20,11 @@ import { SpotifyConnectOAuthModule } from './providers/spotify-connect-oauth.mod
 import { RightsComplianceModule } from './compliance/rights-compliance.module.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
 import { AccountExportsModule } from './account-exports/account-exports.module.js';
+import { UserPreferencesModule } from './user-preferences/user-preferences.module.js';
 
 @Module({
   imports: [
-    DatabaseModule, IdentityModule, WorkspacesModule, NotificationsModule, AccountExportsModule, ProviderInstanceModule, ProviderCredentialsModule,
+    DatabaseModule, IdentityModule, WorkspacesModule, NotificationsModule, AccountExportsModule, UserPreferencesModule, ProviderInstanceModule, ProviderCredentialsModule,
     ProviderOutputAssignmentModule, PlaybackCoordinatorModule, ProviderExecutionQueueModule,
     SpotifyConnectOAuthModule, RightsComplianceModule, OutboxModule, RequestsModule, TwitchEventSubModule,
     TwitchRewardsModule, TwitchIntegrationModule, TwitchWorkspaceRecoveryModule, RealtimeModule, OutboxRecoveryModule,
