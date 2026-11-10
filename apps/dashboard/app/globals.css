@@ -301,3 +301,9 @@ h1 { margin: 7px 0 8px; font-size: clamp(28px, 4vw, 38px); letter-spacing: -.055
 :root[data-theme="light"] .scene-draft-column textarea { color: #202330; background: #fff; border-color: #cbd1dd; }
 :root[data-theme="light"] .scene-preview-canvas { color: #f3f4f6; }
 @media (max-width: 900px) { .scene-editor-grid { grid-template-columns: 1fr; } }
+
+.scene-preview-stage { position: relative; width: 100%; aspect-ratio: 16 / 9; overflow: hidden; border: 1px dashed #5b526f; border-radius: 7px; background: linear-gradient(145deg, #181522, #0b0d13); }
+.scene-preview-element { position: absolute; display: flex; flex-direction: column; justify-content: center; gap: 4px; overflow: hidden; padding: 7px; border: 1px solid #9b86d5; border-radius: 5px; background: #302746cc; color: #f3f0ff; }
+.scene-preview-element small { color: #c0afea; font-size: 8px; text-transform: uppercase; letter-spacing: .08em; }
+.scene-preview-element span { overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.scene-preview-empty { position: absolute; inset: 0; display: grid; place-items: center; padding: 15px; color: #9296a5; font-size: 11px; text-align: center; }
