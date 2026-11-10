@@ -35,6 +35,11 @@ AS $$
      AND s.token_revoked_at IS NULL
 $$;
 
+-- SECURITY DEFINER functions execute as the migrator, which receives a narrowly scoped read policy.
+CREATE POLICY overlay_scenes_migrator_read
+  ON overlay_scenes FOR SELECT TO platform_migrator
+  USING (true);
+
 REVOKE ALL ON FUNCTION get_overlay_scene_snapshot(uuid, text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION get_active_overlay_scene_ids(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION get_overlay_scene_snapshot(uuid, text) TO platform_runtime;
