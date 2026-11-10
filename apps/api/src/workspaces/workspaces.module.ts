@@ -8,12 +8,15 @@ import { WorkspaceAccessGuard } from './workspace-access.guard.js';
 import { WorkspacePermissionGuard } from './workspace-permission.guard.js';
 import { WorkspacesController } from './workspaces.controller.js';
 import { WorkspacesService } from './workspaces.service.js';
+import { WorkspaceOnboardingController } from './workspace-onboarding.controller.js';
+import { WorkspaceOnboardingService } from './workspace-onboarding.service.js';
 
 @Module({
   imports: [DatabaseModule, IdentityModule],
-  controllers: [WorkspacesController, TeamController, MyInvitationsController],
+  controllers: [WorkspacesController, TeamController, MyInvitationsController, WorkspaceOnboardingController],
   providers: [
     WorkspacesService,
+    WorkspaceOnboardingService,
     TeamService,
     TwitchDirectoryService,
     WorkspaceAccessGuard,

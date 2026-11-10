@@ -17,6 +17,7 @@ type RequestItem = {
   requester_display_name?: string | null;
 };
 type Snapshot = { requests: RequestItem[]; queue: RequestItem[] };
+type Onboarding = { dismissed: boolean; completed: boolean; progress: { completed: number; skipped: number; total: number }; steps: { key: string; title: string; description: string; status: "pending" | "completed" | "skipped" }[] };
 type TwitchStatus = {
   status: "connected" | "reauth_required" | "disconnected" | "error";
   recoveryState: "ready" | "paused" | "pending_reconciliation";
@@ -47,6 +48,7 @@ export default function HomePage() {
   const [selectedId, setSelectedId] = useState("");
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [twitch, setTwitch] = useState<TwitchStatus | null>(null);
+  const [onboarding, setOnboarding] = useState<Onboarding | null>(null);
   const [account, setAccount] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -117,7 +119,7 @@ export default function HomePage() {
       <header className="topbar"><div className="brand"><span>♫</span> Streamer Audio</div><a href={`${API}/auth/twitch/start?returnTo=%2F`}>Reconnect</a></header>
       <section className="empty-state">
         <p className="eyebrow">WELCOME</p><h1>Create your workspace</h1>
-        <p>Your Twitch account is signed in. Create a workspace to start configuring requests and playback.</p>
+        <p>Your Twitch account is already linked as the channel identity. Choose a workspace name to complete the essential setup; you can configure providers, rewards, moderation, and overlays afterward.</p>
         <CreateWorkspace onCreated={() => void load()} />
       </section>
     </main>
@@ -161,7 +163,7 @@ export default function HomePage() {
   );
 }
 
-function CreateWorkspace({ onCreated }: { onCreated: () => void }) {
+async function updateOnboarding(workspaceId: string, body: { step?: string; status?: string; dismissed?: boolean }): Promise<Onboarding> {\n  const headers = { "Content-Type": "application/json", "x-csrf-token": document.cookie.split("; ").find((part) => part.startsWith("platform_csrf="))?.split("=")[1] ?? "" };\n  const path = body.step ? `/workspaces/${workspaceId}/onboarding/steps/${body.step}` : `/workspaces/${workspaceId}/onboarding`;\n  const response = await fetch(`${API}${path}`, { method: "PATCH", credentials: "include", headers, body: JSON.stringify(body) });\n  if (!response.ok) throw new Error("Could not save onboarding progress.");\n  return response.json() as Promise<Onboarding>;\n}\n\nfunction CreateWorkspace({ onCreated }: { onCreated: () => void }) {
   const [name, setName] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);

@@ -64,6 +64,7 @@ export class WorkspacesService {
           [workspaceId, userId],
         );
         await client.query("SELECT set_config('app.workspace_id', $1, true)", [workspaceId]);
+        await client.query('INSERT INTO workspace_onboarding (workspace_id) VALUES ($1) ON CONFLICT (workspace_id) DO NOTHING', [workspaceId]);
         await client.query(
           "INSERT INTO audit_events (workspace_id, actor_user_id, event_type, target_type, target_id) VALUES ($1, $2, 'workspace.created', 'workspace', $1)",
           [workspaceId, userId],
