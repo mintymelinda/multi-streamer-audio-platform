@@ -24,14 +24,21 @@ function sceneDocument(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new BadRequestException('Scene state must be a JSON object.');
   }
-  let serialized: string;
-  try { serialized = JSON.stringify(value); } catch {
+  let serialized: string | undefined;
+  try {
+    serialized = JSON.stringify(value);
+  } catch {
     throw new BadRequestException('Scene state must be valid JSON.');
   }
+  if (!serialized) throw new BadRequestException('Scene state must be a JSON object.');
   if (Buffer.byteLength(serialized, 'utf8') > MAX_SCENE_DOCUMENT_BYTES) {
     throw new BadRequestException('Scene state must not exceed 256 KiB.');
   }
-  return JSON.parse(serialized) as Record<string, unknown>;
+  const normalized: unknown = JSON.parse(serialized);
+  if (!normalized || typeof normalized !== 'object' || Array.isArray(normalized)) {
+    throw new BadRequestException('Scene state must be a JSON object.');
+  }
+  return normalized as Record<string, unknown>;
 }
 
 function sceneName(value: unknown): string {
