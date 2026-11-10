@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../database/database.module.js';
 import { DatabaseService } from '../database/database.service.js';
+import { RightsComplianceModule } from '../compliance/rights-compliance.module.js';
+import { RightsComplianceService } from '../compliance/rights-compliance.service.js';
 import {
   ProviderExecutionQueueService,
   type ProviderExecutionJob,
@@ -24,13 +26,52 @@ type ExecutionRow = {
 };
 
 @Module({
-  imports: [DatabaseModule],
+  imports: [DatabaseModule, RightsComplianceModule],
   providers: [
     {
       provide: ProviderExecutionQueueService,
-      inject: [DatabaseService],
-      useFactory: (database: DatabaseService) =>
+      inject: [DatabaseService, RightsComplianceService],
+      useFactory: (database: DatabaseService, rightsCompliance: RightsComplianceService) =>
         new ProviderExecutionQueueService({
+          assertExecutionEligible: async ({ workspaceId, requestId, providerInstanceId, actorId }) => {
+            await rightsCompliance.assertWorkspacePlaybackEligible({ workspaceId, actorId });
+            await database.transaction(
+              { userId: actorId, verifiedWorkspaceId: workspaceId as never },
+              async (client) => {
+                const provider = await client.query<{ provider_id: string }>(
+                  `SELECT provider_id FROM provider_instances
+                    WHERE workspace_id = $1 AND id = $2`,
+                  [workspaceId, providerInstanceId],
+                );
+                const providerId = provider.rows[0]?.provider_id;
+                if (!providerId) throw new Error('Provider instance was not found in this workspace.');
+                const restriction = await client.query(
+                  `SELECT 1 FROM workspace_provider_path_restrictions
+                    WHERE workspace_id = $1 AND provider_id = $2 AND disabled_at IS NOT NULL
+                    LIMIT 1`,
+                  [workspaceId, providerId],
+                );
+                if (restriction.rowCount > 0) {
+                  const error = new Error('This provider path is disabled by workspace rights policy.');
+                  Object.assign(error, { code: 'PROVIDER_PATH_DISABLED' });
+                  throw error;
+                }
+                const blocked = await client.query(
+                  `SELECT 1 FROM media_requests r
+                    JOIN rights_content_blocks b
+                      ON b.workspace_id = r.workspace_id AND b.content_id = r.media_id
+                   WHERE r.workspace_id = $1 AND r.id = $2
+                   LIMIT 1`,
+                  [workspaceId, requestId],
+                );
+                if (blocked.rowCount > 0) {
+                  const error = new Error('This media item is blocked by workspace rights policy.');
+                  Object.assign(error, { code: 'RIGHTS_CONTENT_BLOCKED' });
+                  throw error;
+                }
+              },
+            );
+          },
           getRequestFromPostgres: async (requestId, workspaceId, actorId) => {
             if (!actorId) {
               throw new Error('Authenticated workspace user is required for provider execution.');

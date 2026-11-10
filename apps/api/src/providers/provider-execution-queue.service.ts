@@ -45,6 +45,7 @@ export interface ProviderExecutionQueueDependencies {
   ): Promise<ProviderExecutionRequest | null>;
   enqueueProviderExecution(job: ProviderExecutionJob): Promise<unknown>;
   updateProviderExecutionState?(state: ProviderExecutionStateInput): Promise<unknown>;
+  assertExecutionEligible?(input: { workspaceId: string; requestId: string; providerInstanceId: string; actorId: string }): Promise<void>;
 }
 
 const terminalRequestStatuses = new Set([
@@ -81,6 +82,9 @@ export class ProviderExecutionQueueService {
     const requestId = required(input.requestId, 'requestId');
     const providerInstanceId = required(input.providerInstanceId, 'providerInstanceId');
     const request = await this.requireActiveRequest(workspaceId, requestId, input.actorId);
+    if (input.actorId) {
+      await this.dependencies.assertExecutionEligible?.({ workspaceId, requestId, providerInstanceId, actorId: input.actorId });
+    }
 
     const job: ProviderExecutionJob = {
       id: executionJobId(workspaceId, requestId, providerInstanceId),
@@ -114,6 +118,9 @@ export class ProviderExecutionQueueService {
     }
 
     await this.requireActiveRequest(workspaceId, requestId, input.actorId);
+    if (input.actorId) {
+      await this.dependencies.assertExecutionEligible?.({ workspaceId, requestId, providerInstanceId, actorId: input.actorId });
+    }
     if (!this.dependencies.updateProviderExecutionState) {
       throw new Error('Provider execution state persistence is not configured.');
     }
