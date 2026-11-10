@@ -52,7 +52,7 @@ body {
 .overlay-track-copy strong { font-size: clamp(12px, 2vw, 21px); }
 .overlay-track-copy span { color: #c4c2ca; font-size: clamp(10px, 1.4vw, 14px); }
 .overlay-progress { height: 4px; overflow: hidden; border-radius: 5px; background: rgb(255 255 255 / 25%); }
-.overlay-progress span { display: block; width: 35%; height: 100%; background: #d9d0f5; }
+.overlay-progress span { display: block; width: 0%; height: 100%; background: #d9d0f5; }
 .overlay-list-component { display: grid; gap: 10px; }
 .overlay-list-component strong { font-size: clamp(12px, 1.8vw, 18px); }
 .overlay-list-component span { color: #c4c2ca; font-size: clamp(10px, 1.3vw, 13px); }
