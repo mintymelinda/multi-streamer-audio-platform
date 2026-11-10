@@ -54,6 +54,18 @@ export class OverlayScenesController {
     return this.scenes.list(workspace(request).id, user(request).id);
   }
 
+
+  @Post('starter')
+  @UseGuards(CsrfGuard)
+  @RequireWorkspacePermission('workspace:manage')
+  ensureStarter(
+    @Req() request: HttpRequest,
+    @Res({ passthrough: true }) reply: HttpReply,
+  ) {
+    protectTokenResponse(reply);
+    return this.scenes.ensureStarter(workspace(request).id, user(request).id);
+  }
+
   @Post()
   @UseGuards(CsrfGuard)
   @RequireWorkspacePermission('workspace:manage')

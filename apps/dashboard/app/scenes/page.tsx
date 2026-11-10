@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type Workspace = { id: string; name: string; role: "owner" | "admin" | "moderator" | "viewer" };
 type Scene = {
@@ -16,6 +16,7 @@ type Scene = {
 type SceneSecret = { sceneId: string; url: string };
 type SceneEditor = { sceneId: string; name: string; draftState: Record<string, unknown>; draftRevision: number; publishedAt: string | null; updatedAt: string; hasPublishedState: boolean };
 type SceneIssue = { scene: Scene; accessToken: string; overlayPath: string };
+type StarterSceneResult = { scene: Scene; accessToken: string | null; overlayPath: string; created: boolean };
 
 const API = "/api";
 const OVERLAY_BASE = process.env.NEXT_PUBLIC_OVERLAY_BASE_URL;
@@ -69,6 +70,7 @@ export default function ScenesPage() {
   const [editor, setEditor] = useState<SceneEditor | null>(null);
   const [draftText, setDraftText] = useState("");
   const [editorBusy, setEditorBusy] = useState(false);
+  const starterRequests = useRef(new Set<string>());
 
   const loadScenes = useCallback(async () => {
     if (!workspaceId) {
@@ -97,6 +99,30 @@ export default function ScenesPage() {
 
   const selectedWorkspace = workspaces.find((workspace) => workspace.id === workspaceId);
   const canManage = selectedWorkspace && ["owner", "admin"].includes(selectedWorkspace.role);
+
+  useEffect(() => {
+    if (!workspaceId || !canManage || starterRequests.current.has(workspaceId)) return;
+    starterRequests.current.add(workspaceId);
+    request<StarterSceneResult>(
+      `/workspaces/${workspaceId}/scenes/starter`,
+      { method: "POST" },
+    )
+      .then(async (result) => {
+        const accessToken = result.accessToken;
+        if (result.created && accessToken) {
+          setSecrets((current) => [
+            ...current.filter((secret) => secret.sceneId !== result.scene.id),
+            { sceneId: result.scene.id, url: obsUrl(result.overlayPath, accessToken) },
+          ]);
+          setMessage("Your starter Now Playing scene is ready. Copy its OBS URL now; the access token is shown only once.");
+        }
+        await loadScenes();
+      })
+      .catch((cause) => {
+        starterRequests.current.delete(workspaceId);
+        setError(cause instanceof Error ? cause.message : "Could not prepare the starter scene.");
+      });
+  }, [workspaceId, canManage, loadScenes]);
 
   function rememberSecret(sceneId: string, overlayPath: string, accessToken: string) {
     setSecrets((current) => [

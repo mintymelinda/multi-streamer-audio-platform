@@ -72,6 +72,52 @@ export class OverlayScenesService {
     return result.rows;
   }
 
+
+  async ensureStarter(workspaceId: VerifiedWorkspaceId, userId: string) {
+    return this.database.transaction(
+      { userId, verifiedWorkspaceId: workspaceId },
+      async (client) => {
+        // Serialize first-use requests for this workspace, including the no-row-yet case.
+        await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))', [workspaceId]);
+        const existing = await client.query<OverlaySceneRecord>(
+          `SELECT id, name, sort_order, created_at, updated_at, token_created_at,
+                  token_revoked_at,
+                  (access_token_hash IS NOT NULL AND token_revoked_at IS NULL) AS has_active_access
+             FROM overlay_scenes
+            WHERE workspace_id = $1 AND is_starter = true
+            LIMIT 1`,
+          [workspaceId],
+        );
+        const current = existing.rows[0];
+        if (current) {
+          return { scene: current, accessToken: null, overlayPath: `/scene/${current.id}`, created: false };
+        }
+
+        const sceneId = randomUUID();
+        const accessToken = newOpaqueToken();
+        const created = await client.query<OverlaySceneRecord>(
+          `INSERT INTO overlay_scenes
+             (id, workspace_id, name, is_starter, access_token_hash, token_created_at, created_by_user_id)
+           VALUES ($1, $2, 'Now Playing', true, $3, now(), $4)
+           RETURNING id, name, sort_order, created_at, updated_at, token_created_at,
+                     token_revoked_at,
+                     (access_token_hash IS NOT NULL AND token_revoked_at IS NULL) AS has_active_access`,
+          [sceneId, workspaceId, sha256(accessToken), userId],
+        );
+        const scene = created.rows[0];
+        if (!scene) throw new Error('Starter scene creation did not return a record.');
+        await client.query(
+          `INSERT INTO audit_events
+             (workspace_id, actor_user_id, event_type, target_type, target_id, details)
+           VALUES ($1, $2, 'overlay.scene.starter_created', 'overlay_scene', $3,
+                   jsonb_build_object('name', 'Now Playing'))`,
+          [workspaceId, userId, sceneId],
+        );
+        return { scene, accessToken, overlayPath: `/scene/${sceneId}`, created: true };
+      },
+    );
+  }
+
   async create(workspaceId: VerifiedWorkspaceId, userId: string, nameInput: unknown) {
     const name = sceneName(nameInput);
     const sceneId = randomUUID();
