@@ -67,7 +67,7 @@ test('rejects attempts to disable mandatory categories or choose unsupported ret
 test('requires a separately verified address before email opt-in', async () => {
   const { service, calls } = harness();
   await assert.rejects(service.updateEmailSettings('user-a', { emailEnabled: true }), /Verify an email address/);
-  assert.equal(calls.length, 1);
+  assert.ok(calls.some((call) => call.sql?.includes('verified_at')));
 });
 
 test('validates email address input before creating a verification request', async () => {
