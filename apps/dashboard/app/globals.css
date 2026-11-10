@@ -233,3 +233,16 @@ h1 { margin: 7px 0 8px; font-size: clamp(28px, 4vw, 38px); letter-spacing: -.055
 .settings-actions p { color: #80d8ac; font-size: 12px; }
 
 .appearance-options, .accent-options { border: 0; padding: 0; min-width: 0; }
+
+:root[data-theme="light"] .page-nav a { color: #51447d; }
+:root[data-theme="light"] .page-nav a:hover { color: var(--accent); }
+:root[data-theme="light"] .audit-row strong,
+:root[data-theme="light"] .invitation-card h2 { color: #202330; }
+:root[data-theme="light"] .audit-row small,
+:root[data-theme="light"] .audit-row time { color: #626a7a; }
+:root[data-theme="light"] .role-label { color: #51447d; }
+:root[data-theme="light"] .empty-state p:not(.eyebrow) { color: #626a7a; }
+:root[data-theme="light"] .warnings { color: #78531c; border-color: #e5cf9e; background: #fff8e8; }
+:root[data-theme="light"] .warnings p { color: #78531c; }
+:root[data-theme="light"] .error-banner { color: #8b2635; border-color: #efc4cb; background: #fff0f2; }
+:root[data-theme="light"] .warning-heading > span:first-child { color: #78531c; background: #f4e1b7; }

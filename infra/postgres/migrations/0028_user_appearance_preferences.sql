@@ -16,3 +16,6 @@ CREATE POLICY user_appearance_preferences_self_access
   WITH CHECK (user_id = nullif(current_setting('app.user_id', true), '')::uuid);
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON user_appearance_preferences TO platform_runtime;
+
+-- Personal account exports include only the requesting user's appearance settings.
+GRANT SELECT ON user_appearance_preferences TO platform_worker;
