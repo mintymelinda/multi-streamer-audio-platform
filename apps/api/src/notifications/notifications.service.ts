@@ -73,6 +73,48 @@ export class NotificationsService {
     return result.rows;
   }
 
+  async preferences(userId: string) {
+    const result = await this.database.transaction({ userId }, (client) =>
+      client.query(
+        `SELECT category_preferences, retention_days FROM user_notification_preferences WHERE user_id = $1`,
+        [userId],
+      ),
+    );
+    return result.rows[0] ?? { category_preferences: {}, retention_days: 90 };
+  }
+
+  async updatePreferences(userId: string, input: { categoryPreferences?: unknown; retentionDays?: unknown }) {
+    const allowed = ['platform', 'team', 'provider', 'playback', 'queue', 'system'];
+    const current = await this.preferences(userId) as { category_preferences: Record<string, boolean>; retention_days: number };
+    const categories = { ...current.category_preferences };
+    if (input.categoryPreferences !== undefined) {
+      if (typeof input.categoryPreferences !== 'object' || input.categoryPreferences === null || Array.isArray(input.categoryPreferences)) {
+        throw new BadRequestException('Category preferences must be an object.');
+      }
+      for (const [category, enabled] of Object.entries(input.categoryPreferences as Record<string, unknown>)) {
+        if (!allowed.includes(category) || typeof enabled !== 'boolean') {
+          throw new BadRequestException('Category preferences contain an unsupported category or value.');
+        }
+        categories[category] = enabled;
+      }
+    }
+    const retentionDays = input.retentionDays === undefined ? current.retention_days : input.retentionDays;
+    if (![30, 90, 180, 365].includes(retentionDays as number)) {
+      throw new BadRequestException('Retention must be 30, 90, 180, or 365 days.');
+    }
+    const result = await this.database.transaction({ userId }, (client) =>
+      client.query(
+        `INSERT INTO user_notification_preferences (user_id, category_preferences, retention_days, updated_at)
+         VALUES ($1, $2::jsonb, $3, now())
+         ON CONFLICT (user_id) DO UPDATE SET category_preferences = EXCLUDED.category_preferences,
+           retention_days = EXCLUDED.retention_days, updated_at = now()
+         RETURNING category_preferences, retention_days`,
+        [userId, JSON.stringify(categories), retentionDays],
+      ),
+    );
+    return result.rows[0];
+  }
+
   async unreadCount(userId: string) {
     const result = await this.database.transaction({ userId }, (client) =>
       client.query<{ unread_count: number }>('SELECT count(*)::int AS unread_count FROM user_notifications WHERE recipient_user_id = $1 AND read_at IS NULL', [userId]),
@@ -129,6 +171,14 @@ export class NotificationsService {
     priority?: typeof PRIORITIES[number]; eventType: string; title: string; body?: string;
     href?: string | null; groupKey?: string | null;
   }) {
+    if (!['account', 'security'].includes(input.category)) {
+      const preference = await client.query<{ enabled: boolean | null }>(
+        `SELECT (category_preferences ->> $2)::boolean AS enabled
+           FROM user_notification_preferences WHERE user_id = $1`,
+        [input.recipientUserId, input.category],
+      );
+      if (preference.rows[0]?.enabled === false) return { rows: [], rowCount: 0 };
+    }
     if (input.href && (!input.href.startsWith('/') || input.href.startsWith('//'))) {
       throw new BadRequestException('Notification links must be relative application paths.');
     }

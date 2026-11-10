@@ -49,3 +49,17 @@ test('rejects invalid filters and unsafe notification links', async () => {
     recipientUserId: 'user-a', category: 'team', eventType: 'team.invited', title: 'Invite', href: 'https://example.com',
   }), /relative application paths/);
 });
+
+test('loads default notification preferences and persists validated user settings', async () => {
+  const { service, calls } = harness();
+  assert.deepEqual(await service.preferences('user-a'), { category_preferences: {}, retention_days: 90 });
+  await service.updatePreferences('user-a', { categoryPreferences: { team: false }, retentionDays: 180 });
+  assert.match(calls.at(-1).sql, /ON CONFLICT \(user_id\) DO UPDATE/);
+  assert.deepEqual(calls.at(-1).values.slice(0, 1), ['user-a']);
+});
+
+test('rejects attempts to disable mandatory categories or choose unsupported retention', async () => {
+  const { service } = harness();
+  await assert.rejects(service.updatePreferences('user-a', { categoryPreferences: { security: false } }), /unsupported category/);
+  await assert.rejects(service.updatePreferences('user-a', { retentionDays: 45 }), /Retention must be/);
+});
