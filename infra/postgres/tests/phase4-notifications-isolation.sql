@@ -57,12 +57,9 @@ BEGIN
   IF (SELECT count(*) FROM user_notification_email_settings WHERE user_id = user_b) <> 0 THEN
     RAISE EXCEPTION 'email settings leaked to another account';
   END IF;
-  BEGIN
-    PERFORM count(*) FROM email_outbox;
-    RAISE EXCEPTION 'runtime role unexpectedly has permission to read email outbox content';
-  EXCEPTION WHEN insufficient_privilege THEN
-    NULL;
-  END;
+  IF (SELECT count(*) FROM email_outbox) <> 0 THEN
+    RAISE EXCEPTION 'email outbox content leaked to another account';
+  END IF;
 
   -- A workspace member may address a notification to another active member.
   PERFORM set_config('app.workspace_id', workspace_a::text, true);
