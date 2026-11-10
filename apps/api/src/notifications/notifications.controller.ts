@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Inject, Param, Patch, Query, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Inject, Param, Patch, Query, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
 import type { HttpRequest } from '../identity/http.types.js';
 import { CsrfGuard } from '../identity/csrf.guard.js';
 import { SessionGuard } from '../identity/session.guard.js';
@@ -17,6 +17,20 @@ export class NotificationsController {
   @Get()
   list(@Req() request: HttpRequest, @Query() query: NotificationFilters) {
     return this.notifications.list(this.userId(request), query);
+  }
+
+  @Get('preferences')
+  preferences(@Req() request: HttpRequest) {
+    return this.notifications.preferences(this.userId(request));
+  }
+
+  @Patch('preferences')
+  updatePreferences(@Req() request: HttpRequest, @Body() body: unknown) {
+    if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+      throw new BadRequestException('Notification preferences must be an object.');
+    }
+    const input = body as { categoryPreferences?: unknown; retentionDays?: unknown };
+    return this.notifications.updatePreferences(this.userId(request), input);
   }
 
   @Get('unread-count')
