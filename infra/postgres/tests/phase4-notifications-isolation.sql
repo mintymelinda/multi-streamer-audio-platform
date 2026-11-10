@@ -30,6 +30,20 @@ BEGIN
   VALUES (workspace_a, user_b, 'moderator');
   SET CONSTRAINTS ALL IMMEDIATE;
 
+  -- Email addresses and outbox content are visible only to their account and the dispatcher.
+  PERFORM set_config('app.user_id', user_b::text, true);
+  INSERT INTO user_notification_email_settings (user_id, email_address)
+  VALUES (user_b, 'moderator@example.test');
+  INSERT INTO email_outbox (user_id, recipient_email, subject, text_body, html_body, unique_key)
+  VALUES (user_b, 'moderator@example.test', 'Test', 'Test body', '<p>Test</p>', 'isolation-test:' || user_b::text);
+  PERFORM set_config('app.user_id', user_c::text, true);
+  IF (SELECT count(*) FROM user_notification_email_settings WHERE user_id = user_b) <> 0 THEN
+    RAISE EXCEPTION 'email settings leaked to another account';
+  END IF;
+  IF (SELECT count(*) FROM email_outbox) <> 0 THEN
+    RAISE EXCEPTION 'email outbox content leaked to another account';
+  END IF;
+
   -- A workspace member may address a notification to another active member.
   PERFORM set_config('app.workspace_id', workspace_a::text, true);
   INSERT INTO user_notifications (id, recipient_user_id, workspace_id, category, event_type, title, group_key)

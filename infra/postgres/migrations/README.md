@@ -35,5 +35,6 @@ Start the local services with `pnpm dev:infra`, then apply the role bootstrap an
 - `0022_workspace_onboarding.sql` establishes durable, resumable workspace onboarding progress with workspace-scoped RLS.
 - `0023_user_notifications.sql` establishes recipient-scoped, cross-workspace notifications with read state, grouping support, and recipient-only RLS that preserves addressed history after workspace access is revoked.
 - `0024_user_notification_preferences.sql` establishes self-managed category preferences and per-user notification retention (90-day default; 30/90/180/365-day choices), with mandatory account/security notifications exempt from category suppression and expiry.
+- `0025_optional_email_notifications.sql` establishes separately verified email addresses, per-category/priority opt-in settings, and a restricted durable email outbox for verification and notification delivery.
 
 New tenant-owned tables must follow the same pattern. Never put plaintext provider credentials in integration rows, audit details, outbox payloads, logs, or job messages.

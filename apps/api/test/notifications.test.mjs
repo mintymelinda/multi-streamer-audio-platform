@@ -63,3 +63,14 @@ test('rejects attempts to disable mandatory categories or choose unsupported ret
   await assert.rejects(service.updatePreferences('user-a', { categoryPreferences: { security: false } }), /unsupported category/);
   await assert.rejects(service.updatePreferences('user-a', { retentionDays: 45 }), /Retention must be/);
 });
+
+test('requires a separately verified address before email opt-in', async () => {
+  const { service, calls } = harness();
+  await assert.rejects(service.updateEmailSettings('user-a', { emailEnabled: true }), /Verify an email address/);
+  assert.equal(calls.length, 1);
+});
+
+test('validates email address input before creating a verification request', async () => {
+  const { service } = harness();
+  await assert.rejects(service.requestEmailVerification('user-a', 'not-an-email'), /valid email address/);
+});
