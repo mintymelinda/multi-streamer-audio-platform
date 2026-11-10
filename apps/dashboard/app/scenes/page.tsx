@@ -213,6 +213,10 @@ export default function ScenesPage() {
       setError("Save a valid draft before publishing.");
       return;
     }
+    if (JSON.stringify(previewState) !== JSON.stringify(editor.draftState)) {
+      setError("Save your latest draft changes before publishing.");
+      return;
+    }
     setEditorBusy(true);
     setError("");
     try {
