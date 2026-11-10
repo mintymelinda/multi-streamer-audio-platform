@@ -1,4 +1,4 @@
-import { OverlaySceneClient } from './overlay-scene-client.js';
+import { OverlaySceneClient } from './overlay-scene-client';
 
 export default async function OverlayScenePage({
   params,
