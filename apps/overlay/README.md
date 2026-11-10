@@ -12,7 +12,7 @@ Only the SHA-256 token hash is stored in PostgreSQL. Creating or rotating a toke
 
 ## Runtime configuration
 
-- `NEXT_PUBLIC_API_BASE_URL`: API origin or same-origin API prefix, defaulting to `/api`. The API origin must route both REST requests and the Socket.IO `/socket.io/` endpoint.
+- `NEXT_PUBLIC_API_BASE_URL`: API origin or same-origin API prefix, defaulting to `/api`. The API origin must route both REST requests and the Socket.IO `/socket.io/` endpoint. When using the same-origin `/api` prefix, set the overlay server's `API_INTERNAL_URL` to the internal API origin so its Next.js rewrite proxies REST and WebSocket traffic. For a direct browser-to-API origin, set `NEXT_PUBLIC_API_BASE_URL` to that origin and allow the overlay site's origin in the API's `OVERLAY_ALLOWED_ORIGINS` list.
 - `NEXT_PUBLIC_OVERLAY_BASE_URL`: public HTTPS origin for this independently deployable Next.js app, configured in the dashboard build.
 
 The API exposes `GET /overlay/scenes/:sceneId/snapshot`. It accepts only a bearer token, checks the current hash on every snapshot request, returns a non-cacheable read-only scene snapshot, and intentionally returns the same not-found response for invalid, unknown, and revoked credentials.
