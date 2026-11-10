@@ -7,6 +7,9 @@ type Notification = {
   id: string; workspace_id: string | null; category: string; priority: string; event_type: string;
   title: string; body: string; href: string | null; group_key: string | null;
   notification_count: number; unread_count: number; is_read: boolean; created_at: string;
+  group_window: number | null; email_delivery_status: string | null;
+  email_delivery_attempt_count: number | null; email_delivery_next_attempt_at: string | null;
+  email_delivery_sent_at: string | null;
 };
 const API = "/api";
 function csrf() { return document.cookie.split("; ").find((part) => part.startsWith("platform_csrf="))?.split("=")[1] ?? ""; }
@@ -77,7 +80,7 @@ export default function NotificationsPage() {
     setBusy(true);
     try {
       if (item.group_key && item.notification_count > 1) {
-        await request("/me/notifications/groups/read", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ groupKey: item.group_key }) });
+        await request("/me/notifications/groups/read", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ groupKey: item.group_key, groupWindow: item.group_window }) });
       } else {
         await request(`/me/notifications/${item.id}/read`, { method: "PATCH" });
       }
@@ -193,6 +196,7 @@ export default function NotificationsPage() {
         <div className="notification-mark">{item.is_read ? "·" : "●"}</div>
         <div className="notification-content"><div className="notification-meta"><span>{displayCategory(item.category)}</span><span className={`priority-${item.priority}`}>{item.priority}</span>{item.notification_count > 1 && <span>{item.notification_count} related events</span>}</div>
           <strong>{item.title}</strong>{item.body && <p>{item.body}</p>}<small>{item.workspace_id ? "Workspace notification" : "Account / platform"} · {new Date(item.created_at).toLocaleString()}</small>
+          {item.email_delivery_status && <small>Email delivery: {item.email_delivery_status} · {item.email_delivery_attempt_count ?? 0} attempts{item.email_delivery_sent_at ? ` · sent ${new Date(item.email_delivery_sent_at).toLocaleString()}` : ""}</small>}
           {item.href && <a href={item.href}>View details</a>}
         </div>
         {!item.is_read && <button className="text-button" disabled={busy} onClick={() => void markRead(item)}>Mark read</button>}

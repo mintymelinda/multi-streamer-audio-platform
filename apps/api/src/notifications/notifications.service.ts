@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { DatabaseService } from '../database/database.service.js';
 
@@ -53,11 +53,11 @@ export class NotificationsService {
     values.push(limit, offset);
     const result = await this.database.transaction({ userId }, (client) => client.query(
       `WITH filtered AS (
-        SELECT *, CASE WHEN group_key IS NULL THEN 'notification:' || id::text ELSE 'group:' || group_key END AS grouping_key
+        SELECT *, CASE WHEN group_key IS NULL THEN 'notification:' || id::text ELSE 'group:' || group_key || ':' || group_window::text END AS grouping_key
         FROM user_notifications WHERE ${clauses.join(' AND ')}
       ), latest AS (
         SELECT DISTINCT ON (grouping_key) grouping_key, id, workspace_id, category, priority, event_type,
-          title, body, href, group_key, created_at
+          title, body, href, group_key, group_window::integer AS group_window, created_at
         FROM filtered ORDER BY grouping_key, created_at DESC, id DESC
       ), totals AS (
         SELECT grouping_key, count(*)::int AS notification_count,
@@ -65,8 +65,17 @@ export class NotificationsService {
         FROM filtered GROUP BY grouping_key
       )
       SELECT latest.*, totals.notification_count, totals.unread_count,
-        (totals.unread_count = 0) AS is_read
+        (totals.unread_count = 0) AS is_read,
+        delivery.status AS email_delivery_status,
+        delivery.attempt_count AS email_delivery_attempt_count,
+        delivery.next_attempt_at AS email_delivery_next_attempt_at,
+        delivery.sent_at AS email_delivery_sent_at
       FROM latest JOIN totals USING (grouping_key)
+      LEFT JOIN LATERAL (
+        SELECT status, attempt_count, next_attempt_at, sent_at
+          FROM email_outbox WHERE notification_id = latest.id
+         ORDER BY created_at DESC LIMIT 1
+      ) delivery ON true
       ORDER BY latest.created_at DESC, latest.id DESC
       LIMIT $${values.length - 1} OFFSET $${values.length}`,
       values,
@@ -247,12 +256,17 @@ export class NotificationsService {
     return { id: notificationId, read: true };
   }
 
-  async markGroupRead(userId: string, groupKey: unknown) {
+  async markGroupRead(userId: string, groupKey: unknown, groupWindow?: unknown) {
     if (typeof groupKey !== 'string' || groupKey.length < 1 || groupKey.length > 160) {
       throw new BadRequestException('Notification group key is invalid.');
     }
+    if (groupWindow !== undefined && (!Number.isSafeInteger(groupWindow) || Number(groupWindow) < 0)) {
+      throw new BadRequestException('Notification group window is invalid.');
+    }
     const result = await this.database.transaction({ userId }, (client) =>
-      client.query('UPDATE user_notifications SET read_at = COALESCE(read_at, now()) WHERE recipient_user_id = $1 AND group_key = $2 AND read_at IS NULL RETURNING id', [userId, groupKey]),
+      groupWindow === undefined
+        ? client.query('UPDATE user_notifications SET read_at = COALESCE(read_at, now()) WHERE recipient_user_id = $1 AND group_key = $2 AND read_at IS NULL RETURNING id', [userId, groupKey])
+        : client.query('UPDATE user_notifications SET read_at = COALESCE(read_at, now()) WHERE recipient_user_id = $1 AND group_key = $2 AND group_window = $3 AND read_at IS NULL RETURNING id', [userId, groupKey, groupWindow]),
     );
     return { markedRead: result.rowCount ?? 0 };
   }
@@ -283,7 +297,7 @@ export class NotificationsService {
   async createWithinTransaction(client: PoolClient, input: {
     recipientUserId: string; workspaceId?: string | null; category: typeof CATEGORIES[number];
     priority?: typeof PRIORITIES[number]; eventType: string; title: string; body?: string;
-    href?: string | null; groupKey?: string | null;
+    href?: string | null; groupKey?: string | null; dedupeKey?: string | null;
   }) {
     if (!['account', 'security'].includes(input.category)) {
       const preference = await client.query<{ enabled: boolean | null }>(
@@ -296,12 +310,30 @@ export class NotificationsService {
     if (input.href && (!input.href.startsWith('/') || input.href.startsWith('//'))) {
       throw new BadRequestException('Notification links must be relative application paths.');
     }
+    if (input.dedupeKey !== undefined && input.dedupeKey !== null &&
+        (typeof input.dedupeKey !== 'string' || input.dedupeKey.length < 1 || input.dedupeKey.length > 200)) {
+      throw new BadRequestException('Notification deduplication key is invalid.');
+    }
     const priority = input.priority ?? 'normal';
+    const notificationId = randomUUID();
+    if (input.dedupeKey) {
+      const claimed = await client.query(
+        `INSERT INTO user_notification_deduplication
+          (recipient_user_id, workspace_id, dedupe_key, notification_id)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (recipient_user_id, dedupe_key) DO NOTHING
+         RETURNING notification_id`,
+        [input.recipientUserId, input.workspaceId ?? null, input.dedupeKey, notificationId],
+      );
+      if (!claimed.rows[0]) return { rows: [], rowCount: 0, duplicate: true };
+    }
     const notification = await client.query(
       `INSERT INTO user_notifications
-        (recipient_user_id, workspace_id, category, priority, event_type, title, body, href, group_key)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
-      [input.recipientUserId, input.workspaceId ?? null, input.category, priority,
+        (id, recipient_user_id, workspace_id, category, priority, event_type, title, body, href, group_key, group_window)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+         CASE WHEN $10::text IS NULL THEN NULL ELSE floor(extract(epoch FROM now()) / 300)::bigint END)
+       RETURNING id`,
+      [notificationId, input.recipientUserId, input.workspaceId ?? null, input.category, priority,
         input.eventType, input.title, input.body ?? '', input.href ?? null, input.groupKey ?? null],
     );
     if (notification.rows[0]?.id) {
@@ -318,9 +350,9 @@ export class NotificationsService {
         })[character] ?? character);
         const body = input.body ?? '';
         await client.query(
-          `INSERT INTO email_outbox (user_id, workspace_id, recipient_email, subject, text_body, html_body, unique_key)
-           VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (unique_key) DO NOTHING`,
-          [input.recipientUserId, input.workspaceId ?? null, settings.email_address, input.title,
+          `INSERT INTO email_outbox (user_id, workspace_id, notification_id, recipient_email, subject, text_body, html_body, unique_key)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (unique_key) DO NOTHING`,
+          [input.recipientUserId, input.workspaceId ?? null, notification.rows[0].id, settings.email_address, input.title,
             `${input.title}\\n\\n${body}`,
             `<h2>${escapeHtml(input.title)}</h2><p>${escapeHtml(body)}</p>`,
             `notification:${notification.rows[0].id}`],
