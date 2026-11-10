@@ -6,10 +6,19 @@ The dashboard returns the complete OBS browser-source URL once as:
 
 `<overlay-base>/scene/<scene-id>#<bearer-token>`
 
-The token is placed in the URL fragment, never in a path or query parameter. Browsers do not send fragments in HTTP requests or Referer headers. The overlay runtime must read the fragment in the browser, remove it from the visible address bar as soon as practical, and send the token only in an Authorization bearer header when calling the read-only overlay API. Never forward it to analytics, logs, third-party resources, or referrer values.
+The overlay reads the fragment in the browser, removes it from the visible address bar immediately, and sends the token only in an Authorization bearer header or the Socket.IO namespace authentication payload. The token is never sent in a path, query string, Referer header, analytics event, or application log. The browser client does not persist it in local storage or cookies.
 
-Only the SHA-256 token hash is stored in PostgreSQL. Creating or rotating a token returns its plaintext value once; the dashboard holds it only in page memory. Rotating or revoking a token invalidates the previous value immediately.
+Only the SHA-256 token hash is stored in PostgreSQL. Creating or rotating a token returns its plaintext value once; the dashboard holds it only in page memory. Rotating or revoking a token invalidates the previous value. Revocation and rotation publish a PostgreSQL notification that disconnects existing overlay sockets after the transaction commits.
 
-When the overlay runtime is deployed on a separate host, configure the dashboard build with `NEXT_PUBLIC_OVERLAY_BASE_URL` set to that public HTTPS origin. If it is not set, the dashboard currently falls back to its own origin.
+## Runtime configuration
 
-The scene route is a placeholder until Phase 5 item 46 implements token verification, published-state retrieval, and live updates.
+- `NEXT_PUBLIC_API_BASE_URL`: API origin or same-origin API prefix, defaulting to `/api`. The API origin must route both REST requests and the Socket.IO `/socket.io/` endpoint.
+- `NEXT_PUBLIC_OVERLAY_BASE_URL`: public HTTPS origin for this independently deployable Next.js app, configured in the dashboard build.
+
+The API exposes `GET /overlay/scenes/:sceneId/snapshot`. It accepts only a bearer token, checks the current hash on every snapshot request, returns a non-cacheable read-only scene snapshot, and intentionally returns the same not-found response for invalid, unknown, and revoked credentials.
+
+The overlay Socket.IO namespace is `/overlay`. It authenticates the same scene ID and bearer token during connection, listens for workspace outbox invalidations, revalidates the token before sending updates, and disconnects on token rotation or revocation. The client reconnects with bounded exponential backoff and fetches the latest snapshot after every successful connection, so it recovers after missed events or a temporary outage.
+
+Migration `0030_overlay_scene_runtime.sql` adds the nullable published-state snapshot column and narrowly scoped SECURITY DEFINER lookup functions. These functions are executable only by the runtime database role; the underlying scene table remains FORCE-RLS protected.
+
+A newly created scene has no published state until item 47 implements draft/publish. The runtime displays an unpublished placeholder rather than exposing draft data. The snapshot contract is ready for item 47 to populate the last published version.
