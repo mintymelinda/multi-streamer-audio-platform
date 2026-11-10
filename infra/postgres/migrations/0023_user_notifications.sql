@@ -43,6 +43,23 @@ CREATE POLICY user_notifications_recipient_update
 
 CREATE POLICY user_notifications_recipient_insert
   ON user_notifications FOR INSERT
-  WITH CHECK (recipient_user_id = nullif(current_setting('app.user_id', true), '')::uuid);
+  WITH CHECK (
+    recipient_user_id = nullif(current_setting('app.user_id', true), '')::uuid
+    OR (
+      workspace_id = nullif(current_setting('app.workspace_id', true), '')::uuid
+      AND EXISTS (
+        SELECT 1 FROM workspace_memberships actor_membership
+        WHERE actor_membership.workspace_id = user_notifications.workspace_id
+          AND actor_membership.user_id = nullif(current_setting('app.user_id', true), '')::uuid
+          AND actor_membership.status = 'active'
+      )
+      AND EXISTS (
+        SELECT 1 FROM workspace_memberships recipient_membership
+        WHERE recipient_membership.workspace_id = user_notifications.workspace_id
+          AND recipient_membership.user_id = user_notifications.recipient_user_id
+          AND recipient_membership.status = 'active'
+      )
+    )
+  );
 
 GRANT SELECT, INSERT, UPDATE ON user_notifications TO platform_runtime;
