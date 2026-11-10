@@ -307,3 +307,30 @@ h1 { margin: 7px 0 8px; font-size: clamp(28px, 4vw, 38px); letter-spacing: -.055
 .scene-preview-element small { color: #c0afea; font-size: 8px; text-transform: uppercase; letter-spacing: .08em; }
 .scene-preview-element span { overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .scene-preview-empty { position: absolute; inset: 0; display: grid; place-items: center; padding: 15px; color: #9296a5; font-size: 11px; text-align: center; }
+
+
+.component-library, .component-list { display: grid; gap: 10px; }
+.component-library > p, .component-empty { margin: 0; color: #9296a5; font-size: 11px; line-height: 1.5; }
+.component-library-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.component-library-item { display: grid; gap: 5px; padding: 11px; border: 1px solid #39334e; border-radius: 8px; color: #eeeaf9; background: #211d30; text-align: left; cursor: pointer; }
+.component-library-item:hover { border-color: #8d75d0; background: #29233d; }
+.component-library-item:disabled { opacity: .5; cursor: not-allowed; }
+.component-library-item strong { font-size: 11px; }
+.component-library-item small { color: #a4a0b3; font-size: 9px; line-height: 1.4; }
+.component-list > strong { font-size: 12px; }
+.component-settings { display: grid; gap: 9px; min-width: 0; margin: 0; padding: 12px; border: 1px solid #393d4b; border-radius: 8px; }
+.component-settings legend { padding: 0 5px; color: #c7b7ff; font-size: 10px; font-weight: 750; }
+.component-settings > label, .component-number-grid label { display: grid; gap: 5px; color: #a4a7b4; font-size: 9px; text-transform: uppercase; letter-spacing: .06em; }
+.component-settings input { width: 100%; min-width: 0; padding: 8px; border: 1px solid #393d4b; border-radius: 6px; color: #f3f4f6; background: #10131b; font-size: 11px; }
+.component-number-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; }
+.scene-preview-now-playing { background: #1c2631dd; }
+.scene-preview-request-queue, .scene-preview-recent-tracks { background: #202b36dd; }
+.scene-preview-announcement { background: #3a2e21dd; }
+.scene-preview-custom-text { background: transparent; border-style: dashed; }
+.scene-preview-background { z-index: 0; background: #202735cc; }
+.scene-preview-decoration { border-radius: 18px; background: #7256d555; }
+:root[data-theme="light"] .component-library-item { color: #29233d; background: #f5f1ff; border-color: #d7ccef; }
+:root[data-theme="light"] .component-library-item small { color: #62587c; }
+:root[data-theme="light"] .component-settings { border-color: #d5d9e2; }
+:root[data-theme="light"] .component-settings input { color: #202330; background: #fff; border-color: #cbd1dd; }
+@media (max-width: 520px) { .component-library-grid { grid-template-columns: 1fr; }.component-number-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
