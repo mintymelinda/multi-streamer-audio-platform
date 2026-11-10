@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type Workspace = { id: string; name: string; role: "owner" | "admin" | "moderator" | "viewer" };
 type Scene = {
@@ -69,6 +69,7 @@ export default function ScenesPage() {
   const [editor, setEditor] = useState<SceneEditor | null>(null);
   const [draftText, setDraftText] = useState("");
   const [editorBusy, setEditorBusy] = useState(false);
+  const starterRequests = useRef(new Set<string>());
 
   const loadScenes = useCallback(async () => {
     if (!workspaceId) {
@@ -99,24 +100,26 @@ export default function ScenesPage() {
   const canManage = selectedWorkspace && ["owner", "admin"].includes(selectedWorkspace.role);
 
   useEffect(() => {
-    if (!workspaceId || !canManage) return;
-    let active = true;
+    if (!workspaceId || !canManage || starterRequests.current.has(workspaceId)) return;
+    starterRequests.current.add(workspaceId);
     request<SceneIssue & { accessToken: string | null; created: boolean }>(
       `/workspaces/${workspaceId}/scenes/starter`,
       { method: "POST" },
     )
       .then(async (result) => {
-        if (!active) return;
         if (result.created && result.accessToken) {
-          rememberSecret(result.scene.id, result.overlayPath, result.accessToken);
+          setSecrets((current) => [
+            ...current.filter((secret) => secret.sceneId !== result.scene.id),
+            { sceneId: result.scene.id, url: obsUrl(result.overlayPath, result.accessToken as string) },
+          ]);
           setMessage("Your starter Now Playing scene is ready. Copy its OBS URL now; the access token is shown only once.");
         }
         await loadScenes();
       })
       .catch((cause) => {
-        if (active) setError(cause instanceof Error ? cause.message : "Could not prepare the starter scene.");
+        starterRequests.current.delete(workspaceId);
+        setError(cause instanceof Error ? cause.message : "Could not prepare the starter scene.");
       });
-    return () => { active = false; };
   }, [workspaceId, canManage, loadScenes]);
 
   function rememberSecret(sceneId: string, overlayPath: string, accessToken: string) {
