@@ -45,7 +45,7 @@ test('rejects invalid filters and unsafe notification links', async () => {
   const { service } = harness();
   await assert.rejects(service.list('user-a', { category: 'made-up' }), /Unknown notification category/);
   await assert.rejects(service.markRead('user-a', 'not-a-uuid'), /Notification ID is invalid/);
-  await assert.rejects(service.createWithinTransaction({ query: async () => ({}) }, {
+  await assert.rejects(service.createWithinTransaction({ query: async () => ({ rows: [] }) }, {
     recipientUserId: 'user-a', category: 'team', eventType: 'team.invited', title: 'Invite', href: 'https://example.com',
   }), /relative application paths/);
 });
