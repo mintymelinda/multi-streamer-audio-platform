@@ -17,6 +17,17 @@ type SceneSecret = { sceneId: string; url: string };
 type SceneEditor = { sceneId: string; name: string; draftState: Record<string, unknown>; draftRevision: number; publishedAt: string | null; updatedAt: string; hasPublishedState: boolean };
 type SceneIssue = { scene: Scene; accessToken: string; overlayPath: string };
 type StarterSceneResult = { scene: Scene; accessToken: string | null; overlayPath: string; created: boolean };
+type ComponentType = "now-playing" | "request-queue" | "recent-tracks" | "announcement" | "custom-text" | "custom-image" | "background" | "decoration";
+const COMPONENT_LIBRARY: { type: ComponentType; label: string; description: string }[] = [
+  { type: "now-playing", label: "Now Playing", description: "Current track information and progress" },
+  { type: "request-queue", label: "Request Queue", description: "Upcoming requested tracks" },
+  { type: "recent-tracks", label: "Recent Tracks", description: "Recently played tracks" },
+  { type: "announcement", label: "Announcement", description: "A streamer announcement or notice" },
+  { type: "custom-text", label: "Custom Text", description: "A text label with editable content" },
+  { type: "custom-image", label: "Custom Image", description: "An image from a URL" },
+  { type: "background", label: "Background", description: "A scene background layer" },
+  { type: "decoration", label: "Decoration", description: "A decorative visual element" },
+];
 
 const API = "/api";
 const OVERLAY_BASE = process.env.NEXT_PUBLIC_OVERLAY_BASE_URL;
@@ -219,6 +230,44 @@ export default function ScenesPage() {
       )
     : [];
 
+  function writeElements(elements: Record<string, unknown>[]) {
+    if (!previewState) return;
+    setDraftText(JSON.stringify({ ...previewState, version: 1, elements }, null, 2));
+  }
+
+  function addComponent(type: ComponentType) {
+    const defaults: Record<ComponentType, string> = {
+      "now-playing": "Now Playing",
+      "request-queue": "Request Queue",
+      "recent-tracks": "Recently Played",
+      announcement: "Your announcement goes here",
+      "custom-text": "Edit this text",
+      "custom-image": "https://example.com/image.png",
+      background: "Background",
+      decoration: "Decoration",
+    };
+    writeElements([...previewElements, {
+      id: crypto.randomUUID(),
+      type,
+      name: COMPONENT_LIBRARY.find((item) => item.type === type)?.label ?? type,
+      text: defaults[type],
+      x: 5 + (previewElements.length % 3) * 5,
+      y: 5 + (previewElements.length % 4) * 5,
+      width: type === "background" ? 90 : 42,
+      height: type === "now-playing" ? 24 : 18,
+    }]);
+  }
+
+  function updateComponent(index: number, patch: Record<string, unknown>) {
+    writeElements(previewElements.map((element, elementIndex) =>
+      elementIndex === index ? { ...element, ...patch } : element,
+    ));
+  }
+
+  function removeComponent(index: number) {
+    writeElements(previewElements.filter((_, elementIndex) => elementIndex !== index));
+  }
+
   async function saveDraft() {
     if (!editor || !workspaceId || !previewState) {
       setError("Fix the JSON document before saving the draft.");
@@ -339,13 +388,45 @@ export default function ScenesPage() {
         </div>
         <div className="scene-editor-grid">
           <div className="scene-draft-column">
-            <label htmlFor="scene-draft-json">DRAFT DOCUMENT (JSON)</label>
-            <textarea id="scene-draft-json" value={draftText} onChange={(event) => setDraftText(event.target.value)} spellCheck={false} rows={18} />
+            <div className="component-library">
+              <strong>Component library</strong>
+              <p>Add an element to this scene, then edit its content and placement.</p>
+              <div className="component-library-grid">
+                {COMPONENT_LIBRARY.map((component) => <button
+                  type="button"
+                  className="component-library-item"
+                  key={component.type}
+                  onClick={() => addComponent(component.type)}
+                  disabled={!previewState || editorBusy}
+                >
+                  <strong>{component.label}</strong><small>{component.description}</small>
+                </button>)}
+              </div>
+            </div>
+            <div className="component-list">
+              <strong>Scene components ({previewElements.length})</strong>
+              {previewElements.length === 0 && <p className="component-empty">This scene is empty. Add a component from the library above.</p>}
+              {previewElements.map((element, index) => <fieldset className="component-settings" key={typeof element.id === "string" ? element.id : index}>
+                <legend>{typeof element.name === "string" ? element.name : String(element.type ?? "Component")}</legend>
+                <label>Content
+                  <input value={typeof element.text === "string" ? element.text : ""} onChange={(event) => updateComponent(index, { text: event.target.value })} />
+                </label>
+                {element.type === "custom-image" && <label>Image URL
+                  <input value={typeof element.src === "string" ? element.src : ""} placeholder="https://…" onChange={(event) => updateComponent(index, { src: event.target.value })} />
+                </label>}
+                <div className="component-number-grid">
+                  {(["x", "y", "width", "height"] as const).map((key) => <label key={key}>{key.toUpperCase()} (%)
+                    <input type="number" min="0" max="100" value={previewPercent(element[key], key === "width" ? 42 : key === "height" ? 18 : 5, 0, 100)} onChange={(event) => updateComponent(index, { [key]: Number(event.target.value) })} />
+                  </label>)}
+                </div>
+                <button type="button" className="text-button danger-text" onClick={() => removeComponent(index)}>Remove component</button>
+              </fieldset>)}
+            </div>
             <div className="scene-editor-actions">
               <button type="button" className="secondary-button" disabled={editorBusy || !previewState} onClick={() => void saveDraft()}>{editorBusy ? "Working…" : "Save draft"}</button>
               <button type="button" className="primary-button" disabled={editorBusy || !previewState} onClick={() => void publishDraft()}>Publish draft</button>
             </div>
-            <small>Saving changes only the private draft. Publishing is a separate, explicit action.</small>
+            <small>Saving changes only the private draft. Publishing is a separate, explicit action. Component content is stored in the scene draft until published.</small>
           </div>
           <div className="scene-preview-column">
             <div className="scene-preview-heading"><strong>Live draft preview</strong><span>LOCAL · UNSAVED CHANGES</span></div>
@@ -362,11 +443,11 @@ export default function ScenesPage() {
                       ? element.name
                       : "Preview element";
                   return <div
-                    className="scene-preview-element"
+                    className={`scene-preview-element scene-preview-${typeof element.type === "string" ? element.type : "component"}`}
                     key={typeof element.id === "string" ? element.id : index}
                     style={{ left: `${left}%`, top: `${top}%`, width: `${width}%`, height: `${height}%` }}
                   >
-                    <small>{typeof element.type === "string" ? element.type : "Component"}</small>
+                    <small>{typeof element.type === "string" ? element.type.replaceAll("-", " ") : "Component"}</small>
                     <span>{label}</span>
                   </div>;
                 })}
