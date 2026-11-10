@@ -22,7 +22,12 @@ BEGIN
   INSERT INTO workspaces (id, name, owner_user_id, broadcaster_twitch_user_id)
   VALUES (workspace_a, 'Notification workspace', user_a, '930000001');
   INSERT INTO workspace_memberships (workspace_id, user_id, role)
-  VALUES (workspace_a, user_a, 'owner'), (workspace_a, user_b, 'moderator');
+  VALUES (workspace_a, user_a, 'owner');
+
+  -- Membership insertion is authorized by the verified workspace context.
+  PERFORM set_config('app.workspace_id', workspace_a::text, true);
+  INSERT INTO workspace_memberships (workspace_id, user_id, role)
+  VALUES (workspace_a, user_b, 'moderator');
   SET CONSTRAINTS ALL IMMEDIATE;
 
   -- A workspace member may address a notification to another active member.
