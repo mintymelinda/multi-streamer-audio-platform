@@ -315,9 +315,9 @@ export class NotificationsService {
         })[character] ?? character);
         const body = input.body ?? '';
         await client.query(
-          `INSERT INTO email_outbox (user_id, recipient_email, subject, text_body, html_body, unique_key)
-           VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (unique_key) DO NOTHING`,
-          [input.recipientUserId, settings.email_address, input.title,
+          `INSERT INTO email_outbox (user_id, workspace_id, recipient_email, subject, text_body, html_body, unique_key)
+           VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (unique_key) DO NOTHING`,
+          [input.recipientUserId, input.workspaceId ?? null, settings.email_address, input.title,
             `${input.title}\\n\\n${body}`,
             `<h2>${escapeHtml(input.title)}</h2><p>${escapeHtml(body)}</p>`,
             `notification:${notification.rows[0].id}`],
