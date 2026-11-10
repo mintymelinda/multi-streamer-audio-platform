@@ -28,6 +28,20 @@ async function bootstrap(): Promise<void> {
 
   app.useWebSocketAdapter(new IoAdapter(app));
 
+  const overlayOrigins = (process.env.OVERLAY_ALLOWED_ORIGINS ?? '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+  if (overlayOrigins.length > 0) {
+    app.enableCors({
+      origin: overlayOrigins,
+      methods: ['GET', 'OPTIONS'],
+      allowedHeaders: ['Authorization'],
+      credentials: false,
+      maxAge: 600,
+    });
+  }
+
   const openApiConfig = new DocumentBuilder()
     .setTitle('Multi-Streamer Audio Platform API')
     .setDescription('Workspace-scoped request, moderation, Twitch integration, and recovery API.')

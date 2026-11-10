@@ -4,10 +4,13 @@ import { IdentityModule } from '../identity/identity.module.js';
 import { WorkspacesModule } from '../workspaces/workspaces.module.js';
 import { OverlayScenesController } from './overlay-scenes.controller.js';
 import { OverlayScenesService } from './overlay-scenes.service.js';
+import { OverlayRuntimeController } from './overlay-runtime.controller.js';
+import { OverlayRuntimeService } from './overlay-runtime.service.js';
+import { OverlayRealtimeGateway } from './overlay-realtime.gateway.js';
 
 @Module({
   imports: [DatabaseModule, IdentityModule, WorkspacesModule],
-  controllers: [OverlayScenesController],
-  providers: [OverlayScenesService],
+  controllers: [OverlayScenesController, OverlayRuntimeController],
+  providers: [OverlayScenesService, OverlayRuntimeService, OverlayRealtimeGateway],
 })
 export class OverlayScenesModule {}
