@@ -98,6 +98,27 @@ export default function ScenesPage() {
   const selectedWorkspace = workspaces.find((workspace) => workspace.id === workspaceId);
   const canManage = selectedWorkspace && ["owner", "admin"].includes(selectedWorkspace.role);
 
+  useEffect(() => {
+    if (!workspaceId || !canManage) return;
+    let active = true;
+    request<SceneIssue & { accessToken: string | null; created: boolean }>(
+      `/workspaces/${workspaceId}/scenes/starter`,
+      { method: "POST" },
+    )
+      .then(async (result) => {
+        if (!active) return;
+        if (result.created && result.accessToken) {
+          rememberSecret(result.scene.id, result.overlayPath, result.accessToken);
+          setMessage("Your starter Now Playing scene is ready. Copy its OBS URL now; the access token is shown only once.");
+        }
+        await loadScenes();
+      })
+      .catch((cause) => {
+        if (active) setError(cause instanceof Error ? cause.message : "Could not prepare the starter scene.");
+      });
+    return () => { active = false; };
+  }, [workspaceId, canManage, loadScenes]);
+
   function rememberSecret(sceneId: string, overlayPath: string, accessToken: string) {
     setSecrets((current) => [
       ...current.filter((secret) => secret.sceneId !== sceneId),
