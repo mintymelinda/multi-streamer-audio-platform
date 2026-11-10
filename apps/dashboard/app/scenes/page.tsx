@@ -45,6 +45,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+function previewPercent(value: unknown, fallback: number, minimum: number, maximum: number) {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.min(maximum, Math.max(minimum, value))
+    : fallback;
+}
+
 function obsUrl(path: string, token: string) {
   const base = (OVERLAY_BASE || window.location.origin).replace(/\/+$/, "");
   return `${base}${path}#${token}`;
@@ -181,6 +187,11 @@ export default function ScenesPage() {
       return null;
     }
   })();
+  const previewElements = previewState && Array.isArray(previewState.elements)
+    ? previewState.elements.filter((element): element is Record<string, unknown> =>
+        typeof element === "object" && element !== null && !Array.isArray(element),
+      )
+    : [];
 
   async function saveDraft() {
     if (!editor || !workspaceId || !previewState) {
@@ -313,7 +324,28 @@ export default function ScenesPage() {
           <div className="scene-preview-column">
             <div className="scene-preview-heading"><strong>Live draft preview</strong><span>LOCAL · UNSAVED CHANGES</span></div>
             <div className="scene-preview-canvas">
-              {previewState ? <><strong>{editor.name}</strong><pre>{JSON.stringify(previewState, null, 2)}</pre></> : <p>Enter a valid JSON scene document to preview it.</p>}
+              <div className="scene-preview-stage">
+                {previewElements.map((element, index) => {
+                  const left = previewPercent(element.x, 5 + (index % 3) * 30, 0, 99);
+                  const top = previewPercent(element.y, 8 + Math.floor(index / 3) * 28, 0, 99);
+                  const width = previewPercent(element.width, 28, 1, 100 - left);
+                  const height = previewPercent(element.height, 18, 1, 100 - top);
+                  const label = typeof element.text === "string"
+                    ? element.text
+                    : typeof element.name === "string"
+                      ? element.name
+                      : "Preview element";
+                  return <div
+                    className="scene-preview-element"
+                    key={typeof element.id === "string" ? element.id : index}
+                    style={{ left: `${left}%`, top: `${top}%`, width: `${width}%`, height: `${height}%` }}
+                  >
+                    <small>{typeof element.type === "string" ? element.type : "Component"}</small>
+                    <span>{label}</span>
+                  </div>;
+                })}
+                {previewElements.length === 0 && <div className="scene-preview-empty">Empty scene · add components in the next editor milestone</div>}
+              </div>
             </div>
             <small>Preview reflects the editor buffer immediately. It is not served to OBS until you publish.</small>
           </div>
