@@ -222,7 +222,11 @@ export default function ScenesPage() {
     try {
       const saved = await request<{ publishedAt: string; publishedRevision: number }>(
         `/workspaces/${workspaceId}/scenes/${editor.sceneId}/publish`,
-        { method: "POST" },
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ expectedRevision: editor.draftRevision }),
+        },
       );
       setEditor({ ...editor, publishedAt: saved.publishedAt, hasPublishedState: true });
       setMessage("Draft published. Connected OBS overlays will reload the published scene.");
