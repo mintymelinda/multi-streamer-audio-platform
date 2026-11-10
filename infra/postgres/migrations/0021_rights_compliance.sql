@@ -28,7 +28,8 @@ CREATE TABLE rights_holder_reports (
   decided_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
-  CHECK ((decision IS NULL) = (decided_at IS NULL))
+  CHECK ((decision IS NULL) = (decided_at IS NULL)),
+  UNIQUE (workspace_id, id)
 );
 
 CREATE INDEX rights_holder_reports_workspace_status
