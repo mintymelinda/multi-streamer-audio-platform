@@ -17,6 +17,10 @@ BEGIN
   IF (SELECT count(*) FROM user_data_exports WHERE id = export_a) <> 1 THEN
     RAISE EXCEPTION 'account owner cannot read their export status';
   END IF;
+  UPDATE user_data_exports SET downloaded_at = now() WHERE id = export_a;
+  IF NOT EXISTS (SELECT 1 FROM user_data_exports WHERE id = export_a AND downloaded_at IS NOT NULL) THEN
+    RAISE EXCEPTION 'account owner cannot record their export download';
+  END IF;
 
   PERFORM set_config('app.user_id', user_b::text, true);
   IF (SELECT count(*) FROM user_data_exports WHERE id = export_a) <> 0 THEN

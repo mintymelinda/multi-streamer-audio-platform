@@ -40,12 +40,17 @@ CREATE POLICY user_data_exports_recipient_insert
   ON user_data_exports FOR INSERT
   WITH CHECK (user_id = nullif(current_setting('app.user_id', true), '')::uuid);
 
+CREATE POLICY user_data_exports_recipient_download_update
+  ON user_data_exports FOR UPDATE
+  USING (user_id = nullif(current_setting('app.user_id', true), '')::uuid)
+  WITH CHECK (user_id = nullif(current_setting('app.user_id', true), '')::uuid);
+
 CREATE POLICY user_data_exports_worker_access
   ON user_data_exports FOR ALL TO platform_worker
   USING (true) WITH CHECK (true);
 
 GRANT USAGE ON SCHEMA public TO platform_worker;
-GRANT SELECT, INSERT ON user_data_exports TO platform_runtime;
+GRANT SELECT, INSERT, UPDATE ON user_data_exports TO platform_runtime;
 GRANT SELECT, INSERT, UPDATE, DELETE ON user_data_exports TO platform_worker;
 
 -- The export worker reads only self-scoped account data and inserts one
