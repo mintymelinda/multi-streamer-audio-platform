@@ -71,7 +71,8 @@ export class NotificationsController {
   @Patch('groups/read')
   markGroupRead(@Req() request: HttpRequest, @Body() body: unknown) {
     const groupKey = typeof body === 'object' && body !== null && 'groupKey' in body ? body.groupKey : undefined;
-    return this.notifications.markGroupRead(this.userId(request), groupKey);
+    const groupWindow = typeof body === 'object' && body !== null && 'groupWindow' in body ? body.groupWindow : undefined;
+    return this.notifications.markGroupRead(this.userId(request), groupKey, groupWindow);
   }
 
   @Patch(':notificationId/read')

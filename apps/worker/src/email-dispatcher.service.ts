@@ -5,6 +5,14 @@ import { Pool } from 'pg';
 interface EmailRow {
   id: string; recipient_email: string; subject: string; text_body: string; html_body: string; attempt_count: number;
 }
+
+export const EMAIL_MAX_ATTEMPTS = 10;
+export function emailRetryDelaySeconds(attemptCount: number): number {
+  return Math.min(86_400, 30 * (2 ** Math.min(Math.max(0, attemptCount - 1), 11)));
+}
+export function emailRetryIsTerminal(attemptCount: number): boolean {
+  return attemptCount >= EMAIL_MAX_ATTEMPTS;
+}
 function optionalSecret(fileVariable: string, directVariable: string): string | undefined {
   const file = process.env[fileVariable];
   if (file) {
@@ -88,8 +96,8 @@ export class EmailDispatcherService implements OnModuleInit, OnModuleDestroy {
       );
     } catch (error) {
       const message = (error instanceof Error ? error.message : 'Unknown email delivery error').slice(0, 500);
-      const terminal = row.attempt_count >= 10;
-      const delaySeconds = Math.min(86_400, 30 * (2 ** Math.min(row.attempt_count - 1, 11)));
+      const terminal = emailRetryIsTerminal(row.attempt_count);
+      const delaySeconds = emailRetryDelaySeconds(row.attempt_count);
       await this.pool.query(
         `UPDATE email_outbox SET status = $2, locked_at = NULL, next_attempt_at = now() + make_interval(secs => $3),
            last_error = $4,
