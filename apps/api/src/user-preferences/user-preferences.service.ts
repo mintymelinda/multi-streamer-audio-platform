@@ -60,6 +60,8 @@ export class UserPreferencesService {
         [userId, input.theme ?? null, input.accentColor ?? null],
       ),
     );
-    return { theme: result.rows[0].theme, accentColor: result.rows[0].accent_color };
+    const row = result.rows[0];
+    if (!row) throw new Error('Appearance preferences could not be saved.');
+    return { theme: row.theme, accentColor: row.accent_color };
   }
 }
