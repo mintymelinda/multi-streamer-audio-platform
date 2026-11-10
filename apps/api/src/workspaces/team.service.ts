@@ -17,6 +17,7 @@ import { TwitchDirectoryService } from './twitch-directory.service.js';
 export interface InvitationRecord {
   id: string;
   workspace_id: string;
+  invited_twitch_user_id: string;
   assigned_role: Exclude<WorkspaceRole, 'owner'>;
   status: string;
   created_at: Date;

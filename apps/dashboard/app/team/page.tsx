@@ -10,7 +10,9 @@ type AuditEvent = { id: string; event_type: string; target_type: string | null; 
 const API = "/api";
 function csrf() { return document.cookie.split("; ").find((part) => part.startsWith("platform_csrf="))?.split("=")[1] ?? ""; }
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const headers = new Headers(init?.headers);\n  if (init?.method) headers.set("x-csrf-token", csrf());\n  const response = await fetch(`${API}${path}`, { ...init, credentials: "include", cache: "no-store", headers });
+  const headers = new Headers(init?.headers);
+  if (init?.method) headers.set("x-csrf-token", csrf());
+  const response = await fetch(`${API}${path}`, { ...init, credentials: "include", cache: "no-store", headers });
   if (!response.ok) throw new Error(response.status === 403 ? "You do not have permission to manage this workspace." : `Request failed (${response.status}).`);
   return response.status === 204 ? (undefined as T) : response.json() as Promise<T>;
 }
