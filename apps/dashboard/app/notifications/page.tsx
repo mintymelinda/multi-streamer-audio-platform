@@ -37,6 +37,9 @@ export default function NotificationsPage() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [categoryPreferences, setCategoryPreferences] = useState<Record<string, boolean>>({});
+  const [retentionDays, setRetentionDays] = useState(90);
+  const [preferenceMessage, setPreferenceMessage] = useState("");
 
   const load = useCallback(async () => {
     setError("");
@@ -53,6 +56,9 @@ export default function NotificationsPage() {
 
   useEffect(() => {
     request<Workspace[]>("/workspaces").then(setWorkspaces).catch(() => setWorkspaces([]));
+    request<{ category_preferences: Record<string, boolean>; retention_days: number }>("/me/notifications/preferences")
+      .then((preferences) => { setCategoryPreferences(preferences.category_preferences ?? {}); setRetentionDays(preferences.retention_days ?? 90); })
+      .catch((cause) => setPreferenceMessage(cause instanceof Error ? cause.message : "Could not load preferences."));
   }, []);
   useEffect(() => { void load(); }, [load]);
 
@@ -86,6 +92,31 @@ export default function NotificationsPage() {
     <header className="topbar"><a className="brand" href="/">♫ Streamer Audio</a><nav className="page-nav"><a href="/">Dashboard</a><a href="/team">Team</a><a href="/invitations">Invitations</a></nav></header>
     <section className="welcome"><div><p className="eyebrow">YOUR ACCOUNT</p><h1>Notifications</h1><p className="subheading">Updates addressed to you across your workspaces and the platform.</p></div><span className="count-pill">{unreadCount} unread</span></section>
     {error && <div className="error-banner">{error}</div>}
+    <section className="panel team-panel">
+      <div className="panel-heading"><div><p className="eyebrow">PREFERENCES</p><h2>Notification settings</h2></div></div>
+      <p className="subheading">Account and security notifications are always retained and cannot be disabled.</p>
+      <div className="notification-filters">
+        {["platform","team","provider","playback","queue","system"].map((value) => <label className="notification-unread" key={value}>
+          <input type="checkbox" checked={categoryPreferences[value] !== false} onChange={(event) => setCategoryPreferences((current) => ({ ...current, [value]: event.target.checked }))} /> {displayCategory(value)}
+        </label>)}
+        <label>Keep other notifications for<select value={retentionDays} onChange={(event) => setRetentionDays(Number(event.target.value))}>
+          {[30,90,180,365].map((days) => <option key={days} value={days}>{days} days</option>)}
+        </select></label>
+        <button className="secondary-button" disabled={busy} onClick={async () => {
+          setBusy(true); setPreferenceMessage("");
+          try {
+            const saved = await request<{ category_preferences: Record<string, boolean>; retention_days: number }>("/me/notifications/preferences", {
+              method: "PATCH", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ categoryPreferences, retentionDays }),
+            });
+            setCategoryPreferences(saved.category_preferences); setRetentionDays(saved.retention_days);
+            setPreferenceMessage("Notification preferences saved.");
+          } catch (cause) { setPreferenceMessage(cause instanceof Error ? cause.message : "Could not save preferences."); }
+          finally { setBusy(false); }
+        }}>Save preferences</button>
+      </div>
+      {preferenceMessage && <p role="status">{preferenceMessage}</p>}
+    </section>
     <section className="panel team-panel">
       <div className="panel-heading"><div><p className="eyebrow">INBOX</p><h2>Notification history</h2></div><button className="secondary-button" onClick={() => void markAllRead()} disabled={busy || unreadCount === 0}>Mark all read</button></div>
       <div className="notification-filters">
