@@ -7,7 +7,7 @@ import {
   Param,
   Res,
 } from '@nestjs/common';
-import type { FastifyReply } from 'fastify';
+import type { HttpReply } from '../identity/http.types.js';
 import { OverlayRuntimeService } from './overlay-runtime.service.js';
 
 @Controller('overlay/scenes')
@@ -18,7 +18,7 @@ export class OverlayRuntimeController {
   async snapshot(
     @Param('sceneId') sceneId: string,
     @Headers('authorization') authorization: string | undefined,
-    @Res({ passthrough: true }) reply: FastifyReply,
+    @Res({ passthrough: true }) reply: HttpReply,
   ) {
     reply.header('Cache-Control', 'no-store, private');
     reply.header('Referrer-Policy', 'no-referrer');
