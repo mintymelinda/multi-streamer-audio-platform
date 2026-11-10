@@ -39,6 +39,7 @@ Start the local services with `pnpm dev:infra`, then apply the role bootstrap an
 - `0026_notification_delivery_reliability.sql` adds recipient-scoped deduplication claims, five-minute grouping windows, linked email delivery status, and recipient/workspace-scoped access to idempotency metadata.
 - `0026_notification_delivery_reliability.sql` adds recipient-scoped notification deduplication, five-minute grouping windows, linked email delivery status, and recipient-only status visibility.
 - `0027_account_data_exports.sql` adds queued personal account exports, RLS-protected export payloads, worker-only generation, authenticated downloads, and seven-day expiry.
+- `0028_user_appearance_preferences.sql` adds account-wide light/dark theme and accent-color preferences with self-only RLS.
 
 New tenant-owned tables must follow the same pattern. Never put plaintext provider credentials in integration rows, audit details, outbox payloads, logs, or job messages.
 
