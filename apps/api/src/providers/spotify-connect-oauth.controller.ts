@@ -23,10 +23,15 @@ export class SpotifyConnectOAuthController {
   @Get('providers/spotify/callback')
   @UseGuards(SessionGuard)
   async callback(
-    @Req() request: HttpRequest, @Query('code') code: string | undefined,
-    @Query('state') state: string | undefined, @Query('error') error: string | undefined,
+    @Req() request: HttpRequest, @Query('code') code: string | string[] | undefined,
+    @Query('state') state: string | string[] | undefined, @Query('error') error: string | string[] | undefined,
     @Res() reply: HttpReply,
   ): Promise<HttpReply> {
+    if ((error !== undefined && typeof error !== 'string') ||
+      (code !== undefined && typeof code !== 'string') ||
+      (state !== undefined && typeof state !== 'string')) {
+      throw new BadRequestException('Spotify authorization was cancelled or could not be completed.');
+    }
     if (error || !code || !state || !request.user) {
       throw new BadRequestException('Spotify authorization was cancelled or could not be completed.');
     }
