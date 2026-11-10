@@ -106,11 +106,52 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
   if (status === 'error') return <main className="overlay-message">The overlay is temporarily unavailable. Reconnecting…</main>;
   if (!snapshot) return <main className="overlay-message">Connecting to overlay…</main>;
 
+  const publishedState = snapshot.publishedState && typeof snapshot.publishedState === "object"
+    ? snapshot.publishedState as Record<string, unknown>
+    : null;
+  const elements = publishedState && Array.isArray(publishedState.elements)
+    ? publishedState.elements.filter((element): element is Record<string, unknown> =>
+        typeof element === "object" && element !== null && !Array.isArray(element),
+      )
+    : [];
+
   return (
     <main className="overlay-scene" aria-label={snapshot.name} data-scene-id={snapshot.sceneId}>
       {snapshot.publishedState === null
         ? <p className="overlay-message">This scene has not been published yet.</p>
-        : <pre className="overlay-state">{JSON.stringify(snapshot.publishedState)}</pre>}
+        : elements.map((element, index) => {
+            const number = (value: unknown, fallback: number) =>
+              typeof value === "number" && Number.isFinite(value) ? Math.min(100, Math.max(0, value)) : fallback;
+            const type = typeof element.type === "string" ? element.type : "custom-text";
+            const text = typeof element.text === "string" ? element.text : "";
+            const imageUrl = typeof element.src === "string" && /^https?:\/\//i.test(element.src) ? element.src : null;
+            return <section
+              className={`overlay-component overlay-component--${type}`}
+              key={typeof element.id === "string" ? element.id : index}
+              style={{
+                left: `${number(element.x, 5)}%`,
+                top: `${number(element.y, 5)}%`,
+                width: `${number(element.width, 42)}%`,
+                height: `${number(element.height, 18)}%`,
+              }}
+            >
+              {type === "now-playing" && <div className="overlay-now-playing">
+                <div className="overlay-artwork">♫</div>
+                <div className="overlay-track-copy"><strong>{text || "Now Playing"}</strong><span>Artist · Album</span><div className="overlay-progress"><span /></div></div>
+              </div>}
+              {(type === "request-queue" || type === "recent-tracks") && <div className="overlay-list-component">
+                <strong>{text || (type === "request-queue" ? "Request Queue" : "Recently Played")}</strong>
+                <span>{type === "request-queue" ? "Upcoming requests will appear here" : "Recently played tracks will appear here"}</span>
+              </div>}
+              {type === "announcement" && <div className="overlay-announcement">{text}</div>}
+              {type === "custom-text" && <div className="overlay-custom-text">{text}</div>}
+              {type === "custom-image" && (imageUrl
+                ? <img className="overlay-custom-image" src={imageUrl} alt={text || "Custom scene image"} />
+                : <div className="overlay-image-placeholder">Add an image URL in the editor</div>)}
+              {type === "background" && <div className="overlay-background-label">{text}</div>}
+              {type === "decoration" && <div className="overlay-decoration" aria-hidden="true" />}
+            </section>;
+          })}
     </main>
   );
 }
