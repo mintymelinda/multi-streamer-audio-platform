@@ -18,7 +18,7 @@ function makeService() {
       },
     }),
   };
-  const directory = { resolveUsername: async (username) => username === 'streamfriend' ? '987654' : '123456' };
+  const directory = { resolveUsername: async (username) => username.trim().toLowerCase() === 'streamfriend' ? '987654' : '123456' };
   return { service: new TeamService(database, directory), statements };
 }
 
