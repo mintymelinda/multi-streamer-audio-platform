@@ -190,3 +190,80 @@ test('rejects scene documents larger than 256 KiB', async () => {
   assert.equal(calls.length, 0);
 });
 
+test('creates exactly one starter scene per workspace and returns its token only on creation', async () => {
+  const calls = [];
+  const starters = new Map();
+  let inserts = 0;
+  const database = {
+    transaction: async (context, operation) => {
+      calls.push({ context });
+      return operation({
+        query: async (sql, values = []) => {
+          calls.push({ sql, values });
+          if (sql.includes('pg_advisory_xact_lock')) return { rows: [], rowCount: 1 };
+          if (sql.includes('SELECT id, name, sort_order') && sql.includes('is_starter = true')) {
+            const existing = starters.get(values[0]);
+            return { rows: existing ? [existing] : [], rowCount: existing ? 1 : 0 };
+          }
+          if (sql.includes('INSERT INTO overlay_scenes') && sql.includes('is_starter')) {
+            inserts += 1;
+            const scene = {
+              id: values[0],
+              name: 'Now Playing',
+              sort_order: 0,
+              created_at: new Date(),
+              updated_at: new Date(),
+              token_created_at: new Date(),
+              token_revoked_at: null,
+              has_active_access: true,
+            };
+            starters.set(values[1], scene);
+            return { rows: [scene], rowCount: 1 };
+          }
+          return { rows: [], rowCount: 1 };
+        },
+      });
+    },
+  };
+  const service = new OverlayScenesService(database);
+  const first = await service.ensureStarter('workspace-a', 'user-a');
+  const second = await service.ensureStarter('workspace-a', 'user-a');
+
+  assert.equal(first.created, true);
+  assert.equal(first.scene.name, 'Now Playing');
+  assert.match(first.accessToken, /^[A-Za-z0-9_-]{43}$/);
+  const insert = calls.find((call) => call.sql?.includes('INSERT INTO overlay_scenes') && call.sql.includes('is_starter'));
+  assert.equal(insert.values[2], sha256(first.accessToken));
+  assert.equal(second.created, false);
+  assert.equal(second.accessToken, null);
+  assert.equal(second.scene.id, first.scene.id);
+  assert.equal(inserts, 1);
+  assert.equal(calls.filter((call) => call.sql?.includes('pg_advisory_xact_lock')).length, 2);
+});
+
+test('starter creation is scoped to the requested workspace', async () => {
+  const starters = new Map();
+  const database = {
+    transaction: async (_context, operation) => operation({
+      query: async (sql, values = []) => {
+        if (sql.includes('SELECT pg_advisory_xact_lock')) return { rows: [], rowCount: 1 };
+        if (sql.includes('is_starter = true')) {
+          const existing = starters.get(values[0]);
+          return { rows: existing ? [existing] : [], rowCount: existing ? 1 : 0 };
+        }
+        if (sql.includes('INSERT INTO overlay_scenes') && sql.includes('is_starter')) {
+          const scene = { id: values[0], name: 'Now Playing', sort_order: 0, created_at: new Date(), updated_at: new Date(), token_created_at: new Date(), token_revoked_at: null, has_active_access: true };
+          starters.set(values[1], scene);
+          return { rows: [scene], rowCount: 1 };
+        }
+        return { rows: [], rowCount: 1 };
+      },
+    }),
+  };
+  const service = new OverlayScenesService(database);
+  const workspaceA = await service.ensureStarter('workspace-a', 'user-a');
+  const workspaceB = await service.ensureStarter('workspace-b', 'user-b');
+  assert.notEqual(workspaceA.scene.id, workspaceB.scene.id);
+  assert.equal(starters.size, 2);
+});
+
