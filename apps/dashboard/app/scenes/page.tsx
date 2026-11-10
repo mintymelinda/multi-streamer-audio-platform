@@ -167,7 +167,7 @@ export default function ScenesPage() {
       <nav className="page-nav"><a href="/">Dashboard</a><a href="/team">Team</a><a href="/notifications">Notifications</a><a href="/settings">Settings</a></nav>
     </header>
     <section className="welcome">
-      <div><p className="eyebrow">HOSTED OBS OVERLAYS</p><h1>Scenes</h1><p className="subheading">Each scene has its own stable path and independently revocable read-only access token.</p></div>
+      <div><p className="eyebrow">HOSTED OBS OVERLAYS</p><h1>Scenes</h1><p className="subheading">Each scene has its own stable path and independently revocable read-only access token. Set NEXT_PUBLIC_OVERLAY_BASE_URL to the hosted overlay origin when it is deployed separately.</p></div>
     </section>
     {error && <div className="error-banner" role="alert">{error}</div>}
     {message && <p role="status">{message}</p>}
