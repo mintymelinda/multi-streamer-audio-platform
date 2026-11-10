@@ -231,3 +231,5 @@ h1 { margin: 7px 0 8px; font-size: clamp(28px, 4vw, 38px); letter-spacing: -.055
 .accent-choice > span { width: 17px; height: 17px; border-radius: 50%; }
 .settings-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; }
 .settings-actions p { color: #80d8ac; font-size: 12px; }
+
+.appearance-options, .accent-options { border: 0; padding: 0; min-width: 0; }

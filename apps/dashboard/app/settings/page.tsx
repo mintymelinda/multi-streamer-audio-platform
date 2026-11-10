@@ -74,25 +74,25 @@ export default function SettingsPage() {
       <section className="panel settings-panel">
         <div className="panel-heading"><div><p className="eyebrow">COLOR MODE</p><h2>Theme</h2></div></div>
         <p className="subheading">Your theme is an account preference, not a workspace setting.</p>
-        <div className="appearance-options" role="group" aria-label="Theme">
+        <fieldset className="appearance-options" aria-label="Theme">
           <button type="button" className={preferences.theme === "dark" ? "appearance-choice is-selected" : "appearance-choice"} aria-pressed={preferences.theme === "dark"} onClick={() => setPreferences((current) => ({ ...current, theme: "dark" }))}>
             <span className="theme-preview theme-preview-dark"><i /><i /><i /></span><strong>Dark</strong><small>Low-light interface</small>
           </button>
           <button type="button" className={preferences.theme === "light" ? "appearance-choice is-selected" : "appearance-choice"} aria-pressed={preferences.theme === "light"} onClick={() => setPreferences((current) => ({ ...current, theme: "light" }))}>
             <span className="theme-preview theme-preview-light"><i /><i /><i /></span><strong>Light</strong><small>Bright interface</small>
           </button>
-        </div>
+        </fieldset>
       </section>
       <section className="panel settings-panel">
         <div className="panel-heading"><div><p className="eyebrow">ACCENT</p><h2>Accent color</h2></div></div>
         <p className="subheading">Used for primary actions, highlights, and selected controls.</p>
-        <div className="accent-options" role="group" aria-label="Accent color">
+        <fieldset className="accent-options" aria-label="Accent color">
           {ACCENTS.map((accent) => <button type="button" key={accent.value} className={preferences.accentColor === accent.value ? "accent-choice is-selected" : "accent-choice"} aria-pressed={preferences.accentColor === accent.value} onClick={() => setPreferences((current) => ({ ...current, accentColor: accent.value }))}>
             <span style={{ backgroundColor: accent.color }} /><strong>{accent.label}</strong>
           </button>)}
-        </div>
+        </fieldset>
       </section>
-      <div className="settings-actions"><button className="primary-button" onClick={() => void save()} disabled={busy}>{busy ? "Saving…" : "Save appearance"}</button>{message && <p role="status">{message}</p>}</div>
+      <div className="settings-actions"><button type="button" className="primary-button" onClick={() => void save()} disabled={busy}>{busy ? "Saving…" : "Save appearance"}</button>{message && <p role="status">{message}</p>}</div>
     </>}
     <footer className="footer"><span>Account appearance preferences</span><a href="/">Back to dashboard</a></footer>
   </main>;
