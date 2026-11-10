@@ -74,3 +74,21 @@ test('validates email address input before creating a verification request', asy
   const { service } = harness();
   await assert.rejects(service.requestEmailVerification('user-a', 'not-an-email'), /valid email address/);
 });
+
+test('queues email verification without exposing an email permission in Twitch sign-in', async () => {
+  const { service, calls } = harness();
+  const result = await service.requestEmailVerification('user-a', ' Person@Example.com ');
+  assert.deepEqual(result, { verificationQueued: true, expiresInSeconds: 1800 });
+  assert.ok(calls.some((call) => call.sql?.includes('pg_advisory_xact_lock')));
+  const outbox = calls.find((call) => call.sql?.includes('INSERT INTO email_outbox'));
+  assert.ok(outbox);
+  assert.equal(outbox.values[1], 'person@example.com');
+  assert.match(outbox.values[4], /^email-verification:user-a:/);
+});
+
+test('rejects invalid verification tokens and email preference keys', async () => {
+  const { service } = harness();
+  await assert.rejects(service.verifyEmailAddress('user-a', 'bad'), /invalid or expired/);
+  await assert.rejects(service.updateEmailSettings('user-a', { categoryPreferences: { unknown: true } }), /unsupported value/);
+  await assert.rejects(service.updateEmailSettings('user-a', { priorityPreferences: { urgent: true } }), /unsupported value/);
+});

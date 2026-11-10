@@ -140,6 +140,7 @@ export class NotificationsService {
     const token = randomBytes(32).toString('base64url');
     const tokenHash = createHash('sha256').update(token).digest('hex');
     await this.database.transaction({ userId }, async (client) => {
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [userId]);
       const previous = await client.query<{ verification_requested_at: Date | null }>(
         'SELECT verification_requested_at FROM user_notification_email_settings WHERE user_id = $1 FOR UPDATE', [userId],
       );

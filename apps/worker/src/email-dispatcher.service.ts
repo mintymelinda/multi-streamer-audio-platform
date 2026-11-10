@@ -77,7 +77,7 @@ export class EmailDispatcherService implements OnModuleInit, OnModuleDestroy {
     try {
       const response = await fetch('https://api.resend.com/emails', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },
+        headers: { Authorization: `Bearer ${this.apiKey}`, 'Content-Type': 'application/json', 'Idempotency-Key': `platform-email-${row.id}` },
         body: JSON.stringify({ from: this.from, to: [row.recipient_email], subject: row.subject, text: row.text_body, html: row.html_body }),
         signal: AbortSignal.timeout(15_000),
       });
@@ -92,7 +92,12 @@ export class EmailDispatcherService implements OnModuleInit, OnModuleDestroy {
       const delaySeconds = Math.min(86_400, 30 * (2 ** Math.min(row.attempt_count - 1, 11)));
       await this.pool.query(
         `UPDATE email_outbox SET status = $2, locked_at = NULL, next_attempt_at = now() + make_interval(secs => $3),
-           last_error = $4 WHERE id = $1`,
+           last_error = $4,
+           recipient_email = CASE WHEN $2 = 'failed' THEN 'redacted' ELSE recipient_email END,
+           subject = CASE WHEN $2 = 'failed' THEN 'Failed email' ELSE subject END,
+           text_body = CASE WHEN $2 = 'failed' THEN 'Email payload purged after retry exhaustion' ELSE text_body END,
+           html_body = CASE WHEN $2 = 'failed' THEN '<p>Email payload purged after retry exhaustion</p>' ELSE html_body END
+         WHERE id = $1`,
         [row.id, terminal ? 'failed' : 'pending', delaySeconds, message],
       );
       this.logger.warn(`Email delivery ${row.id} ${terminal ? 'exhausted retries' : 'will retry'}: ${message}`);

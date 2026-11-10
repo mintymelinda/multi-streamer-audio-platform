@@ -10,7 +10,9 @@ CREATE TABLE user_notification_email_settings (
   category_preferences jsonb NOT NULL DEFAULT '{}'::jsonb CHECK (jsonb_typeof(category_preferences) = 'object'),
   priority_preferences jsonb NOT NULL DEFAULT '{}'::jsonb CHECK (jsonb_typeof(priority_preferences) = 'object'),
   updated_at timestamptz NOT NULL DEFAULT now(),
-  CHECK ((verification_token_hash IS NULL) = (verification_expires_at IS NULL))
+  CHECK ((verification_token_hash IS NULL) = (verification_expires_at IS NULL)),
+  CHECK (NOT email_enabled OR verified_at IS NOT NULL),
+  CHECK (verified_at IS NULL OR email_address IS NOT NULL)
 );
 ALTER TABLE user_notification_email_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_notification_email_settings FORCE ROW LEVEL SECURITY;
