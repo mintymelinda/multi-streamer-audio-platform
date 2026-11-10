@@ -108,10 +108,11 @@ export default function ScenesPage() {
       { method: "POST" },
     )
       .then(async (result) => {
-        if (result.created && result.accessToken) {
+        const accessToken = result.accessToken;
+        if (result.created && accessToken) {
           setSecrets((current) => [
             ...current.filter((secret) => secret.sceneId !== result.scene.id),
-            { sceneId: result.scene.id, url: obsUrl(result.overlayPath, result.accessToken) },
+            { sceneId: result.scene.id, url: obsUrl(result.overlayPath, accessToken) },
           ]);
           setMessage("Your starter Now Playing scene is ready. Copy its OBS URL now; the access token is shown only once.");
         }
