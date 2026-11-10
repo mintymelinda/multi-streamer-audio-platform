@@ -54,9 +54,8 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
 
     const connect = () => {
       if (stopped) return;
-      const base = new URL(API_BASE || '/', window.location.href);
-      base.protocol = base.protocol === 'https:' ? 'wss:' : 'ws:';
       const socketUrl = new URL(`${API_BASE}/socket.io/?EIO=4&transport=websocket`, window.location.href);
+      socketUrl.protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       socket = new WebSocket(socketUrl);
       socket.addEventListener('open', () => {
         retryDelay = 1_000;
