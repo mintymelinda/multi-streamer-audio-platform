@@ -26,6 +26,19 @@ BEGIN
   IF current_user <> 'platform_worker' THEN
     RAISE EXCEPTION 'account export worker role was not activated';
   END IF;
+  IF has_column_privilege('platform_worker', 'workspace_invitations', 'token_hash', 'SELECT') THEN
+    RAISE EXCEPTION 'worker can read invitation token hashes';
+  END IF;
+  IF has_column_privilege('platform_worker', 'user_notification_email_settings', 'verification_token_hash', 'SELECT') THEN
+    RAISE EXCEPTION 'worker can read email verification token hashes';
+  END IF;
+  IF has_column_privilege('platform_worker', 'workspace_memberships', 'invited_by_user_id', 'SELECT') THEN
+    RAISE EXCEPTION 'worker can read unrelated membership actor identifiers';
+  END IF;
+  IF has_column_privilege('platform_worker', 'platform_users', 'suspension_reason', 'SELECT') THEN
+    RAISE EXCEPTION 'worker can read internal account restriction details';
+  END IF;
+
   PERFORM set_config('app.user_id', user_a::text, true);
   UPDATE user_data_exports
      SET status = 'processing', locked_at = now(), started_at = now(), attempt_count = 1

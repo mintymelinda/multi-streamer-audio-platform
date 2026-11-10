@@ -55,9 +55,15 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON user_data_exports TO platform_worker;
 
 -- The export worker reads only self-scoped account data and inserts one
 -- recipient-addressed completion notification. It never needs workspace data.
-GRANT SELECT ON platform_users, workspace_memberships, workspace_invitations,
-  user_notification_preferences, user_notification_email_settings
-  TO platform_worker;
+GRANT SELECT (id, twitch_user_id, status, created_at, updated_at)
+  ON platform_users TO platform_worker;
+GRANT SELECT (id, workspace_id, user_id, role, status, created_at, updated_at, revoked_at)
+  ON workspace_memberships TO platform_worker;
+GRANT SELECT (id, workspace_id, invited_twitch_user_id, assigned_role, status, created_at, expires_at, responded_at)
+  ON workspace_invitations TO platform_worker;
+GRANT SELECT ON user_notification_preferences TO platform_worker;
+GRANT SELECT (user_id, email_address, verified_at, email_enabled, category_preferences, priority_preferences, updated_at)
+  ON user_notification_email_settings TO platform_worker;
 GRANT SELECT, INSERT ON user_notifications TO platform_worker;
 
 CREATE POLICY user_notifications_account_export_worker_insert
