@@ -16,6 +16,7 @@ type Scene = {
 type SceneSecret = { sceneId: string; url: string };
 type SceneEditor = { sceneId: string; name: string; draftState: Record<string, unknown>; draftRevision: number; publishedAt: string | null; updatedAt: string; hasPublishedState: boolean };
 type SceneIssue = { scene: Scene; accessToken: string; overlayPath: string };
+type StarterSceneResult = { scene: Scene; accessToken: string | null; overlayPath: string; created: boolean };
 
 const API = "/api";
 const OVERLAY_BASE = process.env.NEXT_PUBLIC_OVERLAY_BASE_URL;
@@ -102,7 +103,7 @@ export default function ScenesPage() {
   useEffect(() => {
     if (!workspaceId || !canManage || starterRequests.current.has(workspaceId)) return;
     starterRequests.current.add(workspaceId);
-    request<SceneIssue & { accessToken: string | null; created: boolean }>(
+    request<StarterSceneResult>(
       `/workspaces/${workspaceId}/scenes/starter`,
       { method: "POST" },
     )
@@ -110,7 +111,7 @@ export default function ScenesPage() {
         if (result.created && result.accessToken) {
           setSecrets((current) => [
             ...current.filter((secret) => secret.sceneId !== result.scene.id),
-            { sceneId: result.scene.id, url: obsUrl(result.overlayPath, result.accessToken as string) },
+            { sceneId: result.scene.id, url: obsUrl(result.overlayPath, result.accessToken) },
           ]);
           setMessage("Your starter Now Playing scene is ready. Copy its OBS URL now; the access token is shown only once.");
         }
