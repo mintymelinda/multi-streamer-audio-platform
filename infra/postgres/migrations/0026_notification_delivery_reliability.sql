@@ -1,7 +1,6 @@
 -- Phase 4 item 42: notification deduplication, bounded grouping windows, and delivery status.
 ALTER TABLE user_notifications
-  ADD COLUMN group_window bigint,
-  ADD COLUMN dedupe_key text;
+  ADD COLUMN group_window bigint;
 
 UPDATE user_notifications
    SET group_window = CASE WHEN group_key IS NULL THEN NULL
@@ -9,14 +8,6 @@ UPDATE user_notifications
 
 ALTER TABLE user_notifications
   ALTER COLUMN group_window SET DEFAULT floor(extract(epoch FROM now()) / 300)::bigint;
-
-ALTER TABLE user_notifications
-  ADD CONSTRAINT user_notifications_dedupe_key_length
-  CHECK (dedupe_key IS NULL OR length(dedupe_key) BETWEEN 1 AND 200);
-
-CREATE UNIQUE INDEX user_notifications_recipient_dedupe
-  ON user_notifications (recipient_user_id, dedupe_key)
-  WHERE dedupe_key IS NOT NULL;
 
 CREATE INDEX user_notifications_recipient_group_window
   ON user_notifications (recipient_user_id, group_key, group_window DESC)
@@ -34,3 +25,62 @@ CREATE POLICY email_outbox_recipient_read
   USING (user_id = nullif(current_setting('app.user_id', true), '')::uuid);
 
 GRANT SELECT ON email_outbox TO platform_runtime;
+
+-- Keep idempotency metadata separate from notification content so workspace
+-- producers can claim keys without gaining access to recipient inbox contents.
+CREATE TABLE user_notification_deduplication (
+  recipient_user_id uuid NOT NULL REFERENCES platform_users(id) ON DELETE CASCADE,
+  workspace_id uuid REFERENCES workspaces(id) ON DELETE CASCADE,
+  dedupe_key text NOT NULL CHECK (length(dedupe_key) BETWEEN 1 AND 200),
+  notification_id uuid NOT NULL REFERENCES user_notifications(id) ON DELETE CASCADE
+    DEFERRABLE INITIALLY DEFERRED,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (recipient_user_id, dedupe_key)
+);
+
+ALTER TABLE user_notification_deduplication ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_notification_deduplication FORCE ROW LEVEL SECURITY;
+
+CREATE POLICY user_notification_deduplication_recipient_or_workspace_read
+  ON user_notification_deduplication FOR SELECT
+  USING (
+    recipient_user_id = nullif(current_setting('app.user_id', true), '')::uuid
+    OR (
+      workspace_id = nullif(current_setting('app.workspace_id', true), '')::uuid
+      AND EXISTS (
+        SELECT 1 FROM workspace_memberships actor_membership
+         WHERE actor_membership.workspace_id = user_notification_deduplication.workspace_id
+           AND actor_membership.user_id = nullif(current_setting('app.user_id', true), '')::uuid
+           AND actor_membership.status = 'active'
+      )
+      AND EXISTS (
+        SELECT 1 FROM workspace_memberships recipient_membership
+         WHERE recipient_membership.workspace_id = user_notification_deduplication.workspace_id
+           AND recipient_membership.user_id = user_notification_deduplication.recipient_user_id
+           AND recipient_membership.status = 'active'
+      )
+    )
+  );
+
+CREATE POLICY user_notification_deduplication_recipient_or_workspace_insert
+  ON user_notification_deduplication FOR INSERT
+  WITH CHECK (
+    recipient_user_id = nullif(current_setting('app.user_id', true), '')::uuid
+    OR (
+      workspace_id = nullif(current_setting('app.workspace_id', true), '')::uuid
+      AND EXISTS (
+        SELECT 1 FROM workspace_memberships actor_membership
+         WHERE actor_membership.workspace_id = user_notification_deduplication.workspace_id
+           AND actor_membership.user_id = nullif(current_setting('app.user_id', true), '')::uuid
+           AND actor_membership.status = 'active'
+      )
+      AND EXISTS (
+        SELECT 1 FROM workspace_memberships recipient_membership
+         WHERE recipient_membership.workspace_id = user_notification_deduplication.workspace_id
+           AND recipient_membership.user_id = user_notification_deduplication.recipient_user_id
+           AND recipient_membership.status = 'active'
+      )
+    )
+  );
+
+GRANT SELECT, INSERT ON user_notification_deduplication TO platform_runtime;

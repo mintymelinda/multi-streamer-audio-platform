@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { DatabaseService } from '../database/database.service.js';
 
@@ -315,23 +315,27 @@ export class NotificationsService {
       throw new BadRequestException('Notification deduplication key is invalid.');
     }
     const priority = input.priority ?? 'normal';
-    let notification = await client.query(
-      `INSERT INTO user_notifications
-        (recipient_user_id, workspace_id, category, priority, event_type, title, body, href, group_key, group_window, dedupe_key)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9,
-         CASE WHEN $9::text IS NULL THEN NULL ELSE floor(extract(epoch FROM now()) / 300)::bigint END, $10)
-       ON CONFLICT (recipient_user_id, dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING
-       RETURNING id`,
-      [input.recipientUserId, input.workspaceId ?? null, input.category, priority,
-        input.eventType, input.title, input.body ?? '', input.href ?? null, input.groupKey ?? null, input.dedupeKey ?? null],
-    );
-    if (!notification.rows[0]?.id && input.dedupeKey) {
-      notification = await client.query(
-        'SELECT id FROM user_notifications WHERE recipient_user_id = $1 AND dedupe_key = $2',
-        [input.recipientUserId, input.dedupeKey],
+    const notificationId = randomUUID();
+    if (input.dedupeKey) {
+      const claimed = await client.query(
+        `INSERT INTO user_notification_deduplication
+          (recipient_user_id, workspace_id, dedupe_key, notification_id)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (recipient_user_id, dedupe_key) DO NOTHING
+         RETURNING notification_id`,
+        [input.recipientUserId, input.workspaceId ?? null, input.dedupeKey, notificationId],
       );
-      return { ...notification, duplicate: true };
+      if (!claimed.rows[0]) return { rows: [], rowCount: 0, duplicate: true };
     }
+    const notification = await client.query(
+      `INSERT INTO user_notifications
+        (id, recipient_user_id, workspace_id, category, priority, event_type, title, body, href, group_key, group_window)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+         CASE WHEN $10::text IS NULL THEN NULL ELSE floor(extract(epoch FROM now()) / 300)::bigint END)
+       RETURNING id`,
+      [notificationId, input.recipientUserId, input.workspaceId ?? null, input.category, priority,
+        input.eventType, input.title, input.body ?? '', input.href ?? null, input.groupKey ?? null],
+    );
     if (notification.rows[0]?.id) {
       const email = await client.query<{ email_address: string; category_preferences: Record<string, boolean>; priority_preferences: Record<string, boolean> }>(
         `SELECT email_address, category_preferences, priority_preferences

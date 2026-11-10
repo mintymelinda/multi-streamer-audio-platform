@@ -94,20 +94,46 @@ test('rejects invalid verification tokens and email preference keys', async () =
 });
 
 
-test('uses a five-minute group window and recipient-scoped deduplication key', async () => {
-  const { service, calls } = harness();
-  await service.createWithinTransaction({ query: async (sql, values = []) => {
+test('uses a five-minute group window and claims recipient-scoped deduplication keys', async () => {
+  const calls = [];
+  const client = { query: async (sql, values = []) => {
     calls.push({ sql, values });
-    return { rows: [{ id: 'notification-1' }], rowCount: 1 };
-  } }, {
+    if (sql.includes('INSERT INTO user_notification_deduplication')) return { rows: [{ notification_id: 'notification-1' }], rowCount: 1 };
+    if (sql.includes('INSERT INTO user_notifications')) return { rows: [{ id: 'notification-1' }], rowCount: 1 };
+    return { rows: [] };
+  } };
+  const { service } = harness();
+  await service.createWithinTransaction(client, {
     recipientUserId: 'user-a', category: 'team', eventType: 'team.invited', title: 'Invitation',
     groupKey: 'team:invites', dedupeKey: 'invite:event-123',
   });
-  const insert = calls.find((call) => call.sql?.includes('INSERT INTO user_notifications'));
-  assert.ok(insert);
-  assert.match(insert.sql, /floor\(extract\(epoch FROM now\(\)\) \/ 300\)/);
-  assert.match(insert.sql, /ON CONFLICT \(recipient_user_id, dedupe_key\)/);
-  assert.equal(insert.values.at(-1), 'invite:event-123');
+  const claim = calls.find((call) => call.sql.includes('INSERT INTO user_notification_deduplication'));
+  const notification = calls.find((call) => call.sql.includes('INSERT INTO user_notifications'));
+  assert.ok(claim);
+  assert.match(claim.sql, /ON CONFLICT \\(recipient_user_id, dedupe_key\\) DO NOTHING/);
+  assert.equal(claim.values[0], 'user-a');
+  assert.equal(claim.values[1], null);
+  assert.equal(claim.values[2], 'invite:event-123');
+  assert.match(claim.values[3], /^[0-9a-f-]{36}$/i);
+  assert.ok(notification);
+  assert.match(notification.sql, /floor\\(extract\\(epoch FROM now\\(\\)\\) \\/ 300\\)/);
+});
+
+test('suppresses duplicate notification delivery before inserting inbox or email rows', async () => {
+  const calls = [];
+  const client = { query: async (sql, values = []) => {
+    calls.push({ sql, values });
+    if (sql.includes('INSERT INTO user_notification_deduplication')) return { rows: [], rowCount: 0 };
+    return { rows: [] };
+  } };
+  const { service } = harness();
+  const result = await service.createWithinTransaction(client, {
+    recipientUserId: 'user-a', category: 'team', eventType: 'team.invited', title: 'Invitation',
+    dedupeKey: 'invite:event-123',
+  });
+  assert.equal(result.duplicate, true);
+  assert.equal(calls.filter((call) => call.sql.includes('INSERT INTO user_notifications')).length, 0);
+  assert.equal(calls.filter((call) => call.sql.includes('INSERT INTO email_outbox')).length, 0);
 });
 
 test('returns delivery status with the recipient notification list', async () => {
