@@ -149,7 +149,7 @@ export default function HomePage() {
           <div className="connection-row"><div className="service-icon twitch">T</div><div className="connection-copy"><strong>Twitch channel</strong><small>{twitch?.externalAccountId ? `Account ${twitch.externalAccountId}` : "Broadcaster authorization"}</small></div><Status value={twitch?.status ?? "unknown"} label={twitch?.status?.replaceAll("_", " ") ?? "Not available"} /></div>
           <div className="connection-row"><div className="service-icon spotify">S</div><div className="connection-copy"><strong>Spotify Connect</strong><small>Personal playback authorization</small></div><Status value="not_reported" label="Status unavailable" /></div>
           <p className="panel-note">Only integrations with an implemented status endpoint are reported as connected. Spotify connection controls are available separately; this dashboard does not infer connection health.</p>
-          {twitch?.status !== "connected" && selected?.role === "owner" && <a className="secondary-button" href={`${API}/workspaces/${selectedId}/twitch/authorization`}>Review Twitch connection</a>}
+          {twitch?.status !== "connected" && selected?.role === "owner" && <p className="panel-note">Reconnect authorization is managed from the Twitch integration settings.</p>}
         </article>
         <article className="panel queue-panel">
           <div className="panel-heading"><div><p className="eyebrow">REQUESTS</p><h2>Coming up</h2></div><span className="count-pill">{queued.length}</span></div>
@@ -171,7 +171,7 @@ function CreateWorkspace({ onCreated }: { onCreated: () => void }) {
     try {
       const response = await fetch(`${API}/workspaces`, {
         method: "POST", credentials: "include",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-csrf-token": document.cookie.split("; ").find((part) => part.startsWith("platform_csrf="))?.split("=")[1] ?? "" },
         body: JSON.stringify({ name }),
       });
       if (!response.ok) throw new Error("Workspace creation failed. Please try again.");
