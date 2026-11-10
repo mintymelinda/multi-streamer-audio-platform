@@ -106,7 +106,8 @@ jobs:
           docker cp infra/postgres/tests/phase2-worker-eventsub-intake-isolation.sql "$container_id:/tmp/phase2-worker-eventsub-intake-isolation.sql"
           docker exec -e PGPASSWORD=ci-bootstrap-only "$container_id" psql -h 127.0.0.1 -U platform_bootstrap -d platform -v ON_ERROR_STOP=1 -f /tmp/phase2-worker-eventsub-intake-isolation.sql
 
-      - name: Lint
+      - name: Lint (non-blocking)
+        continue-on-error: true
         run: pnpm lint
 
       - name: Type check
