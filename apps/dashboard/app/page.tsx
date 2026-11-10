@@ -72,14 +72,17 @@ export default function HomePage() {
       if (!activeId) {
         setSnapshot(null);
         setTwitch(null);
+        setOnboarding(null);
         return;
       }
-      const [data, twitchStatus] = await Promise.all([
+      const [data, twitchStatus, setup] = await Promise.all([
         api<Snapshot>(`/workspaces/${activeId}/realtime/snapshot`),
         api<TwitchStatus>(`/workspaces/${activeId}/twitch/authorization`).catch(() => null),
+        api<Onboarding>(`/workspaces/${activeId}/onboarding`).catch(() => null),
       ]);
       setSnapshot(data);
       setTwitch(twitchStatus);
+      setOnboarding(setup);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The dashboard could not be loaded.");
       setAccount(false);
@@ -139,6 +142,32 @@ export default function HomePage() {
         <div className="workspace-meta"><Status value={selected?.status ?? "unknown"} /> <span>{selected?.role}</span></div>
       </section>
       {error && <div className="error-banner">{error}</div>}
+      {selected && ["owner", "admin"].includes(selected.role) && onboarding && !onboarding.completed && (
+        <section className="onboarding-panel">
+          <div className="onboarding-head">
+            <div><p className="eyebrow">GETTING STARTED</p><h2>Finish setting up your workspace</h2><p>Essentials are in place. Work through these steps now or skip them and come back whenever you’re ready.</p></div>
+            <span className="onboarding-progress">{onboarding.progress.completed + onboarding.progress.skipped}/{onboarding.progress.total}</span>
+          </div>
+          {onboarding.dismissed ? (
+            <button className="secondary-button" onClick={() => void updateOnboarding(selectedId, { dismissed: false }).then(setOnboarding).catch((cause) => setError(cause instanceof Error ? cause.message : "Could not resume setup."))}>Resume setup</button>
+          ) : (
+            <>
+              <div className="onboarding-steps">{onboarding.steps.map((step, index) => (
+                <div className="onboarding-step" key={step.key}>
+                  <span className="onboarding-index">{String(index + 1).padStart(2, "0")}</span>
+                  <div className="onboarding-copy"><strong>{step.title}</strong><small>{step.description}</small></div>
+                  <Status value={step.status} label={step.status === "pending" ? "Not started" : step.status} />
+                  <div className="onboarding-actions">
+                    {step.status !== "completed" && <button onClick={() => void updateOnboarding(selectedId, { step: step.key, status: "completed" }).then(setOnboarding).catch((cause) => setError(cause instanceof Error ? cause.message : "Could not save setup progress."))}>Done</button>}
+                    {step.status !== "skipped" && <button className="text-button" onClick={() => void updateOnboarding(selectedId, { step: step.key, status: "skipped" }).then(setOnboarding).catch((cause) => setError(cause instanceof Error ? cause.message : "Could not save setup progress."))}>Skip</button>}
+                  </div>
+                </div>
+              ))}</div>
+              <button className="text-button dismiss-setup" onClick={() => void updateOnboarding(selectedId, { dismissed: true }).then(setOnboarding).catch((cause) => setError(cause instanceof Error ? cause.message : "Could not hide setup."))}>Hide checklist for now</button>
+            </>
+          )}
+        </section>
+      )}
       {warnings.length > 0 && <section className="warnings"><div className="warning-heading"><span>!</span><strong>Needs attention</strong><span>{warnings.length}</span></div>{warnings.map((warning) => <p key={warning}>{warning}</p>)}</section>}
       <section className="metric-grid">
         <article className="metric-card"><span className="metric-label">PLAYING NOW</span><strong>{playing.length ? playing[0]?.title : "Nothing playing"}</strong><small>{playing[0]?.artist || (playing.length ? "Current request" : "No active playback reported")}</small><Status value={playing.length ? "playing" : "idle"} label={playing.length ? "Playing" : "Idle"} /></article>
@@ -163,7 +192,15 @@ export default function HomePage() {
   );
 }
 
-async function updateOnboarding(workspaceId: string, body: { step?: string; status?: string; dismissed?: boolean }): Promise<Onboarding> {\n  const headers = { "Content-Type": "application/json", "x-csrf-token": document.cookie.split("; ").find((part) => part.startsWith("platform_csrf="))?.split("=")[1] ?? "" };\n  const path = body.step ? `/workspaces/${workspaceId}/onboarding/steps/${body.step}` : `/workspaces/${workspaceId}/onboarding`;\n  const response = await fetch(`${API}${path}`, { method: "PATCH", credentials: "include", headers, body: JSON.stringify(body) });\n  if (!response.ok) throw new Error("Could not save onboarding progress.");\n  return response.json() as Promise<Onboarding>;\n}\n\nfunction CreateWorkspace({ onCreated }: { onCreated: () => void }) {
+async function updateOnboarding(workspaceId: string, body: { step?: string; status?: string; dismissed?: boolean }): Promise<Onboarding> {\n  const headers = { "Content-Type": "application/json", "x-csrf-token": document.cookie.split("; ").find((part) => part.startsWith("platform_csrf="))?.split("=")[1] ?? "" };\n  const path = body.step ? `/workspaces/${workspaceId}/onboarding/steps/${body.step}` : `/workspaces/${workspaceId}/onboarding`;\n  const response = await fetch(`${API}${path}`, { method: "PATCH", credentials: "include", headers, body: JSON.stringify(body) });\n  if (!response.ok) throw new Error("Could not save onboarding progress.");\n  return response.json() as Promise<Onboarding>;\n}\n\nasync function updateOnboarding(workspaceId: string, body: { step?: string; status?: string; dismissed?: boolean }): Promise<Onboarding> {
+  const csrf = document.cookie.split("; ").find((part) => part.startsWith("platform_csrf="))?.split("=")[1] ?? "";
+  const path = body.step ? `/workspaces/${workspaceId}/onboarding/steps/${body.step}` : `/workspaces/${workspaceId}/onboarding`;
+  const response = await fetch(`${API}${path}`, { method: "PATCH", credentials: "include", headers: { "Content-Type": "application/json", "x-csrf-token": csrf }, body: JSON.stringify(body) });
+  if (!response.ok) throw new Error("Could not save onboarding progress.");
+  return response.json() as Promise<Onboarding>;
+}
+
+function CreateWorkspace({ onCreated }: { onCreated: () => void }) {
   const [name, setName] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
