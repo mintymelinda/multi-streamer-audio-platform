@@ -2,10 +2,11 @@ import {
   BadRequestException,
   ConflictException,
   GoneException,
+  HttpException,
+  HttpStatus,
   Inject,
   Injectable,
   NotFoundException,
-  TooManyRequestsException,
 } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service.js';
 
@@ -34,7 +35,7 @@ export class AccountExportsService {
         [userId],
       );
       if (recent.rows[0]) {
-        throw new TooManyRequestsException('You can request one account export every 24 hours.');
+        throw new HttpException('You can request one account export every 24 hours.', HttpStatus.TOO_MANY_REQUESTS);
       }
 
       const created = await client.query(
