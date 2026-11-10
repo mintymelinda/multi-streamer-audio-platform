@@ -24,7 +24,7 @@ type TwitchStatus = {
   lastValidatedAt: string | null;
 };
 
-const API = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000").replace(/\/$/, "");
+const API = "/api";
 
 async function api<T>(path: string): Promise<T> {
   const response = await fetch(`${API}${path}`, { credentials: "include", cache: "no-store" });
@@ -133,7 +133,7 @@ export default function HomePage() {
         </div>
       </header>
       <section className="welcome">
-        <div><p className="eyebrow">OVERVIEW</p><h1>{selected?.name ?? "Your workspace"}</h1><p className="subheading">A live view of your channel audio and request activity.</p></div>
+        <div><p className="eyebrow">OVERVIEW</p><h1>{selected?.name ?? "Your workspace"}</h1><p className="subheading">A current view of your channel audio and request activity.</p></div>
         <div className="workspace-meta"><Status value={selected?.status ?? "unknown"} /> <span>{selected?.role}</span></div>
       </section>
       {error && <div className="error-banner">{error}</div>}
