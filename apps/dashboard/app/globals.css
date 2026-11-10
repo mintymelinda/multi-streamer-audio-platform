@@ -99,3 +99,23 @@ h1 { margin: 7px 0 8px; font-size: clamp(28px, 4vw, 38px); letter-spacing: -.055
 .invitation-card .eyebrow { margin: 0; }
 .invitation-actions { display: flex; gap: 9px; }
 @media (max-width: 760px) { .page-nav { gap: 10px; flex-wrap: wrap; justify-content: flex-end; }.invitation-card { align-items: flex-start; flex-direction: column; }.audit-row { align-items: flex-start; flex-direction: column; }.audit-row time { white-space: normal; } }
+
+.notification-filters { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; padding: 0 0 17px; }
+.notification-filters label { display: grid; gap: 6px; min-width: 145px; color: #a4a7b4; font-size: 10px; }
+.notification-filters select { padding: 9px 10px; border: 1px solid #393d4b; border-radius: 8px; color: #f3f4f6; background: #10131b; }
+.notification-filters .notification-unread { display: flex; align-items: center; gap: 8px; min-width: auto; padding: 10px 0; }
+.notification-list { display: grid; }
+.notification-row { display: flex; align-items: flex-start; gap: 13px; padding: 16px 4px; border-top: 1px solid #2a2e39; }
+.notification-mark { width: 16px; padding-top: 2px; color: #8e72ed; font-size: 12px; }
+.notification-content { flex: 1; min-width: 0; display: grid; gap: 6px; }
+.notification-content strong { color: #e5e5eb; font-size: 13px; }
+.notification-content p { margin: 0; color: #a4a7b4; font-size: 12px; line-height: 1.5; }
+.notification-content small { color: #858a99; font-size: 10px; }
+.notification-content > a { width: fit-content; color: #c7b7ff; font-size: 11px; text-decoration: none; }
+.notification-meta { display: flex; flex-wrap: wrap; gap: 8px; color: #9296a5; font-size: 9px; text-transform: uppercase; letter-spacing: .08em; }
+.notification-meta span { padding: 4px 6px; border-radius: 5px; background: #252735; }
+.notification-meta .priority-high, .notification-meta .priority-critical { color: #ffb1b8; background: #3a222b; }
+.notification-meta .priority-low { color: #a6b0c5; }
+.notification-row.is-read .notification-mark { color: #535968; }
+.notification-row.is-read .notification-content strong { color: #a7a9b2; }
+@media (max-width: 760px) { .notification-row { flex-wrap: wrap; }.notification-row > .text-button { margin-left: 29px; }.notification-filters label { flex: 1 1 42%; } }
