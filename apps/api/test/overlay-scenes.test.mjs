@@ -55,7 +55,7 @@ function harness() {
 
 test('creates a scene with a high-entropy token and persists only its SHA-256 hash', async () => {
   const { service, calls } = harness();
-  const result = await service.create('workspace-a', 'user-a', { name: '  Now Playing  ' });
+  const result = await service.create('workspace-a', 'user-a', '  Now Playing  ');
   const insert = calls.find((call) => call.sql?.includes('INSERT INTO overlay_scenes'));
   assert.equal(insert.values[2], 'Now Playing');
   assert.equal(insert.values[3], sha256(result.accessToken));
@@ -108,7 +108,7 @@ test('revokes a scene token without deleting the scene', async () => {
 
 test('rejects blank and oversized scene names before accessing the database', async () => {
   const { service, calls } = harness();
-  await assert.rejects(service.create('workspace-a', 'user-a', { name: '   ' }), /between 1 and 80/);
-  await assert.rejects(service.create('workspace-a', 'user-a', { name: 'x'.repeat(81) }), /between 1 and 80/);
+  await assert.rejects(service.create('workspace-a', 'user-a', '   '), /between 1 and 80/);
+  await assert.rejects(service.create('workspace-a', 'user-a', 'x'.repeat(81)), /between 1 and 80/);
   assert.equal(calls.length, 0);
 });
