@@ -13,7 +13,7 @@ function createService(initial = {
     transaction: async (_context, operation) => operation({
       query: async (sql, values = []) => {
         if (sql.includes('SELECT checklist')) return { rows: [structuredClone(state)], rowCount: 1 };
-        if (sql.includes('UPDATE workspace_onboarding SET checklist')) {
+        if (/UPDATE workspace_onboarding\s+SET checklist/.test(sql)) {
           state.checklist[values[1]] = values[2];
           state.dismissed_at = null;
           state.completed_at = Object.values(state.checklist).every((value) => ['completed', 'skipped'].includes(value)) ? new Date() : null;
