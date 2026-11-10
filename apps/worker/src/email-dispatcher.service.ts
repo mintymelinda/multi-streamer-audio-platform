@@ -70,7 +70,7 @@ export class EmailDispatcherService implements OnModuleInit, OnModuleDestroy {
         throw error;
       } finally { client.release(); }
       for (const row of rows) await this.deliver(row);
-      await this.pool.query(\`DELETE FROM email_outbox WHERE status IN ('sent', 'failed') AND created_at < now() - interval '30 days'\`);
+      await this.pool.query(`DELETE FROM email_outbox WHERE status IN ('sent', 'failed') AND created_at < now() - interval '30 days'`);
     } finally { this.running = false; }
   }
   private async deliver(row: EmailRow): Promise<void> {

@@ -125,7 +125,9 @@ export class NotificationsService {
     const row = result.rows[0];
     if (!row) return { emailAddress: null, verified: false, emailEnabled: false, categoryPreferences: {}, priorityPreferences: {} };
     const address = row.email_address ? String(row.email_address) : null;
-    const [local, domain] = address?.split('@') ?? ['', ''];
+    const parts = address?.split('@') ?? [];
+    const local = parts[0] ?? '';
+    const domain = parts[1] ?? '';
     const masked = address ? (local.length < 3 ? `${local[0] ?? '*'}***@${domain}` : `${local.slice(0, 2)}***@${domain}`) : null;
     return { emailAddress: masked, verified: Boolean(row.verified_at), emailEnabled: row.email_enabled,
       categoryPreferences: row.category_preferences, priorityPreferences: row.priority_preferences };
