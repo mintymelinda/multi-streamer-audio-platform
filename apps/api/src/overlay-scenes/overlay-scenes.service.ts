@@ -97,6 +97,7 @@ export class OverlayScenesService {
            VALUES ($1, $2, 'overlay.scene.access_token_rotated', 'overlay_scene', $3, '{}'::jsonb)`,
           [workspaceId, userId, sceneId],
         );
+        await client.query("SELECT pg_notify('overlay_scene_access_changed', $1)", [sceneId]);
         return row;
       },
     );
@@ -124,6 +125,7 @@ export class OverlayScenesService {
            VALUES ($1, $2, 'overlay.scene.access_token_revoked', 'overlay_scene', $3, '{}'::jsonb)`,
           [workspaceId, userId, sceneId],
         );
+        await client.query("SELECT pg_notify('overlay_scene_access_changed', $1)", [sceneId]);
         return { sceneId: row.id, hasActiveAccess: false, tokenRevokedAt: row.token_revoked_at };
       },
     );
