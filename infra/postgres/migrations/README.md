@@ -32,5 +32,7 @@ Start the local services with `pnpm dev:infra`, then apply the role bootstrap an
 - `0018_provider_execution_queues.sql` establishes tenant-scoped provider execution state and due-work indexes while preserving PostgreSQL request lifecycle and logical queue ordering as separate authorities.
 - `0019_provider_recovery_policies.sql` establishes owner/admin-configurable retry/failover policy and tenant-scoped manual recovery audit records with forced RLS.
 - `0021_rights_compliance.sql` establishes versioned rights attestations, rights-holder report intake/review history, content blocks, provider-path restrictions, and forced tenant RLS.
+- `0022_workspace_onboarding.sql` establishes durable, resumable workspace onboarding progress with workspace-scoped RLS.
+- `0023_user_notifications.sql` establishes recipient-scoped, cross-workspace notifications with read state, grouping support, and recipient-only RLS that preserves addressed history after workspace access is revoked.
 
 New tenant-owned tables must follow the same pattern. Never put plaintext provider credentials in integration rows, audit details, outbox payloads, logs, or job messages.

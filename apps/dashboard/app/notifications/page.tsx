@@ -1,0 +1,108 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+
+type Workspace = { id: string; name: string };
+type Notification = {
+  id: string; workspace_id: string | null; category: string; priority: string; event_type: string;
+  title: string; body: string; href: string | null; group_key: string | null;
+  notification_count: number; unread_count: number; is_read: boolean; created_at: string;
+};
+const API = "/api";
+function csrf() { return document.cookie.split("; ").find((part) => part.startsWith("platform_csrf="))?.split("=")[1] ?? ""; }
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers = new Headers(init?.headers);
+  if (init?.method) headers.set("x-csrf-token", csrf());
+  const response = await fetch(`${API}${path}`, { ...init, headers, credentials: "include", cache: "no-store" });
+  if (!response.ok) throw new Error(response.status === 401 ? "Sign in to view notifications." : `Request failed (${response.status}).`);
+  return response.status === 204 ? undefined as T : response.json() as Promise<T>;
+}
+function queryString(filters: { category: string; priority: string; workspaceId: string; unread: boolean }) {
+  const query = new URLSearchParams();
+  if (filters.category) query.set("category", filters.category);
+  if (filters.priority) query.set("priority", filters.priority);
+  if (filters.workspaceId) query.set("workspaceId", filters.workspaceId);
+  if (filters.unread) query.set("unread", "true");
+  return query.toString();
+}
+function displayCategory(value: string) { return value.replaceAll("_", " "); }
+
+export default function NotificationsPage() {
+  const [items, setItems] = useState<Notification[]>([]);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [category, setCategory] = useState("");
+  const [priority, setPriority] = useState("");
+  const [workspaceId, setWorkspaceId] = useState("");
+  const [unread, setUnread] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    setError("");
+    try {
+      const qs = queryString({ category, priority, workspaceId, unread });
+      const [notifications, count] = await Promise.all([
+        request<Notification[]>(`/me/notifications${qs ? `?${qs}` : ""}`),
+        request<{ unreadCount: number }>("/me/notifications/unread-count"),
+      ]);
+      setItems(notifications);
+      setUnreadCount(count.unreadCount);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not load notifications."); }
+  }, [category, priority, workspaceId, unread]);
+
+  useEffect(() => {
+    request<Workspace[]>("/workspaces").then(setWorkspaces).catch(() => setWorkspaces([]));
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+
+  async function markRead(item: Notification) {
+    setBusy(true);
+    try {
+      if (item.group_key && item.notification_count > 1) {
+        await request("/me/notifications/groups/read", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ groupKey: item.group_key }) });
+      } else {
+        await request(`/me/notifications/${item.id}/read`, { method: "PATCH" });
+      }
+      await load();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not mark notification read."); }
+    finally { setBusy(false); }
+  }
+
+  async function markAllRead() {
+    setBusy(true);
+    try {
+      const query = new URLSearchParams();
+      if (category) query.set("category", category);
+      if (priority) query.set("priority", priority);
+      if (workspaceId) query.set("workspaceId", workspaceId);
+      await request(`/me/notifications/read-all${query.size ? `?${query}` : ""}`, { method: "PATCH" });
+      await load();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not mark notifications read."); }
+    finally { setBusy(false); }
+  }
+
+  return <main className="shell">
+    <header className="topbar"><a className="brand" href="/">♫ Streamer Audio</a><nav className="page-nav"><a href="/">Dashboard</a><a href="/team">Team</a><a href="/invitations">Invitations</a></nav></header>
+    <section className="welcome"><div><p className="eyebrow">YOUR ACCOUNT</p><h1>Notifications</h1><p className="subheading">Updates addressed to you across your workspaces and the platform.</p></div><span className="count-pill">{unreadCount} unread</span></section>
+    {error && <div className="error-banner">{error}</div>}
+    <section className="panel team-panel">
+      <div className="panel-heading"><div><p className="eyebrow">INBOX</p><h2>Notification history</h2></div><button className="secondary-button" onClick={() => void markAllRead()} disabled={busy || unreadCount === 0}>Mark all read</button></div>
+      <div className="notification-filters">
+        <label>Category<select value={category} onChange={(event) => setCategory(event.target.value)}><option value="">All categories</option>{["account","platform","security","team","provider","playback","queue","system"].map((value) => <option key={value} value={value}>{displayCategory(value)}</option>)}</select></label>
+        <label>Priority<select value={priority} onChange={(event) => setPriority(event.target.value)}><option value="">All priorities</option>{["low","normal","high","critical"].map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
+        <label>Workspace<select value={workspaceId} onChange={(event) => setWorkspaceId(event.target.value)}><option value="">All workspaces</option>{workspaces.map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}</select></label>
+        <label className="notification-unread"><input type="checkbox" checked={unread} onChange={(event) => setUnread(event.target.checked)} /> Unread only</label>
+      </div>
+      {items.length ? <div className="notification-list">{items.map((item) => <article className={`notification-row ${item.is_read ? "is-read" : "is-unread"}`} key={item.id}>
+        <div className="notification-mark">{item.is_read ? "·" : "●"}</div>
+        <div className="notification-content"><div className="notification-meta"><span>{displayCategory(item.category)}</span><span className={`priority-${item.priority}`}>{item.priority}</span>{item.notification_count > 1 && <span>{item.notification_count} related events</span>}</div>
+          <strong>{item.title}</strong>{item.body && <p>{item.body}</p>}<small>{item.workspace_id ? "Workspace notification" : "Account / platform"} · {new Date(item.created_at).toLocaleString()}</small>
+          {item.href && <a href={item.href}>View details</a>}
+        </div>
+        {!item.is_read && <button className="text-button" disabled={busy} onClick={() => void markRead(item)}>Mark read</button>}
+      </article>)}</div> : <div className="quiet-empty"><span>♫</span><p>No notifications match these filters.</p><small>New updates addressed to you will appear here.</small></div>}
+    </section>
+    <footer className="footer"><span>Personal notification inbox</span><a href="/">Back to dashboard</a></footer>
+  </main>;
+}
