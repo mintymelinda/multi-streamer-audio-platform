@@ -103,7 +103,7 @@ export default function NotificationsPage() {
   }
 
   return <main className="shell">
-    <header className="topbar"><a className="brand" href="/">♫ Streamer Audio</a><nav className="page-nav"><a href="/">Dashboard</a><a href="/team">Team</a><a href="/invitations">Invitations</a></nav></header>
+    <header className="topbar"><a className="brand" href="/">♫ Streamer Audio</a><nav className="page-nav"><a href="/">Dashboard</a><a href="/team">Team</a><a href="/invitations">Invitations</a><a href="/account/data-exports">Account data</a></nav></header>
     <section className="welcome"><div><p className="eyebrow">YOUR ACCOUNT</p><h1>Notifications</h1><p className="subheading">Updates addressed to you across your workspaces and the platform.</p></div><span className="count-pill">{unreadCount} unread</span></section>
     {error && <div className="error-banner">{error}</div>}
     <section className="panel team-panel">

@@ -38,6 +38,7 @@ Start the local services with `pnpm dev:infra`, then apply the role bootstrap an
 - `0025_optional_email_notifications.sql` establishes separately verified email addresses, per-category/priority opt-in settings, and a restricted durable email outbox for verification and notification delivery.
 - `0026_notification_delivery_reliability.sql` adds recipient-scoped deduplication claims, five-minute grouping windows, linked email delivery status, and recipient/workspace-scoped access to idempotency metadata.
 - `0026_notification_delivery_reliability.sql` adds recipient-scoped notification deduplication, five-minute grouping windows, linked email delivery status, and recipient-only status visibility.
+- `0027_account_data_exports.sql` adds queued personal account exports, RLS-protected export payloads, worker-only generation, authenticated downloads, and seven-day expiry.
 
 New tenant-owned tables must follow the same pattern. Never put plaintext provider credentials in integration rows, audit details, outbox payloads, logs, or job messages.
 
@@ -45,3 +46,7 @@ New tenant-owned tables must follow the same pattern. Never put plaintext provid
 ## Optional email delivery
 
 The optional notification email dispatcher uses the Resend email API. Configure the worker with `RESEND_API_KEY_FILE` pointing to a protected file containing the API key and `EMAIL_FROM` set to a verified sender identity. Email delivery remains disabled until both are present. This provider credential is independent of Twitch OAuth; the platform never requests Twitch email scope. Verification messages and opted-in notification messages are written to a restricted PostgreSQL outbox and retried with bounded exponential backoff (up to ten attempts). Notification emails link to their inbox record so the recipient can see pending, sent, or failed delivery status and attempt count. Outbox payloads are redacted after success or retry exhaustion, and terminal records are pruned after 30 days. Repeated notification producers can supply a recipient-scoped deduplication key; related events are grouped into aligned five-minute windows.
+
+## Personal account data exports
+
+Account exports are generated asynchronously by the worker and stored as JSON in PostgreSQL. The export contains only the signed-in user's account identity, own workspace membership records, invitations addressed to that Twitch identity, personal notification history, and notification preferences. Workspace-owned content is reserved for the separate workspace export workflow. Session records, OAuth state, provider credentials, token hashes, email outbox contents, and other users' personal information are never included. Export status and payload access are protected by recipient RLS; downloads require the same authenticated account, are served with private no-store headers, and expire after seven days. The API limits requests to one per account per 24 hours, reuses active jobs, and the worker retries transient generation failures up to three attempts. Expired payloads are purged and terminal history is retained for 30 days.
