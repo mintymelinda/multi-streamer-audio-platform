@@ -51,7 +51,7 @@ export class TeamService {
       { userId, verifiedWorkspaceId: workspaceId },
       (client) =>
         client.query<InvitationRecord>(
-          "SELECT id, workspace_id, assigned_role, status, created_at, expires_at FROM workspace_invitations WHERE workspace_id = $1 AND status = 'pending' ORDER BY created_at DESC",
+          "SELECT id, workspace_id, invited_twitch_user_id, assigned_role, status, created_at, expires_at FROM workspace_invitations WHERE workspace_id = $1 AND status = 'pending' ORDER BY created_at DESC",
           [workspaceId],
         ),
     );

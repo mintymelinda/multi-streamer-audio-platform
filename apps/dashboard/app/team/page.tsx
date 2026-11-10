@@ -4,13 +4,13 @@ import { useEffect, useState } from "react";
 
 type Workspace = { id: string; name: string; role: "owner" | "admin" | "moderator" | "viewer" };
 type Member = { user_id: string; twitch_user_id: string; role: string; status: string; created_at: string };
-type Invitation = { id: string; assigned_role: string; created_at: string; expires_at: string };
+type Invitation = { id: string; invited_twitch_user_id: string; assigned_role: string; created_at: string; expires_at: string };
 type AuditEvent = { id: string; event_type: string; target_type: string | null; target_id: string | null; details: Record<string, unknown>; created_at: string; actor_twitch_user_id: string | null };
 
 const API = "/api";
 function csrf() { return document.cookie.split("; ").find((part) => part.startsWith("platform_csrf="))?.split("=")[1] ?? ""; }
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API}${path}`, { ...init, credentials: "include", cache: "no-store", headers: { ...(init?.headers ?? {}), ...(init?.method ? { "x-csrf-token": csrf() } : {}) } });
+  const headers = new Headers(init?.headers);\n  if (init?.method) headers.set("x-csrf-token", csrf());\n  const response = await fetch(`${API}${path}`, { ...init, credentials: "include", cache: "no-store", headers });
   if (!response.ok) throw new Error(response.status === 403 ? "You do not have permission to manage this workspace." : `Request failed (${response.status}).`);
   return response.status === 204 ? (undefined as T) : response.json() as Promise<T>;
 }
@@ -87,7 +87,7 @@ export default function TeamPage() {
       <div className="panel-heading"><div><p className="eyebrow">ACCESS CONTROL</p><h2>Active members</h2></div><span className="count-pill">{members.length}</span></div>
       <div className="team-table"><div className="team-row team-row-head"><span>TWITCH ACCOUNT</span><span>ROLE</span><span>ADDED</span><span>ACTIONS</span></div>
         {members.map((member) => <div className="team-row" key={member.user_id}><strong>{member.role === "owner" ? "Workspace owner" : `Twitch user ${member.twitch_user_id}`}</strong>
-          {member.role === "owner" ? <span className="role-label">Owner</span> : <select aria-label={`Role for ${member.twitch_user_id}`} disabled={busy} value={member.role} onChange={(event) => void mutate(`/workspaces/${workspaceId}/members/${member.user_id}`, "PATCH", { role: event.target.value })}><option value="admin">Admin</option><option value="moderator">Moderator</option><option value="viewer">Viewer</option></select>}
+          {member.role === "owner" ? <span className="role-label">Owner</span> : <select aria-label={`Role for ${member.twitch_user_id}`} disabled={busy} value={member.role} onChange={(event) => void mutate(`/workspaces/${workspaceId}/members/${member.user_id}`, "PATCH", { role: event.target.value })}>{selected?.role === "owner" && <option value="admin">Admin</option>}<option value="moderator">Moderator</option><option value="viewer">Viewer</option></select>}
           <span>{new Date(member.created_at).toLocaleDateString()}</span>
           {member.role === "owner" ? <span className="role-label">Protected</span> : <button className="text-button danger-text" disabled={busy} onClick={() => { if (window.confirm("Revoke this member’s workspace access?")) void mutate(`/workspaces/${workspaceId}/members/${member.user_id}`, "DELETE"); }}>Revoke</button>}
         </div>)}
@@ -96,7 +96,7 @@ export default function TeamPage() {
     </section>
     <section className="panel team-panel">
       <div className="panel-heading"><div><p className="eyebrow">PENDING ACCESS</p><h2>Invitations</h2></div><span className="count-pill">{invitations.length}</span></div>
-      {invitations.map((item) => <div className="connection-row" key={item.id}><div className="connection-copy"><strong>{item.assigned_role} invitation</strong><small>Expires {new Date(item.expires_at).toLocaleString()}</small></div><button className="text-button" disabled={busy} onClick={() => void mutate(`/workspaces/${workspaceId}/invitations/${item.id}/resend`, "POST")}>Resend</button><button className="text-button danger-text" disabled={busy} onClick={() => void mutate(`/workspaces/${workspaceId}/invitations/${item.id}`, "DELETE")}>Cancel</button></div>)}
+      {invitations.map((item) => <div className="connection-row" key={item.id}><div className="connection-copy"><strong>{item.assigned_role} invitation · Twitch ID {item.invited_twitch_user_id}</strong><small>Expires {new Date(item.expires_at).toLocaleString()}</small></div><button className="text-button" disabled={busy} onClick={() => void mutate(`/workspaces/${workspaceId}/invitations/${item.id}/resend`, "POST")}>Resend</button><button className="text-button danger-text" disabled={busy} onClick={() => void mutate(`/workspaces/${workspaceId}/invitations/${item.id}`, "DELETE")}>Cancel</button></div>)}
       {!invitations.length && <p className="panel-note">No pending invitations.</p>}
     </section>
     <section className="panel team-panel">
