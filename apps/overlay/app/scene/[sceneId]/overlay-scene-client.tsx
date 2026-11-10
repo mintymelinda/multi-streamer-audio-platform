@@ -51,6 +51,7 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
     let socket: WebSocket | null = null;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
     let retryDelay = 1_000;
+    let rejected = false;
 
     const connect = () => {
       if (stopped) return;
@@ -79,12 +80,13 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
             // Ignore malformed realtime packets; the next reconnect fetches a fresh snapshot.
           }
         } else if (packet.startsWith('44/overlay')) {
+          rejected = true;
           setStatus('unauthorized');
           socket?.close();
         }
       });
       socket.addEventListener('close', () => {
-        if (stopped) return;
+        if (stopped || rejected) return;
         setStatus((current) => current === 'unauthorized' ? current : 'connecting');
         retryTimer = setTimeout(connect, retryDelay);
         retryDelay = Math.min(retryDelay * 2, 30_000);
