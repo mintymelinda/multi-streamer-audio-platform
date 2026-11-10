@@ -97,4 +97,4 @@ CREATE POLICY email_outbox_user_insert
 CREATE POLICY email_outbox_worker_access
   ON email_outbox FOR ALL TO platform_worker USING (true) WITH CHECK (true);
 GRANT INSERT ON email_outbox TO platform_runtime;
-GRANT SELECT, UPDATE ON email_outbox TO platform_worker;
+GRANT SELECT, INSERT, UPDATE, DELETE ON email_outbox TO platform_worker;

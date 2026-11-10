@@ -34,8 +34,25 @@ BEGIN
   PERFORM set_config('app.user_id', user_b::text, true);
   INSERT INTO user_notification_email_settings (user_id, email_address)
   VALUES (user_b, 'moderator@example.test');
+  INSERT INTO user_notification_preferences (user_id, category_preferences)
+  VALUES (user_b, '{"team": true}'::jsonb);
+  UPDATE user_notification_email_settings SET verified_at = now(), email_enabled = true,
+    category_preferences = '{"team": true}'::jsonb, priority_preferences = '{"normal": true}'::jsonb
+   WHERE user_id = user_b;
   INSERT INTO email_outbox (user_id, recipient_email, subject, text_body, html_body, unique_key)
   VALUES (user_b, 'moderator@example.test', 'Test', 'Test body', '<p>Test</p>', 'isolation-test:' || user_b::text);
+
+  -- Workspace-scoped producers may read only active recipients' delivery preferences and enqueue for them.
+  PERFORM set_config('app.user_id', user_a::text, true);
+  PERFORM set_config('app.workspace_id', workspace_a::text, true);
+  IF (SELECT email_enabled FROM user_notification_email_settings WHERE user_id = user_b) IS NOT TRUE THEN
+    RAISE EXCEPTION 'workspace notification producer could not read active recipient email preference';
+  END IF;
+  IF (SELECT category_preferences ->> 'team' FROM user_notification_preferences WHERE user_id = user_b) <> 'true' THEN
+    RAISE EXCEPTION 'workspace notification producer could not read active recipient notification preference';
+  END IF;
+  INSERT INTO email_outbox (user_id, workspace_id, recipient_email, subject, text_body, html_body, unique_key)
+  VALUES (user_b, workspace_a, 'moderator@example.test', 'Workspace notice', 'Body', '<p>Body</p>', 'workspace-notice:' || user_b::text);
   PERFORM set_config('app.user_id', user_c::text, true);
   IF (SELECT count(*) FROM user_notification_email_settings WHERE user_id = user_b) <> 0 THEN
     RAISE EXCEPTION 'email settings leaked to another account';
