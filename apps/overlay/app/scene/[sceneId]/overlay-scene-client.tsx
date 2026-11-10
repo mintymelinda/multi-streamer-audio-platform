@@ -56,7 +56,7 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
       if (stopped) return;
       const base = new URL(API_BASE || '/', window.location.href);
       base.protocol = base.protocol === 'https:' ? 'wss:' : 'ws:';
-      const socketUrl = new URL('/socket.io/?EIO=4&transport=websocket', base);
+      const socketUrl = new URL(`${API_BASE}/socket.io/?EIO=4&transport=websocket`, window.location.href);
       socket = new WebSocket(socketUrl);
       socket.addEventListener('open', () => {
         retryDelay = 1_000;
@@ -72,8 +72,8 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
           void loadSnapshot(token).catch(() => setStatus('error'));
         } else if (packet.startsWith('42/overlay,')) {
           try {
-            const [event] = JSON.parse(packet.slice('42/overlay,'.length)) as [{ type?: string }];
-            if (event?.type === 'snapshot.invalidated') {
+            const [eventName] = JSON.parse(packet.slice('42/overlay,'.length)) as [string, unknown];
+            if (eventName === 'overlay:invalidate') {
               void loadSnapshot(token).catch(() => setStatus('error'));
             }
           } catch {
