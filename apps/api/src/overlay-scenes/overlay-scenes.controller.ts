@@ -101,8 +101,20 @@ export class OverlayScenesController {
   @Post(':sceneId/publish')
   @UseGuards(CsrfGuard)
   @RequireWorkspacePermission('workspace:manage')
-  publishDraft(@Req() request: HttpRequest, @Param('sceneId') sceneId: string) {
-    return this.scenes.publishDraft(workspace(request).id, user(request).id, sceneId);
+  publishDraft(
+    @Req() request: HttpRequest,
+    @Param('sceneId') sceneId: string,
+    @Body() body: unknown,
+  ) {
+    if (!body || typeof body !== 'object' || !('expectedRevision' in body)) {
+      throw new BadRequestException('expectedRevision is required.');
+    }
+    return this.scenes.publishDraft(
+      workspace(request).id,
+      user(request).id,
+      sceneId,
+      (body as { expectedRevision: unknown }).expectedRevision,
+    );
   }
 
   @Post(':sceneId/access-token')
