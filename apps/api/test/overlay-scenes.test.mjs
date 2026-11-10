@@ -112,3 +112,81 @@ test('rejects blank and oversized scene names before accessing the database', as
   await assert.rejects(service.create('workspace-a', 'user-a', 'x'.repeat(81)), /between 1 and 80/);
   assert.equal(calls.length, 0);
 });
+
+test('saves a draft with optimistic revision control without changing published state', async () => {
+  const statements = [];
+  const database = {
+    transaction: async (_context, operation) => operation({
+      query: async (sql, values = []) => {
+        statements.push({ sql, values });
+        if (sql.includes('UPDATE overlay_scenes') && sql.includes('draft_state = $4')) {
+          return { rows: [{ id: values[0], name: 'Starting Soon', draft_state: JSON.parse(values[3]), draft_revision: '3', updated_at: new Date() }], rowCount: 1 };
+        }
+        return { rows: [], rowCount: 1 };
+      },
+    }),
+  };
+  const service = new OverlayScenesService(database, { append: async () => 'outbox-id' });
+  const result = await service.saveDraft('workspace-a', 'user-a', 'scene-a', { version: 1, elements: [{ text: 'Draft' }] }, 2);
+  const update = statements.find((entry) => entry.sql.includes('UPDATE overlay_scenes'));
+  assert.deepEqual(update.values.slice(0, 3), ['scene-a', 'workspace-a', 2]);
+  assert.ok(update.sql.includes('draft_state = $4::jsonb'));
+  assert.ok(!update.sql.includes('published_state ='));
+  assert.equal(result.draftRevision, 3);
+  assert.equal(result.draftState.elements[0].text, 'Draft');
+});
+
+test('rejects stale draft revisions instead of overwriting another editor', async () => {
+  const database = {
+    transaction: async (_context, operation) => operation({
+      query: async (sql) => sql.includes('SELECT 1 FROM overlay_scenes')
+        ? { rows: [{ '?column?': 1 }], rowCount: 1 }
+        : { rows: [], rowCount: 0 },
+    }),
+  };
+  const service = new OverlayScenesService(database, { append: async () => 'unused' });
+  await assert.rejects(
+    service.saveDraft('workspace-a', 'user-a', 'scene-a', { version: 1, elements: [] }, 0),
+    /changed elsewhere/,
+  );
+});
+
+test('publishes the saved draft transactionally and emits an invalidation outbox event', async () => {
+  const statements = [];
+  const events = [];
+  const publishedAt = new Date('2026-11-10T12:00:00.000Z');
+  const database = {
+    transaction: async (_context, operation) => operation({
+      query: async (sql, values = []) => {
+        statements.push({ sql, values });
+        if (sql.includes('UPDATE overlay_scenes') && sql.includes('published_state = draft_state')) {
+          return { rows: [{ id: values[0], name: 'Now Playing', published_state: { version: 1, elements: [] }, draft_revision: '4', published_at: publishedAt }], rowCount: 1 };
+        }
+        return { rows: [], rowCount: 1 };
+      },
+    }),
+  };
+  const service = new OverlayScenesService(database, {
+    append: async (_client, event) => { events.push(event); return 'outbox-id'; },
+  });
+  const result = await service.publishDraft('workspace-a', 'user-a', 'scene-a', 4);
+  assert.equal(result.publishedRevision, 4);
+  assert.equal(result.publishedAt, publishedAt);
+  const update = statements.find((entry) => entry.sql.includes('published_state = draft_state'));
+  assert.ok(update);
+  assert.ok(!update.sql.includes('draft_state = $'));
+  assert.equal(events.length, 1);
+  assert.equal(events[0].eventType, 'overlay.scene.published');
+  assert.equal(events[0].aggregateId, 'scene-a');
+  assert.equal(events[0].payload.draftRevision, 4);
+});
+
+test('rejects scene documents larger than 256 KiB', async () => {
+  const { service, calls } = harness();
+  await assert.rejects(
+    service.saveDraft('workspace-a', 'user-a', 'scene-a', { text: 'x'.repeat(270 * 1024) }, 0),
+    /must not exceed 256 KiB/,
+  );
+  assert.equal(calls.length, 0);
+});
+

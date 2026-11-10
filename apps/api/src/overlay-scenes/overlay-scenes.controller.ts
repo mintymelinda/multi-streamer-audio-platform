@@ -7,6 +7,7 @@ import {
   Inject,
   Param,
   Post,
+  Put,
   Req,
   Res,
   UnauthorizedException,
@@ -68,6 +69,52 @@ export class OverlayScenesController {
     if (typeof name !== 'string') throw new BadRequestException('A scene name is required.');
     protectTokenResponse(reply);
     return this.scenes.create(workspace(request).id, user(request).id, { name });
+  }
+
+  @Get(':sceneId/editor')
+  @RequireWorkspacePermission('workspace:read')
+  editorState(@Req() request: HttpRequest, @Param('sceneId') sceneId: string) {
+    return this.scenes.editorState(workspace(request).id, user(request).id, sceneId);
+  }
+
+  @Put(':sceneId/draft')
+  @UseGuards(CsrfGuard)
+  @RequireWorkspacePermission('workspace:manage')
+  saveDraft(
+    @Req() request: HttpRequest,
+    @Param('sceneId') sceneId: string,
+    @Body() body: unknown,
+  ) {
+    if (!body || typeof body !== 'object' || !('state' in body) || !('expectedRevision' in body)) {
+      throw new BadRequestException('Scene state and expectedRevision are required.');
+    }
+    const input = body as { state: unknown; expectedRevision: unknown };
+    return this.scenes.saveDraft(
+      workspace(request).id,
+      user(request).id,
+      sceneId,
+      input.state,
+      input.expectedRevision,
+    );
+  }
+
+  @Post(':sceneId/publish')
+  @UseGuards(CsrfGuard)
+  @RequireWorkspacePermission('workspace:manage')
+  publishDraft(
+    @Req() request: HttpRequest,
+    @Param('sceneId') sceneId: string,
+    @Body() body: unknown,
+  ) {
+    if (!body || typeof body !== 'object' || !('expectedRevision' in body)) {
+      throw new BadRequestException('expectedRevision is required.');
+    }
+    return this.scenes.publishDraft(
+      workspace(request).id,
+      user(request).id,
+      sceneId,
+      (body as { expectedRevision: unknown }).expectedRevision,
+    );
   }
 
   @Post(':sceneId/access-token')

@@ -14,6 +14,7 @@ type Scene = {
   has_active_access: boolean;
 };
 type SceneSecret = { sceneId: string; url: string };
+type SceneEditor = { sceneId: string; name: string; draftState: Record<string, unknown>; draftRevision: number; publishedAt: string | null; updatedAt: string; hasPublishedState: boolean };
 type SceneIssue = { scene: Scene; accessToken: string; overlayPath: string };
 
 const API = "/api";
@@ -44,6 +45,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+function previewPercent(value: unknown, fallback: number, minimum: number, maximum: number) {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.min(maximum, Math.max(minimum, value))
+    : fallback;
+}
+
 function obsUrl(path: string, token: string) {
   const base = (OVERLAY_BASE || window.location.origin).replace(/\/+$/, "");
   return `${base}${path}#${token}`;
@@ -59,6 +66,9 @@ export default function ScenesPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [editor, setEditor] = useState<SceneEditor | null>(null);
+  const [draftText, setDraftText] = useState("");
+  const [editorBusy, setEditorBusy] = useState(false);
 
   const loadScenes = useCallback(async () => {
     if (!workspaceId) {
@@ -152,6 +162,93 @@ export default function ScenesPage() {
     }
   }
 
+  async function openEditor(scene: Scene) {
+    if (!workspaceId) return;
+    setEditorBusy(true);
+    setError("");
+    try {
+      const result = await request<SceneEditor>(`/workspaces/${workspaceId}/scenes/${scene.id}/editor`);
+      setEditor(result);
+      setDraftText(JSON.stringify(result.draftState, null, 2));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not load the scene editor.");
+    } finally {
+      setEditorBusy(false);
+    }
+  }
+
+  const previewState = (() => {
+    try {
+      const parsed: unknown = JSON.parse(draftText);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? parsed as Record<string, unknown>
+        : null;
+    } catch {
+      return null;
+    }
+  })();
+  const previewElements = previewState && Array.isArray(previewState.elements)
+    ? previewState.elements.filter((element): element is Record<string, unknown> =>
+        typeof element === "object" && element !== null && !Array.isArray(element),
+      )
+    : [];
+
+  async function saveDraft() {
+    if (!editor || !workspaceId || !previewState) {
+      setError("Fix the JSON document before saving the draft.");
+      return;
+    }
+    setEditorBusy(true);
+    setError("");
+    try {
+      const saved = await request<{ draftState: Record<string, unknown>; draftRevision: number; updatedAt: string }>(
+        `/workspaces/${workspaceId}/scenes/${editor.sceneId}/draft`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ state: previewState, expectedRevision: editor.draftRevision }),
+        },
+      );
+      setEditor({ ...editor, draftState: saved.draftState, draftRevision: saved.draftRevision, updatedAt: saved.updatedAt });
+      setDraftText(JSON.stringify(saved.draftState, null, 2));
+      setMessage("Draft saved. The OBS overlay remains on its previously published state.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not save the draft.");
+    } finally {
+      setEditorBusy(false);
+    }
+  }
+
+  async function publishDraft() {
+    if (!editor || !workspaceId || !previewState) {
+      setError("Save a valid draft before publishing.");
+      return;
+    }
+    if (JSON.stringify(previewState) !== JSON.stringify(editor.draftState)) {
+      setError("Save your latest draft changes before publishing.");
+      return;
+    }
+    setEditorBusy(true);
+    setError("");
+    try {
+      const saved = await request<{ publishedAt: string; publishedRevision: number }>(
+        `/workspaces/${workspaceId}/scenes/${editor.sceneId}/publish`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ expectedRevision: editor.draftRevision }),
+        },
+      );
+      setEditor({ ...editor, publishedAt: saved.publishedAt, hasPublishedState: true });
+      setMessage("Draft published. Connected OBS overlays will reload the published scene.");
+      await loadScenes();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not publish the scene.");
+    } finally {
+      setEditorBusy(false);
+    }
+  }
+
   async function copyUrl(url: string) {
     try {
       await navigator.clipboard.writeText(url);
@@ -201,12 +298,60 @@ export default function ScenesPage() {
               </div>}
             </div>
             {canManage && <div className="scene-row-actions">
+              <button type="button" className="secondary-button" disabled={busy || editorBusy} onClick={() => void openEditor(scene)}>Edit scene</button>
               <button type="button" className="secondary-button" disabled={busy} onClick={() => void rotateToken(scene)}>Issue new token</button>
               {scene.has_active_access && <button type="button" className="text-button danger-text" disabled={busy} onClick={() => void revokeToken(scene)}>Revoke access</button>}
             </div>}
           </article>;
         })}</div> : <div className="quiet-empty"><span>♫</span><p>No scenes have been created for this workspace.</p><small>Create a scene to issue its first OBS access URL.</small></div>}
       </section>
+      
+      {editor && <section className="panel team-panel scene-editor-panel">
+        <div className="panel-heading">
+          <div><p className="eyebrow">SCENE EDITOR</p><h2>{editor.name}</h2><small>Draft revision {editor.draftRevision} · {editor.hasPublishedState ? "A published version is live" : "Nothing published yet"}</small></div>
+          <button type="button" className="secondary-button" onClick={() => setEditor(null)}>Close editor</button>
+        </div>
+        <div className="scene-editor-grid">
+          <div className="scene-draft-column">
+            <label htmlFor="scene-draft-json">DRAFT DOCUMENT (JSON)</label>
+            <textarea id="scene-draft-json" value={draftText} onChange={(event) => setDraftText(event.target.value)} spellCheck={false} rows={18} />
+            <div className="scene-editor-actions">
+              <button type="button" className="secondary-button" disabled={editorBusy || !previewState} onClick={() => void saveDraft()}>{editorBusy ? "Working…" : "Save draft"}</button>
+              <button type="button" className="primary-button" disabled={editorBusy || !previewState} onClick={() => void publishDraft()}>Publish draft</button>
+            </div>
+            <small>Saving changes only the private draft. Publishing is a separate, explicit action.</small>
+          </div>
+          <div className="scene-preview-column">
+            <div className="scene-preview-heading"><strong>Live draft preview</strong><span>LOCAL · UNSAVED CHANGES</span></div>
+            <div className="scene-preview-canvas">
+              <div className="scene-preview-stage">
+                {previewElements.map((element, index) => {
+                  const left = previewPercent(element.x, 5 + (index % 3) * 30, 0, 99);
+                  const top = previewPercent(element.y, 8 + Math.floor(index / 3) * 28, 0, 99);
+                  const width = previewPercent(element.width, 28, 1, 100 - left);
+                  const height = previewPercent(element.height, 18, 1, 100 - top);
+                  const label = typeof element.text === "string"
+                    ? element.text
+                    : typeof element.name === "string"
+                      ? element.name
+                      : "Preview element";
+                  return <div
+                    className="scene-preview-element"
+                    key={typeof element.id === "string" ? element.id : index}
+                    style={{ left: `${left}%`, top: `${top}%`, width: `${width}%`, height: `${height}%` }}
+                  >
+                    <small>{typeof element.type === "string" ? element.type : "Component"}</small>
+                    <span>{label}</span>
+                  </div>;
+                })}
+                {previewElements.length === 0 && <div className="scene-preview-empty">Empty scene · add components in the next editor milestone</div>}
+              </div>
+            </div>
+            <small>Preview reflects the editor buffer immediately. It is not served to OBS until you publish.</small>
+          </div>
+        </div>
+      </section>}
+
     </>}
     <footer className="footer"><span>Hosted overlay scenes</span><a href="/">Back to dashboard</a></footer>
   </main>;
