@@ -33,26 +33,6 @@ BEGIN
     NULL;
   END;
 
-  SET LOCAL ROLE platform_worker;
-  PERFORM set_config('app.user_id', user_a::text, true);
-  UPDATE user_data_exports
-     SET status = 'processing', locked_at = now(), attempt_count = 1
-   WHERE id = export_a;
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'worker cannot claim export jobs';
-  END IF;
-  UPDATE user_data_exports
-     SET status = 'completed', export_data = '{"schemaVersion":1}'::jsonb,
-         completed_at = now(), expires_at = now() + interval '7 days', locked_at = NULL
-   WHERE id = export_a;
-  INSERT INTO user_notifications
-    (recipient_user_id, category, priority, event_type, title, body, href)
-  VALUES (user_a, 'account', 'normal', 'account.data_export.completed',
-    'Your account export is ready', 'Download your export.', '/account/data-exports');
-  IF (SELECT count(*) FROM user_notifications WHERE recipient_user_id = user_a
-       AND event_type = 'account.data_export.completed') <> 1 THEN
-    RAISE EXCEPTION 'worker could not create recipient export-completion notification';
-  END IF;
 END;
 $$;
 ROLLBACK;
