@@ -23,9 +23,9 @@ export class OverlayRuntimeController {
     reply.header('Cache-Control', 'no-store, private');
     reply.header('Referrer-Policy', 'no-referrer');
     reply.header('Vary', 'Authorization');
-    const match = authorization?.match(/^Bearer ([A-Za-z0-9_-]{43})$/);
-    if (!match) throw new NotFoundException('Overlay scene is unavailable.');
-    const snapshot = await this.runtime.snapshot(sceneId, match[1]);
+    const token = authorization?.match(/^Bearer ([A-Za-z0-9_-]{43})$/)?.[1];
+    if (!token) throw new NotFoundException('Overlay scene is unavailable.');
+    const snapshot = await this.runtime.snapshot(sceneId, token);
     if (!snapshot) throw new NotFoundException('Overlay scene is unavailable.');
     return snapshot;
   }
