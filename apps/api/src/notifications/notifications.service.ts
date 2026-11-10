@@ -204,7 +204,8 @@ export class NotificationsService {
       if (source === undefined) continue;
       if (typeof source !== 'object' || source === null || Array.isArray(source)) throw new BadRequestException('Email preferences must be objects.');
       for (const [key, value] of Object.entries(source as Record<string, unknown>)) {
-        if (!allowed.includes(key) || typeof value !== 'boolean') throw new BadRequestException('Email preferences contain an unsupported value.');
+        const allowedValues: readonly string[] = allowed;
+        if (!allowedValues.includes(key) || typeof value !== 'boolean') throw new BadRequestException('Email preferences contain an unsupported value.');
         target[key] = value;
       }
     }
