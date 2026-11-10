@@ -9,7 +9,12 @@ interface OverlaySocket extends Socket {
   data: { sceneId?: string; token?: string; workspaceId?: string };
 }
 
-@WebSocketGateway({ namespace: '/overlay', cors: false })
+@WebSocketGateway({
+  namespace: '/overlay',
+  cors: {
+    origin: (process.env.OVERLAY_ALLOWED_ORIGINS ?? '').split(',').map((origin) => origin.trim()).filter(Boolean),
+  },
+})
 @Injectable()
 export class OverlayRealtimeGateway
   implements OnGatewayConnection<OverlaySocket>, OnGatewayDisconnect<OverlaySocket>, OnModuleInit, OnModuleDestroy
