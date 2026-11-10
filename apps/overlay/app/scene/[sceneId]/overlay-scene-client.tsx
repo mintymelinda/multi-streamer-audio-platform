@@ -79,7 +79,7 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
           } catch {
             // Ignore malformed realtime packets; the next reconnect fetches a fresh snapshot.
           }
-        } else if (packet.startsWith('44/overlay')) {
+        } else if (packet.startsWith('44/overlay') || packet.startsWith('41/overlay')) {
           rejected = true;
           setStatus('unauthorized');
           socket?.close();
