@@ -48,7 +48,15 @@ export class SpotifyConnectOAuthService {
   }
 
   async complete(input: { code: string; state: string; userId: string; sessionId: string }): Promise<void> {
-    if (!input.code || !input.state || input.state.length > 256) throw new BadRequestException('Spotify callback is invalid.');
+    if (
+      typeof input.code !== 'string' ||
+      typeof input.state !== 'string' ||
+      input.code.length === 0 ||
+      input.state.length === 0 ||
+      input.state.length > 256
+    ) {
+      throw new BadRequestException('Spotify callback is invalid.');
+    }
     const result = await this.database.queryInfrastructure<{
       id: string; workspace_id: string; verifier_ciphertext: string; verifier_nonce: string;
       verifier_auth_tag: string; verifier_wrapped_dek: string; verifier_dek_nonce: string;
