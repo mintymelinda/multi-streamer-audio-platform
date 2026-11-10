@@ -53,6 +53,10 @@ BEGIN
   END IF;
   INSERT INTO email_outbox (user_id, workspace_id, recipient_email, subject, text_body, html_body, unique_key)
   VALUES (user_b, workspace_a, 'moderator@example.test', 'Workspace notice', 'Body', '<p>Body</p>', 'workspace-notice:' || user_b::text);
+  -- A workspace member may address a notification to another active member.
+  INSERT INTO user_notifications (id, recipient_user_id, workspace_id, category, event_type, title, group_key)
+  VALUES (notification_id, user_b, workspace_a, 'team', 'team.member_role_changed', 'Your role changed', 'team:role-change');
+
   PERFORM set_config('app.user_id', user_c::text, true);
   IF (SELECT count(*) FROM user_notification_email_settings WHERE user_id = user_b) <> 0 THEN
     RAISE EXCEPTION 'email settings leaked to another account';
@@ -60,11 +64,6 @@ BEGIN
   IF (SELECT count(*) FROM email_outbox) <> 0 THEN
     RAISE EXCEPTION 'email outbox content leaked to another account';
   END IF;
-
-  -- A workspace member may address a notification to another active member.
-  PERFORM set_config('app.workspace_id', workspace_a::text, true);
-  INSERT INTO user_notifications (id, recipient_user_id, workspace_id, category, event_type, title, group_key)
-  VALUES (notification_id, user_b, workspace_a, 'team', 'team.member_role_changed', 'Your role changed', 'team:role-change');
 
   -- A different account cannot see the recipient's notification.
   PERFORM set_config('app.user_id', user_c::text, true);
