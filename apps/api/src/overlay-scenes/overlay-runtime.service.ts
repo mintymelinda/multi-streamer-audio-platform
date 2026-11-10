@@ -1,5 +1,4 @@
 import { Injectable, Inject } from '@nestjs/common';
-import { isUUID } from 'node:util';
 import { DatabaseService } from '../database/database.service.js';
 import { sha256 } from '../identity/security.js';
 
@@ -21,7 +20,7 @@ export class OverlayRuntimeService {
   constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {}
 
   async authenticate(sceneId: string, token: string) {
-    if (!isUUID(sceneId) || !/^[A-Za-z0-9_-]{43}$/.test(token)) return null;
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(sceneId) || !/^[A-Za-z0-9_-]{43}$/.test(token)) return null;
     const result = await this.database.queryInfrastructure<SnapshotRow>(
       'SELECT * FROM get_overlay_scene_snapshot($1::uuid, $2::text)',
       [sceneId, sha256(token)],
