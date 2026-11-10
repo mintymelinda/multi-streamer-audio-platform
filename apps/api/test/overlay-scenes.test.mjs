@@ -169,7 +169,7 @@ test('publishes the saved draft transactionally and emits an invalidation outbox
   const service = new OverlayScenesService(database, {
     append: async (_client, event) => { events.push(event); return 'outbox-id'; },
   });
-  const result = await service.publishDraft('workspace-a', 'user-a', 'scene-a');
+  const result = await service.publishDraft('workspace-a', 'user-a', 'scene-a', 4);
   assert.equal(result.publishedRevision, 4);
   assert.equal(result.publishedAt, publishedAt);
   const update = statements.find((entry) => entry.sql.includes('published_state = draft_state'));
