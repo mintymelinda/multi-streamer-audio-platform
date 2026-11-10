@@ -56,8 +56,9 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON user_data_exports TO platform_worker;
 -- The export worker reads only self-scoped account data and inserts one
 -- recipient-addressed completion notification. It never needs workspace data.
 GRANT SELECT ON platform_users, workspace_memberships, workspace_invitations,
-  user_notifications, user_notification_preferences, user_notification_email_settings
+  user_notification_preferences, user_notification_email_settings
   TO platform_worker;
+GRANT SELECT, INSERT ON user_notifications TO platform_worker;
 
 CREATE POLICY user_notifications_account_export_worker_insert
   ON user_notifications FOR INSERT TO platform_worker
