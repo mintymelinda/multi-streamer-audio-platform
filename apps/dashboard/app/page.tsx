@@ -134,7 +134,7 @@ export default function HomePage() {
         <div className="brand"><span>♫</span> Streamer Audio</div>
         <div className="top-actions">
           <label className="workspace-picker"><span>WORKSPACE</span><select value={selectedId} onChange={(event) => setSelectedId(event.target.value)}>{workspaces.map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}</select></label>
-          <button className="icon-button" onClick={() => void load(true)} disabled={refreshing} aria-label="Refresh dashboard">↻</button>
+          <nav className="page-nav"><a href="/team">Team</a><a href="/invitations">Invitations</a></nav><button className="icon-button" onClick={() => void load(true)} disabled={refreshing} aria-label="Refresh dashboard">↻</button>
         </div>
       </header>
       <section className="welcome">
@@ -192,7 +192,7 @@ export default function HomePage() {
   );
 }
 
-async function updateOnboarding(workspaceId: string, body: { step?: string; status?: string; dismissed?: boolean }): Promise<Onboarding> {\n  const headers = { "Content-Type": "application/json", "x-csrf-token": document.cookie.split("; ").find((part) => part.startsWith("platform_csrf="))?.split("=")[1] ?? "" };\n  const path = body.step ? `/workspaces/${workspaceId}/onboarding/steps/${body.step}` : `/workspaces/${workspaceId}/onboarding`;\n  const response = await fetch(`${API}${path}`, { method: "PATCH", credentials: "include", headers, body: JSON.stringify(body) });\n  if (!response.ok) throw new Error("Could not save onboarding progress.");\n  return response.json() as Promise<Onboarding>;\n}\n\nasync function updateOnboarding(workspaceId: string, body: { step?: string; status?: string; dismissed?: boolean }): Promise<Onboarding> {
+async function updateOnboarding(workspaceId: string, body: { step?: string; status?: string; dismissed?: boolean }): Promise<Onboarding> {
   const csrf = document.cookie.split("; ").find((part) => part.startsWith("platform_csrf="))?.split("=")[1] ?? "";
   const path = body.step ? `/workspaces/${workspaceId}/onboarding/steps/${body.step}` : `/workspaces/${workspaceId}/onboarding`;
   const response = await fetch(`${API}${path}`, { method: "PATCH", credentials: "include", headers: { "Content-Type": "application/json", "x-csrf-token": csrf }, body: JSON.stringify(body) });

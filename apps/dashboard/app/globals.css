@@ -73,3 +73,29 @@ h1 { margin: 7px 0 8px; font-size: clamp(28px, 4vw, 38px); letter-spacing: -.055
 .onboarding-actions button:first-child { border: 1px solid #554879; border-radius: 7px; padding: 7px 10px; }
 .dismiss-setup { margin-top: 8px; color: #9693a4; }
 @media (max-width: 760px) { .onboarding-step { align-items: flex-start; flex-wrap: wrap; }.onboarding-copy { flex-basis: calc(100% - 45px); }.onboarding-actions { margin-left: 40px; } }
+
+.page-nav { display: flex; align-items: center; gap: 18px; }
+.page-nav a { color: #bdb4df; font-size: 12px; text-decoration: none; }
+.page-nav a:hover { color: #fff; }
+.team-panel { margin: 0 0 15px; }
+.team-invite-form { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; }
+.team-invite-form label { display: grid; gap: 6px; flex: 1; min-width: 180px; color: #a4a7b4; font-size: 11px; }
+.team-invite-form input, .team-invite-form select, .team-row select, .welcome > select { min-width: 0; padding: 10px; border: 1px solid #393d4b; border-radius: 8px; color: #f3f4f6; background: #10131b; }
+.team-table { width: 100%; overflow-x: auto; }
+.team-row { display: grid; grid-template-columns: minmax(180px, 1.5fr) minmax(110px, .8fr) minmax(110px, .8fr) minmax(90px, .5fr); align-items: center; gap: 12px; min-width: 600px; padding: 13px 4px; border-top: 1px solid #2a2e39; font-size: 12px; }
+.team-row-head { color: #858a99; font-size: 9px; font-weight: 750; letter-spacing: .12em; }
+.team-row > span, .team-row > strong { color: #c9cbd3; }
+.team-row select { width: 100%; padding: 7px; font-size: 11px; }
+.role-label { color: #a69bd0; font-size: 11px; text-transform: capitalize; }
+.danger-text { color: #f09ba4 !important; }
+.audit-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 13px 0; border-top: 1px solid #2a2e39; }
+.audit-row > div { display: grid; gap: 5px; min-width: 0; }
+.audit-row strong { color: #d7d8df; font-size: 12px; text-transform: capitalize; }
+.audit-row small, .audit-row time { color: #858a99; font-size: 10px; }
+.audit-row time { white-space: nowrap; }
+.invitation-card { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 17px 0; border-bottom: 1px solid #2a2e39; }
+.invitation-card:last-child { border-bottom: 0; }
+.invitation-card h2 { margin: 4px 0; font-size: 18px; }
+.invitation-card .eyebrow { margin: 0; }
+.invitation-actions { display: flex; gap: 9px; }
+@media (max-width: 760px) { .page-nav { gap: 10px; flex-wrap: wrap; justify-content: flex-end; }.invitation-card { align-items: flex-start; flex-direction: column; }.audit-row { align-items: flex-start; flex-direction: column; }.audit-row time { white-space: normal; } }

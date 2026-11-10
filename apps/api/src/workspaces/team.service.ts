@@ -17,6 +17,7 @@ import { TwitchDirectoryService } from './twitch-directory.service.js';
 export interface InvitationRecord {
   id: string;
   workspace_id: string;
+  invited_twitch_user_id: string;
   assigned_role: Exclude<WorkspaceRole, 'owner'>;
   status: string;
   created_at: Date;
@@ -51,7 +52,7 @@ export class TeamService {
       { userId, verifiedWorkspaceId: workspaceId },
       (client) =>
         client.query<InvitationRecord>(
-          "SELECT id, workspace_id, assigned_role, status, created_at, expires_at FROM workspace_invitations WHERE workspace_id = $1 AND status = 'pending' ORDER BY created_at DESC",
+          "SELECT id, workspace_id, invited_twitch_user_id, assigned_role, status, created_at, expires_at FROM workspace_invitations WHERE workspace_id = $1 AND status = 'pending' ORDER BY created_at DESC",
           [workspaceId],
         ),
     );
@@ -276,6 +277,46 @@ export class TeamService {
         role: invitation.assigned_role,
       };
     });
+  }
+
+  async listAuditEvents(userId: string, workspaceId: VerifiedWorkspaceId) {
+    const result = await this.database.transaction(
+      { userId, verifiedWorkspaceId: workspaceId },
+      (client) =>
+        client.query(
+          "SELECT e.id, e.event_type, e.target_type, e.target_id, e.details, e.created_at, u.twitch_user_id AS actor_twitch_user_id FROM audit_events e LEFT JOIN platform_users u ON u.id = e.actor_user_id WHERE e.workspace_id = $1 ORDER BY e.created_at DESC LIMIT 100",
+          [workspaceId],
+        ),
+    );
+    return result.rows;
+  }
+
+  async resendInvitation(
+    actor: AuthenticatedUser,
+    workspaceId: VerifiedWorkspaceId,
+    invitationId: string,
+  ) {
+    return this.database.transaction(
+      { userId: actor.id, verifiedWorkspaceId: workspaceId },
+      async (client) => {
+        const result = await client.query(
+          "UPDATE workspace_invitations SET expires_at = now() + interval '7 days' WHERE id = $1 AND workspace_id = $2 AND status = 'pending' RETURNING id, expires_at",
+          [invitationId, workspaceId],
+        );
+        const invitation = result.rows[0] as { id: string; expires_at: Date } | undefined;
+        if (!invitation) throw new NotFoundException('Pending invitation not found.');
+        await this.audit(
+          client,
+          workspaceId,
+          actor.id,
+          'team.invitation_resent',
+          'invitation',
+          invitationId,
+          { expiresAt: invitation.expires_at.toISOString() },
+        );
+        return { resent: true, expiresAt: invitation.expires_at };
+      },
+    );
   }
 
   private async audit(
