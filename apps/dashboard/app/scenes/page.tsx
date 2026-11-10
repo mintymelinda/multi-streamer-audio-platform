@@ -181,7 +181,7 @@ export default function ScenesPage() {
         <div className="panel-heading"><div><p className="eyebrow">NEW SCENE</p><h2>Create an OBS scene</h2></div></div>
         <form className="scene-create" onSubmit={(event) => void createScene(event)}>
           <input value={name} onChange={(event) => setName(event.target.value)} maxLength={80} placeholder="Scene name" aria-label="Scene name" required />
-          <button className="primary-button" disabled={busy || !name.trim()}>{busy ? "Working…" : "Create scene"}</button>
+          <button type="submit" className="primary-button" disabled={busy || !name.trim()}>{busy ? "Working…" : "Create scene"}</button>
         </form>
       </section>}
       <section className="panel team-panel">
