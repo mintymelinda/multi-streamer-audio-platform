@@ -14,12 +14,13 @@ BEGIN
     (admin_id, '980000011'),
     (target_id, '980000012');
 
-  INSERT INTO platform_administrators (user_id, role)
-  VALUES (owner_id, 'owner');
+  INSERT INTO platform_administrators (user_id, twitch_user_id, role)
+  VALUES (owner_id, '980000010', 'owner');
 
-  INSERT INTO platform_administrators (user_id, role, permissions, appointed_by_user_id)
+  INSERT INTO platform_administrators (user_id, twitch_user_id, role, permissions, appointed_by_user_id)
   VALUES (
     admin_id,
+    '980000011',
     'admin',
     ARRAY['administrators.read', 'administrators.manage', 'accounts.read'],
     owner_id
