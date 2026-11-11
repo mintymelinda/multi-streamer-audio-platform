@@ -28,6 +28,19 @@ BEGIN
      OR has_function_privilege('platform_worker', 'apply_credential_tombstone(uuid,uuid,uuid)', 'EXECUTE') THEN
     RAISE EXCEPTION 'credential tombstone replay execute privilege is not restricted to platform_migrator';
   END IF;
+  IF (
+    SELECT count(*)
+      FROM pg_proc
+     WHERE oid IN (
+       'apply_deletion_tombstone(text,uuid)'::regprocedure,
+       'apply_credential_tombstone(uuid,uuid,uuid)'::regprocedure,
+       'apply_membership_revocation(uuid,uuid,timestamptz)'::regprocedure
+     )
+       AND proowner = 'platform_migrator'::regrole
+       AND prosecdef
+  ) <> 3 THEN
+    RAISE EXCEPTION 'all deletion replay functions must be migrator-owned SECURITY DEFINER functions';
+  END IF;
 END $$;
 
 INSERT INTO platform_users (id, twitch_user_id) VALUES
