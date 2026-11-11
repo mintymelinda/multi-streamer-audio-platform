@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service.js';
 
-interface PublicIncident {
+export interface PublicIncident {
   id: string;
   title: string;
   summary: string;
