@@ -21,7 +21,7 @@ The ledger endpoint must be in a separate failure and backup domain from the app
 
 Provision a dedicated application identity with only PutObject permission for this bucket (the API does not need read or delete access). It must not have DeleteObject, PutObjectRetention, PutObjectLegalHold, bucket-policy, lifecycle, or bucket-delete permissions. Use a separate recovery identity with ListBucket/GetObject read access. Keep the recovery credentials and database migrator credentials outside the restored backup set.
 
-The local Compose stack creates a separate MinIO bucket with Object Lock and a long COMPLIANCE retention period for development. Local root credentials are for development only and are not an acceptable production credential model.
+The local Compose stack creates a separate MinIO bucket with Object Lock and a 100-year COMPLIANCE retention period for development. Local root credentials are for development only and are not an acceptable production credential model.
 
 ## Restore procedure
 
