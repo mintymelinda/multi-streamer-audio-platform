@@ -98,7 +98,8 @@ export class InvidiousResolverService {
     // Clone the configured URL and extend its pathname. This preserves both
     // the configured origin and any reverse-proxy path prefix.
     const endpoint = new URL(this.instanceUrl);
-    endpoint.pathname = endpoint.pathname + '/api/v1/videos/' + encodeURIComponent(mediaId);
+    const basePath = endpoint.pathname.replace(/\/+$/, '');
+    endpoint.pathname = basePath + '/api/v1/videos/' + encodeURIComponent(mediaId);
 
     let response: Response;
     try {
