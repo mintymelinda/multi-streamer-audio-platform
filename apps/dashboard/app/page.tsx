@@ -122,7 +122,7 @@ export default function HomePage() {
 
   if (!workspaces.length) return (
     <main className="shell">
-      <header className="topbar"><div className="brand"><span>♫</span> Streamer Audio</div><a href={`${API}/auth/twitch/start?returnTo=%2F`}>Reconnect</a></header>
+      <header className="topbar"><div className="brand"><span>♫</span> Streamer Audio</div><nav className="page-nav">{platformAdmin && <a href="/platform-admin">Platform administration</a>}<a href={`${API}/auth/twitch/start?returnTo=%2F`}>Reconnect</a></nav></header>
       <section className="empty-state">
         <p className="eyebrow">WELCOME</p><h1>Create your workspace</h1>
         <p>Your Twitch account is already linked as the channel identity. Choose a workspace name to complete the essential setup; you can configure providers, rewards, moderation, and overlays afterward.</p>
