@@ -18,7 +18,12 @@ BEGIN
      OR has_function_privilege('platform_worker', 'apply_deletion_tombstone(text,uuid)', 'EXECUTE') THEN
     RAISE EXCEPTION 'deletion replay execute privilege is not restricted to platform_migrator';
   END IF;
-END $$;
+  IF NOT has_function_privilege('platform_migrator', 'apply_credential_tombstone(uuid,uuid,uuid)', 'EXECUTE')
+     OR has_function_privilege('platform_runtime', 'apply_credential_tombstone(uuid,uuid,uuid)', 'EXECUTE')
+     OR has_function_privilege('platform_worker', 'apply_credential_tombstone(uuid,uuid,uuid)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'credential tombstone replay execute privilege is not restricted to platform_migrator';
+  END IF;
+END $;
 
 INSERT INTO platform_users (id, twitch_user_id) VALUES
   ('74000000-0000-4000-8000-000000000001', '740001'),
@@ -68,5 +73,37 @@ BEGIN
     RAISE EXCEPTION 'deletion replay damaged another workspace or its owner';
   END IF;
 END $$;
+
+-- A credential tombstone removes only the matching workspace/provider identity.
+INSERT INTO provider_instances (id, workspace_id, provider_id, instance_key, contract_version)
+VALUES ('76000000-0000-4000-8000-000000000001',
+        '75000000-0000-4000-8000-000000000002', 'spotify', 'spotify-primary', 1);
+SELECT set_config('app.user_id', '74000000-0000-4000-8000-000000000002', true);
+SELECT set_config('app.workspace_id', '75000000-0000-4000-8000-000000000002', true);
+INSERT INTO provider_credentials (
+  id, workspace_id, provider_instance_id, ciphertext, nonce, auth_tag,
+  wrapped_dek, dek_nonce, dek_auth_tag, kek_version, format_version
+) VALUES (
+  '77000000-0000-4000-8000-000000000001',
+  '75000000-0000-4000-8000-000000000002',
+  '76000000-0000-4000-8000-000000000001',
+  'ciphertext', 'nonce', 'tag', 'wrapped', 'dek-nonce', 'dek-tag', 'test', 1
+);
+SELECT apply_credential_tombstone(
+  '77000000-0000-4000-8000-000000000001',
+  '75000000-0000-4000-8000-000000000002',
+  '76000000-0000-4000-8000-000000000001'
+);
+SELECT apply_credential_tombstone(
+  '77000000-0000-4000-8000-000000000001',
+  '75000000-0000-4000-8000-000000000002',
+  '76000000-0000-4000-8000-000000000001'
+);
+DO $
+BEGIN
+  IF EXISTS (SELECT 1 FROM provider_credentials WHERE id = '77000000-0000-4000-8000-000000000001') THEN
+    RAISE EXCEPTION 'credential tombstone did not remove the encrypted credential';
+  END IF;
+END $;
 
 ROLLBACK;
