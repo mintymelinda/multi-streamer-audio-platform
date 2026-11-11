@@ -12,6 +12,7 @@ The ledger is deliberately separate from PostgreSQL and the workspace asset buck
 - DELETION_LEDGER_BUCKET
 - DELETION_LEDGER_ACCESS_KEY / DELETION_LEDGER_SECRET_KEY
 - DELETION_LEDGER_REGION
+- DELETION_LEDGER_ALLOW_INSECURE_HTTP (local development only; never enable in production)
 
 If the ledger is unavailable or unconfigured, permanent deletion fails closed and the database transaction rolls back. Do not silently fall back to a PostgreSQL-only tombstone.
 
@@ -21,7 +22,7 @@ The ledger endpoint must be in a separate failure and backup domain from the app
 
 Provision a dedicated application identity with only PutObject permission for this bucket (the API does not need read or delete access). It must not have DeleteObject, PutObjectRetention, PutObjectLegalHold, bucket-policy, lifecycle, or bucket-delete permissions. Use a separate recovery identity with ListBucket/GetObject read access. Keep the recovery credentials and database migrator credentials outside the restored backup set.
 
-The local Compose stack creates a separate MinIO bucket with Object Lock and a 100-year COMPLIANCE retention period for development. Local root credentials are for development only and are not an acceptable production credential model.
+The local Compose stack opts into HTTP only for its private object-storage network and creates a separate MinIO bucket with Object Lock and a 100-year COMPLIANCE retention period for development. Local root credentials are for development only and are not an acceptable production credential model.
 
 ## Restore procedure
 
