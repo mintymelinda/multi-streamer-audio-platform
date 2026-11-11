@@ -15,6 +15,34 @@ function apiUrl(path: string) {
   return `${API_BASE}${path}`;
 }
 
+function animationName(element: Record<string, unknown>, phase: "enter" | "exit") {
+  const settings = element.animation && typeof element.animation === "object"
+    ? element.animation as Record<string, unknown>
+    : {};
+  const selected = settings[phase];
+  return selected === "fade" || selected === "slide" || selected === "scale" ? `overlay-${selected}` : "none";
+}
+
+function animationDuration(element: Record<string, unknown>) {
+  const settings = element.animation && typeof element.animation === "object"
+    ? element.animation as Record<string, unknown>
+    : {};
+  const value = typeof settings.durationMs === "number" && Number.isFinite(settings.durationMs)
+    ? Math.min(5000, Math.max(0, settings.durationMs))
+    : 240;
+  return `${value}ms`;
+}
+
+function animationDelay(element: Record<string, unknown>) {
+  const settings = element.animation && typeof element.animation === "object"
+    ? element.animation as Record<string, unknown>
+    : {};
+  const value = typeof settings.delayMs === "number" && Number.isFinite(settings.delayMs)
+    ? Math.min(5000, Math.max(0, settings.delayMs))
+    : 0;
+  return `${value}ms`;
+}
+
 function OverflowMarquee({ text, className }: { text: string; className?: string }) {
   const viewportRef = useRef<HTMLSpanElement | null>(null);
   const contentRef = useRef<HTMLSpanElement | null>(null);
@@ -62,6 +90,9 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
   const [token, setToken] = useState('');
   const [snapshot, setSnapshot] = useState<SceneSnapshot | null>(null);
   const [status, setStatus] = useState<'connecting' | 'ready' | 'unauthorized' | 'error'>('connecting');
+  const [renderedElements, setRenderedElements] = useState<Record<string, unknown>[]>([]);
+  const [exitingIds, setExitingIds] = useState<string[]>([]);
+  const previousElements = useRef<Record<string, unknown>[]>([]);
 
   const loadSnapshot = useCallback(async (accessToken: string) => {
     const response = await fetch(apiUrl(`/overlay/scenes/${sceneId}/snapshot`), {
@@ -150,6 +181,41 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
     };
   }, [loadSnapshot, sceneId, token]);
 
+  useEffect(() => {
+    const state = snapshot?.publishedState && typeof snapshot.publishedState === 'object'
+      ? snapshot.publishedState as Record<string, unknown>
+      : null;
+    const next = state && Array.isArray(state.elements)
+      ? state.elements.filter((element): element is Record<string, unknown> =>
+          typeof element === 'object' && element !== null && !Array.isArray(element),
+        )
+      : [];
+    const keyOf = (element: Record<string, unknown>, index: number) =>
+      typeof element.id === 'string' ? element.id : String(index);
+    const nextKeys = new Set(next.map(keyOf));
+    const removed = previousElements.current.filter((element, index) => !nextKeys.has(keyOf(element, index)));
+    const ids = removed.map((element, index) => keyOf(element, index));
+    previousElements.current = next;
+    setRenderedElements([...next, ...removed]);
+    setExitingIds(ids);
+    if (ids.length) {
+      const longestExit = Math.max(0, ...removed.map((element) => {
+        const animation = element.animation && typeof element.animation === 'object'
+          ? element.animation as Record<string, unknown>
+          : {};
+        const duration = typeof animation.durationMs === 'number' ? animation.durationMs : 240;
+        const delay = typeof animation.delayMs === 'number' ? animation.delayMs : 0;
+        return Math.min(5000, Math.max(0, duration + delay));
+      }));
+      const timer = window.setTimeout(() => {
+        setRenderedElements(next);
+        setExitingIds([]);
+      }, longestExit + 80);
+      return () => window.clearTimeout(timer);
+    }
+    return undefined;
+  }, [snapshot]);
+
   if (status === 'unauthorized') return <main className="overlay-message">This overlay URL is invalid or has been revoked.</main>;
   if (status === 'error') return <main className="overlay-message">The overlay is temporarily unavailable. Reconnecting…</main>;
   if (!snapshot) return <main className="overlay-message">Connecting to overlay…</main>;
@@ -157,11 +223,7 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
   const publishedState = snapshot.publishedState && typeof snapshot.publishedState === "object"
     ? snapshot.publishedState as Record<string, unknown>
     : null;
-  const elements = publishedState && Array.isArray(publishedState.elements)
-    ? publishedState.elements.filter((element): element is Record<string, unknown> =>
-        typeof element === "object" && element !== null && !Array.isArray(element),
-      )
-    : [];
+  const elements = renderedElements;
   const canvas = publishedState?.canvas && typeof publishedState.canvas === "object"
     ? publishedState.canvas as Record<string, unknown>
     : {};
@@ -172,6 +234,8 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
   return (
     <main
       className={`overlay-scene ${fixedCanvas ? "is-fixed-canvas" : "is-responsive-canvas"}`}
+      data-transition={typeof publishedState?.transition === "object" && publishedState.transition !== null ? String((publishedState.transition as Record<string, unknown>).type ?? "none") : "none"}
+      data-reduced-motion={publishedState?.reducedMotion === true ? "true" : "false"}
       aria-label={snapshot.name}
       data-scene-id={snapshot.sceneId}
       style={fixedCanvas ? { width: `${canvasWidth}px`, height: `${canvasHeight}px`, minHeight: 0 } : undefined}
@@ -186,9 +250,20 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
             const candidateImageUrl = typeof element.assetUrl === "string" ? element.assetUrl : element.src;
             const imageUrl = typeof candidateImageUrl === "string" && /^https?:\/\//i.test(candidateImageUrl) ? candidateImageUrl : null;
             return <section
-              className={`overlay-component overlay-component--${type}`}
+              className={`overlay-component overlay-component--${type} ${exitingIds.includes(typeof element.id === "string" ? element.id : String(index)) ? "is-exiting" : "is-entering"}`}
               key={typeof element.id === "string" ? element.id : index}
               style={{
+                "--component-enter": animationName(element, "enter"),
+                "--component-exit": animationName(element, "exit"),
+                "--component-duration": animationDuration(element),
+                "--component-delay": animationDelay(element),
+                animationName: exitingIds.includes(typeof element.id === "string" ? element.id : String(index))
+                  ? animationName(element, "exit")
+                  : animationName(element, "enter"),
+                animationDuration: animationDuration(element),
+                animationDelay: animationDelay(element),
+                animationFillMode: "both",
+                animationDirection: exitingIds.includes(typeof element.id === "string" ? element.id : String(index)) ? "reverse" : "normal",
                 left: `${number(element.x, fixedCanvas ? 96 : 5, fixedCanvas ? canvasWidth : 100)}${fixedCanvas ? "px" : "%"}`,
                 top: `${number(element.y, fixedCanvas ? 54 : 5, fixedCanvas ? canvasHeight : 100)}${fixedCanvas ? "px" : "%"}`,
                 width: `${number(element.width, fixedCanvas ? 806 : 42, fixedCanvas ? canvasWidth : 100)}${fixedCanvas ? "px" : "%"}`,
