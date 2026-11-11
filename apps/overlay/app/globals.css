@@ -54,6 +54,14 @@ body {
 .overlay-track-copy { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 7px; }
 .overlay-track-copy strong, .overlay-track-copy span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .overlay-track-copy strong { font-size: clamp(12px, 2vw, 21px); }
+.overlay-marquee { display: block; width: 100%; min-width: 0; overflow: hidden; white-space: nowrap; }
+.overlay-marquee__content { display: inline-block; width: max-content; max-width: none; white-space: nowrap; }
+.overlay-marquee__content.is-scrolling { animation: overlay-marquee-scroll var(--marquee-duration) ease-in-out infinite alternate; }
+.overlay-track-title { flex: 0 0 auto; color: #f5f5f5; font-size: clamp(12px, 2vw, 21px); font-weight: 700; line-height: 1.25; }
+@keyframes overlay-marquee-scroll {
+  0%, 12% { transform: translateX(0); }
+  88%, 100% { transform: translateX(calc(-1 * var(--marquee-distance))); }
+}
 .overlay-track-copy span { color: #c4c2ca; font-size: clamp(10px, 1.4vw, 14px); }
 .overlay-progress { height: 4px; overflow: hidden; border-radius: 5px; background: rgb(255 255 255 / 25%); }
 .overlay-progress span { display: block; width: 0%; height: 100%; background: #d9d0f5; }
