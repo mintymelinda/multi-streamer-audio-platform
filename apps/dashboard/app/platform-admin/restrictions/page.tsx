@@ -18,8 +18,6 @@ type Account = {
 type Workspace = {
   workspace_id: string;
   name: string;
-  owner_user_id: string;
-  owner_twitch_user_id: string;
   broadcaster_twitch_user_id: string;
   status: "active" | "restricted" | "suspended";
   restriction_reason: string | null;
@@ -190,11 +188,11 @@ export default function PlatformRestrictionsPage() {
               </form>
               <div className="table-wrap">
                 <table>
-                  <thead><tr><th>Workspace</th><th>Owner Twitch ID</th><th>Status</th><th>Reason</th><th>Actions</th></tr></thead>
+                  <thead><tr><th>Workspace</th><th>Broadcaster Twitch ID</th><th>Status</th><th>Reason</th><th>Actions</th></tr></thead>
                   <tbody>{workspaces.map((workspace) => (
                     <tr key={workspace.workspace_id}>
                       <td>{workspace.name}<small>{workspace.workspace_id}</small></td>
-                      <td>{workspace.owner_twitch_user_id}</td>
+                      <td>{workspace.broadcaster_twitch_user_id}</td>
                       <td>{workspace.status}</td>
                       <td>{workspace.restriction_reason ?? "—"}</td>
                       <td>{access.permissions.includes("workspaces.restrict") && (
