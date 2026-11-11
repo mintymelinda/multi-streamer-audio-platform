@@ -348,6 +348,7 @@ export default function ScenesPage() {
       type,
       name: COMPONENT_LIBRARY.find((item) => item.type === type)?.label ?? type,
       text: defaults[type],
+      ...(type === 'custom-image' ? { assetId: '' } : {}),
       x: (5 + (previewElements.length % 3) * 5) * (canvasMode === "fixed" ? canvasWidth / 100 : 1),
       y: (5 + (previewElements.length % 4) * 5) * (canvasMode === "fixed" ? canvasHeight / 100 : 1),
       width: (type === "background" ? 90 : 42) * (canvasMode === "fixed" ? canvasWidth / 100 : 1),
@@ -509,8 +510,12 @@ export default function ScenesPage() {
                 <label>Content
                   <input value={typeof element.text === "string" ? element.text : ""} onChange={(event) => updateComponent(index, { text: event.target.value })} />
                 </label>
-                {element.type === "custom-image" && <label>Image URL
-                  <input value={typeof element.src === "string" ? element.src : ""} placeholder="https://…" onChange={(event) => updateComponent(index, { src: event.target.value })} />
+                {element.type === "custom-image" && <label>Workspace asset
+                  <select value={typeof element.assetId === "string" ? element.assetId : ""} onChange={(event) => updateComponent(index, { assetId: event.target.value, src: "" })}>
+                    <option value="">Choose an uploaded asset…</option>
+                    {assets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name} · {asset.width} × {asset.height}</option>)}
+                  </select>
+                  {assets.length === 0 && <small><a href="/assets">Upload an image in the asset library</a>.</small>}
                 </label>}
                 <div className="component-number-grid">
                   {(["x", "y", "width", "height"] as const).map((key) => <label key={key}>{key.toUpperCase()} ({canvasMode === "fixed" ? "px" : "%"})
@@ -573,7 +578,9 @@ export default function ScenesPage() {
                     onPointerDown={(event) => startComponentDrag(event, index, element)}
                   >
                     <small>{typeof element.type === "string" ? element.type.replaceAll("-", " ") : "Component"}{element.locked === true ? " · locked" : ""}</small>
-                    <span>{label}</span>
+                    {typeof element.type === "string" && element.type === "custom-image" && typeof element.assetId === "string" && assets.some((asset) => asset.id === element.assetId)
+                      ? <img src={assets.find((asset) => asset.id === element.assetId)?.url} alt="" style={{ width: "100%", height: "calc(100% - 18px)", objectFit: "contain" }} />
+                      : <span>{label}</span>}
                     {element.locked !== true && <i
                       className="scene-preview-resize"
                       role="presentation"
