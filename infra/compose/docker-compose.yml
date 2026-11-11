@@ -34,6 +34,7 @@ services:
       DELETION_LEDGER_S3_SECRET_KEY: ${DELETION_LEDGER_S3_SECRET_KEY:-local-minio-password}
       DELETION_LEDGER_S3_REGION: ${DELETION_LEDGER_S3_REGION:-us-east-1}
       DELETION_LEDGER_S3_ALLOW_INSECURE_HTTP: ${DELETION_LEDGER_S3_ALLOW_INSECURE_HTTP:-true}
+      INVIDIOUS_INSTANCE_URL: ${INVIDIOUS_INSTANCE_URL:-}
     depends_on:
       postgres:
         condition: service_healthy
