@@ -53,6 +53,7 @@ Start the local services with `pnpm dev:infra`, then apply the role bootstrap an
 - `0041_planned_maintenance_communications.sql` adds platform-operator planned-maintenance notices with public scheduling, expected impact, affected services, advance in-app notifications, optional opted-in email delivery, and audited publication/cancellation.
 - `0042_fix_planned_maintenance_recipient_context.sql` materializes recipient IDs before changing transaction-local RLS identity during notification fan-out and cancellation.
 - `0043_platform_rights_operations.sql` adds permission-gated global rights-holder case review, reviewer assignment, documented status transitions and decisions, evidence-preserving content blocks, provider-path restrictions, repeat-infringer thresholds, workspace restriction, and append-only operator auditing.
+- `0044_data_retention.sql` defines workspace-configurable request/history retention, terminal-only 30-day operational cleanup, notification retention, and a bounded cross-tenant retention function executable only by the restricted worker role.
 
 The initial overlay scene safety ceiling is 1,000 across the entire platform. The platform runtime can read the configured value but cannot change it or mutate the usage counter. Until the platform settings controls are added to the platform-administration console, an operator changes it through the privileged database administration path, for example: `UPDATE platform_settings SET setting_value = '1500'::jsonb, updated_at = now() WHERE setting_key = 'overlay_scene_safety_ceiling';`.
 

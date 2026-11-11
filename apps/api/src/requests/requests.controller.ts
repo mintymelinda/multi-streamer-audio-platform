@@ -102,6 +102,9 @@ export class RequestsController {
   updateSettings(@Req() request: HttpRequest, @Body() body: unknown) {
     const data = record(body);
     const moderationMode = data.moderationMode;
+    if (data.historyRetentionDays !== undefined && ![7, 14, 30, 90, 180, 365].includes(data.historyRetentionDays as number)) {
+      throw new BadRequestException('historyRetentionDays must be one of 7, 14, 30, 90, 180, or 365.');
+    }
     if (
       moderationMode !== 'automatic' &&
       moderationMode !== 'manual' &&
@@ -116,6 +119,9 @@ export class RequestsController {
       perSourceLimit: integer(data.perSourceLimit, 'perSourceLimit', 1, 500),
       holdTerms: stringArray(data.holdTerms, 'holdTerms'),
       rejectTerms: stringArray(data.rejectTerms, 'rejectTerms'),
+      ...(data.historyRetentionDays === undefined ? {} : {
+        historyRetentionDays: integer(data.historyRetentionDays, 'historyRetentionDays', 7, 365),
+      }),
     });
   }
 
