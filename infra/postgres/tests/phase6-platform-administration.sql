@@ -131,7 +131,20 @@ BEGIN
      AND permissions = ARRAY['administrators.read', 'accounts.read'];
   IF listed_count <> 1 THEN
     RAISE EXCEPTION 'administrator appointment did not persist the scoped permissions';
-  END;
+  END IF;
+
+  PERFORM revoke_platform_administrator(
+    current_setting('test.platform_target_id')::uuid,
+    'delegated administrator assignment ended'
+  );
+
+  SELECT count(*) INTO listed_count
+    FROM list_platform_administrators()
+   WHERE twitch_user_id = '980000012'
+     AND revoked_at IS NOT NULL;
+  IF listed_count <> 1 THEN
+    RAISE EXCEPTION 'authorized administrator revocation was not persisted';
+  END IF;
 
   BEGIN
     PERFORM revoke_platform_administrator(owner_id, 'administrator cannot revoke owner');
