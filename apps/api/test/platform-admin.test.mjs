@@ -22,6 +22,12 @@ function harness(responses = {}) {
           if (sql.includes('list_platform_workspaces')) {
             return { rows: responses.workspaces ?? [], rowCount: responses.workspaces?.length ?? 0 };
           }
+          if (sql.includes('list_platform_service_incidents')) {
+            return { rows: responses.incidents ?? [], rowCount: responses.incidents?.length ?? 0 };
+          }
+          if (sql.includes('set_platform_service_incident')) {
+            return { rows: [{ id: responses.savedIncidentId ?? 'incident-id' }], rowCount: 1 };
+          }
           return { rows: [], rowCount: 1 };
         },
       });
@@ -178,5 +184,54 @@ test('restriction operations reject invalid targets, states, and missing reasons
   await assert.rejects(service.setAccountStatus('admin-user', validId, 'suspended', ' '), /reason between 1 and 1,000/);
   await assert.rejects(service.setWorkspaceStatus('admin-user', validId, 'deleted', 'Reason'), /Workspace status/);
   await assert.rejects(service.setWorkspaceStatus('admin-user', validId, 'suspended', ''), /reason between 1 and 1,000/);
+  assert.equal(calls.length, 0);
+});
+
+
+test('service incident directory uses the status-scoped database function', async () => {
+  const incident = { id: 'incident-1', status: 'investigating', title: 'API degradation' };
+  const { service, calls } = harness({ incidents: [incident] });
+  assert.deepEqual(await service.listServiceIncidents('status-admin'), [incident]);
+  assert.deepEqual(calls[0].context, { userId: 'status-admin' });
+  assert.match(calls[1].sql, /list_platform_service_incidents/);
+});
+
+test('service incident creation and updates use the audited database function', async () => {
+  const { service, calls } = harness({ savedIncidentId: 'incident-123' });
+  const input = {
+    title: 'Dashboard response delays',
+    summary: 'Some dashboard requests are taking longer than usual.',
+    status: 'investigating',
+    impact: 'degraded',
+    affectedServices: ['dashboard', 'api'],
+  };
+  assert.deepEqual(await service.saveServiceIncident('status-admin', input), { id: 'incident-123' });
+  assert.deepEqual(calls[1].values, [
+    null, input.title, input.summary, input.status, input.impact, input.affectedServices,
+  ]);
+  await service.saveServiceIncident('status-admin', { ...input, id: '123e4567-e89b-42d3-a456-426614174000', status: 'resolved' });
+  assert.deepEqual(calls[2].values, [
+    '123e4567-e89b-42d3-a456-426614174000',
+    input.title,
+    input.summary,
+    'resolved',
+    input.impact,
+    input.affectedServices,
+  ]);
+});
+
+test('service incident input rejects invalid state, impact, service, and text before database access', async () => {
+  const { service, calls } = harness();
+  const valid = {
+    title: 'Dashboard response delays',
+    summary: 'Some dashboard requests are taking longer than usual.',
+    status: 'investigating',
+    impact: 'degraded',
+    affectedServices: ['dashboard'],
+  };
+  await assert.rejects(service.saveServiceIncident('status-admin', { ...valid, status: 'open' }), /status is invalid/);
+  await assert.rejects(service.saveServiceIncident('status-admin', { ...valid, impact: 'critical' }), /impact is invalid/);
+  await assert.rejects(service.saveServiceIncident('status-admin', { ...valid, affectedServices: ['private_workspace'] }), /affected services/);
+  await assert.rejects(service.saveServiceIncident('status-admin', { ...valid, summary: 'short' }), /summary must be between/);
   assert.equal(calls.length, 0);
 });
