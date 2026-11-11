@@ -51,7 +51,7 @@ LANGUAGE sql
 STABLE
 SECURITY DEFINER
 SET search_path = pg_catalog, public
-AS $
+AS $$
   SELECT EXISTS (
     SELECT 1 FROM public.workspace_support_access access
      WHERE access.id = nullif(current_setting('app.support_grant_id', true), '')::uuid
@@ -61,7 +61,7 @@ AS $
        AND access.expires_at > now()
        AND required_scope = ANY(access.scopes)
   )
-$;
+$$;
 
 CREATE FUNCTION can_read_workspace_technical_diagnostics()
 RETURNS boolean
@@ -69,14 +69,14 @@ LANGUAGE sql
 STABLE
 SECURITY DEFINER
 SET search_path = pg_catalog, public
-AS $
+AS $$
   SELECT EXISTS (
     SELECT 1 FROM public.platform_administrators administrators
      WHERE administrators.user_id = nullif(current_setting('app.user_id', true), '')::uuid
        AND administrators.revoked_at IS NULL
        AND (administrators.role = 'owner' OR 'workspaces.read' = ANY(administrators.permissions))
   )
-$;
+$$;
 
 REVOKE ALL ON FUNCTION has_workspace_support_scope(uuid, text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION can_read_workspace_technical_diagnostics() FROM PUBLIC;
@@ -412,7 +412,7 @@ BEGIN
     jsonb_build_object('content_accessed', false)
   );
 END;
-$;
+$$;
 
 REVOKE ALL ON workspace_support_access FROM platform_runtime;
 REVOKE ALL ON workspace_support_access_audit FROM platform_runtime;
