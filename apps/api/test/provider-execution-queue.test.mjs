@@ -16,7 +16,7 @@ test('provider execution jobs reference an existing authoritative PostgreSQL req
   });
   assert.equal(job.requestId, 'request-a');
   assert.equal(job.authoritativeRequest.status, 'approved');
-  assert.equal(job.queueName, 'provider-execution-spotify-a');
+  assert.equal(job.queueName, 'provider-execution');
   assert.equal(jobs.length, 1);
 });
 

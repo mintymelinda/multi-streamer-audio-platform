@@ -88,7 +88,7 @@ export class ProviderExecutionQueueService {
 
     const job: ProviderExecutionJob = {
       id: executionJobId(workspaceId, requestId, providerInstanceId),
-      queueName: providerQueueName(providerInstanceId),
+      queueName: 'provider-execution',
       workspaceId,
       requestId,
       providerInstanceId,
@@ -162,9 +162,3 @@ function executionJobId(workspaceId: string, requestId: string, providerInstance
   return [workspaceId, requestId, providerInstanceId].join(':');
 }
 
-function providerQueueName(providerInstanceId: string): string {
-  if (!/^[A-Za-z0-9._-]{1,200}$/.test(providerInstanceId)) {
-    throw new TypeError('providerInstanceId contains unsupported queue-name characters.');
-  }
-  return `provider-execution-${providerInstanceId}`;
-}

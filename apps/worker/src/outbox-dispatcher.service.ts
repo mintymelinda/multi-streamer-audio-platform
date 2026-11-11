@@ -71,12 +71,13 @@ export class OutboxDispatcherService implements OnModuleInit, OnModuleDestroy {
   });
   private readonly queue = new Queue('platform-outbox', { connection: this.redis });
   private readonly eventSubQueue = new Queue('twitch-eventsub', { connection: this.redis });
+  private readonly providerExecutionQueue = new Queue('provider-execution', { connection: this.redis });
   private timer: NodeJS.Timeout | undefined;
   private dispatchInFlight = false;
 
   async onModuleInit(): Promise<void> {
     await this.pool.query('SELECT 1');
-    await Promise.all([this.queue.waitUntilReady(), this.eventSubQueue.waitUntilReady()]);
+    await Promise.all([this.queue.waitUntilReady(), this.eventSubQueue.waitUntilReady(), this.providerExecutionQueue.waitUntilReady()]);
     this.logger.log('Outbox and EventSub dispatchers connected to PostgreSQL and Redis');
     this.timer = setInterval(() => {
       void this.dispatchBatch().catch((error: unknown) => {
@@ -91,7 +92,7 @@ export class OutboxDispatcherService implements OnModuleInit, OnModuleDestroy {
 
   async onModuleDestroy(): Promise<void> {
     if (this.timer) clearInterval(this.timer);
-    await Promise.all([this.queue.close(), this.eventSubQueue.close()]);
+    await Promise.all([this.queue.close(), this.eventSubQueue.close(), this.providerExecutionQueue.close()]);
     await this.redis.quit();
     await this.pool.end();
   }
@@ -258,35 +259,18 @@ export class OutboxDispatcherService implements OnModuleInit, OnModuleDestroy {
         },
       );
       if (row.event_type === 'provider.execution.queued') {
-        const queueName = row.payload.queueName;
-        if (
-          typeof queueName !== 'string' ||
-          !/^provider-execution-[A-Za-z0-9._-]{1,200}$/.test(queueName)
-        ) {
-          throw new Error('Provider execution queue name is invalid.');
-        }
-        const providerQueue = new Queue(queueName, { connection: this.redis });
-        try {
-          await providerQueue.add(
-            'provider-execution',
-            {
-              executionStateId: row.aggregate_id,
-              workspaceId: row.workspace_id,
-              requestId: row.payload.requestId,
-              providerInstanceId: row.payload.providerInstanceId,
-              dispatchGeneration: row.payload.dispatchGeneration,
-            },
-            {
-              jobId: `provider-${row.aggregate_id}-${row.payload.dispatchGeneration}`,
-              attempts: 8,
-              backoff: { type: 'exponential', delay: 1_000 },
-              removeOnComplete: { age: 30 * 24 * 60 * 60, count: 10_000 },
-              removeOnFail: false,
-            },
-          );
-        } finally {
-          await providerQueue.close();
-        }
+        const executionStateId = row.aggregate_id;
+        const requestId = row.payload.requestId;
+        const providerInstanceId = row.payload.providerInstanceId;
+        const dispatchGeneration = row.payload.dispatchGeneration;
+        if (typeof executionStateId !== 'string' || typeof requestId !== 'string' ||
+            typeof providerInstanceId !== 'string' || !Number.isSafeInteger(dispatchGeneration) ||
+            Number(dispatchGeneration) < 1) throw new Error('Provider execution outbox payload is invalid.');
+        await this.providerExecutionQueue.add('provider-execution',
+          { executionStateId, workspaceId: row.workspace_id, requestId, providerInstanceId, dispatchGeneration },
+          { jobId: `provider-${executionStateId}-${dispatchGeneration}`, attempts: 8,
+            backoff: { type: 'exponential', delay: 1_000 },
+            removeOnComplete: { age: 30 * 24 * 60 * 60, count: 10_000 }, removeOnFail: false });
       }
       const event = {
         id: row.id,
