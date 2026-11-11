@@ -64,6 +64,19 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM overlay_scenes WHERE id = scene_a AND name = 'Now Playing') THEN
     RAISE EXCEPTION 'another workspace modified a scene';
   END IF;
+
+  DELETE FROM overlay_scenes WHERE id = scene_a;
+  IF FOUND IS NOT TRUE THEN
+    RAISE EXCEPTION 'workspace owner could not delete their scene';
+  END IF;
+  IF (SELECT count(*) FROM get_overlay_scene_snapshot(scene_a, repeat('a', 64))) <> 0 THEN
+    RAISE EXCEPTION 'deleted scene token still resolves a published snapshot';
+  END IF;
+  IF (SELECT count(*) FROM get_active_overlay_scene_ids(workspace_a)) <> 0 THEN
+    RAISE EXCEPTION 'deleted scene remains in active scene lookup';
+  END IF;
+  INSERT INTO overlay_scenes (id, workspace_id, name, access_token_hash, created_by_user_id)
+  VALUES (scene_a, workspace_a, 'Replacement', repeat('c', 64), user_a);
 END;
 $$;
 ROLLBACK;
