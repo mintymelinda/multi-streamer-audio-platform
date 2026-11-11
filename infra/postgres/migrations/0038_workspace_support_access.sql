@@ -4,7 +4,7 @@ BEGIN;
 CREATE TABLE workspace_support_access (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-  support_user_id uuid NOT NULL REFERENCES platform_users(id) ON DELETE RESTRICT,
+  support_user_id uuid NOT NULL REFERENCES platform_users(id) ON DELETE CASCADE,
   granted_by_user_id uuid REFERENCES platform_users(id) ON DELETE SET NULL,
   reason text NOT NULL CHECK (length(btrim(reason)) BETWEEN 1 AND 1000),
   scopes text[] NOT NULL CHECK (
@@ -28,9 +28,11 @@ CREATE INDEX workspace_support_access_support_user
 
 CREATE TABLE workspace_support_access_audit (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  grant_id uuid REFERENCES workspace_support_access(id) ON DELETE SET NULL,
-  workspace_id uuid REFERENCES workspaces(id) ON DELETE SET NULL,
-  actor_user_id uuid REFERENCES platform_users(id) ON DELETE SET NULL,
+  -- Keep identifiers as immutable historical references; audit rows must
+  -- survive workspace/account deletion without FK-driven UPDATE operations.
+  grant_id uuid,
+  workspace_id uuid,
+  actor_user_id uuid,
   action text NOT NULL CHECK (length(action) BETWEEN 1 AND 120),
   reason text NOT NULL CHECK (length(btrim(reason)) BETWEEN 1 AND 1000),
   details jsonb NOT NULL DEFAULT '{}'::jsonb,
@@ -201,7 +203,7 @@ BEGIN
   )
   VALUES (
     target_workspace_id, actor_id, actor_id, btrim(action_reason),
-    ARRAY(SELECT DISTINCT scope FROM unnest(requested_scopes) AS scope ORDER BY scope),
+    ARRAY(SELECT DISTINCT scope FROM unnest(requested_scopes) AS requested_scope(scope) ORDER BY scope),
     now() + make_interval(mins => duration_minutes)
   )
   RETURNING * INTO created_grant;
