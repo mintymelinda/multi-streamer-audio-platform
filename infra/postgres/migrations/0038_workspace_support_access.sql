@@ -366,10 +366,8 @@ BEGIN
   IF NOT EXISTS (
     SELECT 1
       FROM public.platform_administrators administrators
-      JOIN public.platform_users users ON users.id = administrators.user_id
      WHERE administrators.user_id = actor_id
        AND administrators.revoked_at IS NULL
-       AND users.status = 'active'
        AND (
          administrators.role = 'owner'
          OR 'support_access.manage' = ANY(administrators.permissions)
