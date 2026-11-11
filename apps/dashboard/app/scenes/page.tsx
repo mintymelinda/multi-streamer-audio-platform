@@ -137,11 +137,13 @@ export default function ScenesPage() {
       { method: "POST" },
     )
       .then(async (result) => {
+        const scene = result.scene;
+        const overlayPath = result.overlayPath;
         const accessToken = result.accessToken;
-        if (result.created && result.scene && result.overlayPath && accessToken) {
+        if (result.created && scene && overlayPath && accessToken) {
           setSecrets((current) => [
-            ...current.filter((secret) => secret.sceneId !== result.scene.id),
-            { sceneId: result.scene.id, url: obsUrl(result.overlayPath, accessToken) },
+            ...current.filter((secret) => secret.sceneId !== scene.id),
+            { sceneId: scene.id, url: obsUrl(overlayPath, accessToken) },
           ]);
           setMessage("Your starter Now Playing scene is ready. Copy its OBS URL now; the access token is shown only once.");
         }
@@ -211,8 +213,12 @@ export default function ScenesPage() {
     const currentIndex = scenes.findIndex((item) => item.id === scene.id);
     const nextIndex = currentIndex + direction;
     if (currentIndex < 0 || nextIndex < 0 || nextIndex >= scenes.length) return;
+    const currentScene = scenes[currentIndex];
+    const targetScene = scenes[nextIndex];
+    if (!currentScene || !targetScene) return;
     const nextOrder = [...scenes];
-    [nextOrder[currentIndex], nextOrder[nextIndex]] = [nextOrder[nextIndex], nextOrder[currentIndex]];
+    nextOrder[currentIndex] = targetScene;
+    nextOrder[nextIndex] = currentScene;
     setBusy(true);
     setError("");
     setMessage("");
