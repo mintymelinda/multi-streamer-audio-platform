@@ -86,11 +86,20 @@ END $$;
 
 -- An active platform administrator must first be revoked by the platform owner.
 SELECT set_config('app.user_id', '71000000-0000-4000-8000-000000000002', true);
+DO $
+BEGIN
+  PERFORM delete_current_platform_account();
+  RAISE EXCEPTION 'account deletion unexpectedly allowed for an active platform administrator';
+EXCEPTION WHEN insufficient_privilege THEN
+  IF SQLERRM NOT LIKE '%platform administrator access must be revoked%' THEN RAISE; END IF;
+END $;
+
+-- Simulate the platform owner revoking the assignment, then delete the account.
+RESET ROLE;
 UPDATE platform_administrators SET revoked_at = now()
  WHERE user_id = '71000000-0000-4000-8000-000000000002';
-
--- A revoked assignment is removed, personal data is cascaded, and workspace
--- data remains available to the workspace owner.
+SET LOCAL ROLE platform_runtime;
+SELECT set_config('app.user_id', '71000000-0000-4000-8000-000000000002', true);
 SELECT delete_current_platform_account();
 
 DO $$
