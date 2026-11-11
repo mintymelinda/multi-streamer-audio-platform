@@ -334,3 +334,20 @@ h1 { margin: 7px 0 8px; font-size: clamp(28px, 4vw, 38px); letter-spacing: -.055
 :root[data-theme="light"] .component-settings { border-color: #d5d9e2; }
 :root[data-theme="light"] .component-settings input { color: #202330; background: #fff; border-color: #cbd1dd; }
 @media (max-width: 520px) { .component-library-grid { grid-template-columns: 1fr; }.component-number-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+
+.scene-layout-toolbar { display: flex; flex-wrap: wrap; align-items: end; gap: 9px; padding: 10px; border: 1px solid #393d4b; border-radius: 8px; background: #11141d; }
+.scene-layout-toolbar label { display: grid; gap: 5px; color: #a4a7b4; font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.scene-layout-toolbar input:not([type="checkbox"]), .scene-layout-toolbar select { width: 100%; min-width: 76px; padding: 7px; border: 1px solid #393d4b; border-radius: 6px; color: #f3f4f6; background: #1a1d28; font-size: 11px; }
+.scene-layout-toolbar .snap-toggle { display: flex; align-items: center; gap: 7px; min-height: 31px; }
+.scene-layout-toolbar input[type="checkbox"], .component-lock-control input { accent-color: #8d75d0; }
+.component-lock-control { display: flex !important; align-items: center; gap: 7px; color: #d4c8f3 !important; text-transform: none !important; letter-spacing: 0 !important; }
+.scene-preview-stage.has-layout-guides { background-image: linear-gradient(to right, rgb(151 130 202 / 17%) 1px, transparent 1px), linear-gradient(to bottom, rgb(151 130 202 / 17%) 1px, transparent 1px); background-repeat: repeat; }
+.scene-preview-stage.is-fixed-canvas { max-width: none; }
+.scene-preview-element { user-select: none; touch-action: none; }
+.scene-preview-element:active { border-color: #d7b56d; }
+:root[data-theme="light"] .scene-layout-toolbar { background: #f7f8fb; border-color: #d5d9e2; }
+:root[data-theme="light"] .scene-layout-toolbar label { color: #626a7a; }
+:root[data-theme="light"] .scene-layout-toolbar input:not([type="checkbox"]), :root[data-theme="light"] .scene-layout-toolbar select { color: #202330; background: #fff; border-color: #cbd1dd; }
+
+.scene-preview-resize { position: absolute; right: 0; bottom: 0; width: 13px; height: 13px; border-top: 2px solid #e0d5ff; border-left: 2px solid #e0d5ff; background: #7256d5; cursor: nwse-resize; }

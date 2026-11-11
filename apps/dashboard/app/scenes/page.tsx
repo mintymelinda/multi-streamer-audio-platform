@@ -82,6 +82,8 @@ export default function ScenesPage() {
   const [draftText, setDraftText] = useState("");
   const [editorBusy, setEditorBusy] = useState(false);
   const starterRequests = useRef(new Set<string>());
+  const previewStage = useRef<HTMLDivElement | null>(null);
+  const dragState = useRef<{ index: number; pointerId: number; mode: "move" | "resize"; startX: number; startY: number; x: number; y: number; width: number; height: number } | null>(null);
 
   const loadScenes = useCallback(async () => {
     if (!workspaceId) {
@@ -230,9 +232,95 @@ export default function ScenesPage() {
       )
     : [];
 
-  function writeElements(elements: Record<string, unknown>[]) {
+  const canvasState = previewState?.canvas && typeof previewState.canvas === "object"
+    ? previewState.canvas as Record<string, unknown>
+    : {};
+  const canvasMode = canvasState.mode === "fixed" ? "fixed" : "responsive";
+  const snapEnabled = canvasState.snap !== false;
+  const snapSize = previewPercent(canvasState.snapSize, 2, 1, canvasMode === "fixed" ? 500 : 25);
+  const canvasWidth = previewPercent(canvasState.width, 1920, 320, 7680);
+  const canvasHeight = previewPercent(canvasState.height, 1080, 180, 4320);
+
+  function writeDocument(elements: Record<string, unknown>[], canvas = canvasState) {
     if (!previewState) return;
-    setDraftText(JSON.stringify({ ...previewState, version: 1, elements }, null, 2));
+    setDraftText(JSON.stringify({ ...previewState, version: 1, canvas, elements }, null, 2));
+  }
+
+  function writeElements(elements: Record<string, unknown>[]) {
+    writeDocument(elements);
+  }
+
+  function updateCanvas(patch: Record<string, unknown>) {
+    const nextCanvas = { ...canvasState, ...patch };
+    let nextElements = previewElements;
+    if (patch.mode === "fixed" && canvasMode !== "fixed") {
+      nextElements = previewElements.map((element) => ({
+        ...element,
+        x: previewPercent(element.x, 5, 0, 100) * canvasWidth / 100,
+        y: previewPercent(element.y, 5, 0, 100) * canvasHeight / 100,
+        width: previewPercent(element.width, 42, 1, 100) * canvasWidth / 100,
+        height: previewPercent(element.height, 18, 1, 100) * canvasHeight / 100,
+      }));
+    } else if (patch.mode === "responsive" && canvasMode === "fixed") {
+      nextElements = previewElements.map((element) => ({
+        ...element,
+        x: previewPercent(element.x, 5, 0, canvasWidth) * 100 / canvasWidth,
+        y: previewPercent(element.y, 5, 0, canvasHeight) * 100 / canvasHeight,
+        width: previewPercent(element.width, 42, 1, canvasWidth) * 100 / canvasWidth,
+        height: previewPercent(element.height, 18, 1, canvasHeight) * 100 / canvasHeight,
+      }));
+    }
+    writeDocument(nextElements, nextCanvas);
+  }
+
+  function snapValue(value: number) {
+    return snapEnabled ? Math.round(value / snapSize) * snapSize : value;
+  }
+
+  function startComponentDrag(event: React.PointerEvent<HTMLElement>, index: number, element: Record<string, unknown>, mode: "move" | "resize" = "move") {
+    if (element.locked === true || !previewStage.current) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragState.current = {
+      index,
+      pointerId: event.pointerId,
+      mode,
+      startX: event.clientX,
+      startY: event.clientY,
+      x: previewPercent(element.x, 5, 0, canvasMode === "fixed" ? canvasWidth : 100),
+      y: previewPercent(element.y, 5, 0, canvasMode === "fixed" ? canvasHeight : 100),
+      width: previewPercent(element.width, canvasMode === "fixed" ? 42 * canvasWidth / 100 : 42, 1, canvasMode === "fixed" ? canvasWidth : 100),
+      height: previewPercent(element.height, canvasMode === "fixed" ? 18 * canvasHeight / 100 : 18, 1, canvasMode === "fixed" ? canvasHeight : 100),
+    };
+  }
+
+  function moveComponentDrag(event: React.PointerEvent<HTMLDivElement>) {
+    const drag = dragState.current;
+    const stage = previewStage.current;
+    if (!drag || drag.pointerId !== event.pointerId || !stage) return;
+    const bounds = stage.getBoundingClientRect();
+    if (!bounds.width || !bounds.height) return;
+    const dx = ((event.clientX - drag.startX) / bounds.width) * (canvasMode === "fixed" ? canvasWidth : 100);
+    const dy = ((event.clientY - drag.startY) / bounds.height) * (canvasMode === "fixed" ? canvasHeight : 100);
+    const element = previewElements[drag.index];
+    if (!element || element.locked === true) return;
+    const maxX = canvasMode === "fixed" ? canvasWidth : 100;
+    const maxY = canvasMode === "fixed" ? canvasHeight : 100;
+    if (drag.mode === "resize") {
+      updateComponent(drag.index, {
+        width: Math.min(maxX - drag.x, Math.max(1, snapValue(drag.width + dx))),
+        height: Math.min(maxY - drag.y, Math.max(1, snapValue(drag.height + dy))),
+      });
+      return;
+    }
+    updateComponent(drag.index, {
+      x: Math.min(maxX - drag.width, Math.max(0, snapValue(drag.x + dx))),
+      y: Math.min(maxY - drag.height, Math.max(0, snapValue(drag.y + dy))),
+    });
+  }
+
+  function endComponentDrag(event: React.PointerEvent<HTMLDivElement>) {
+    if (dragState.current?.pointerId === event.pointerId) dragState.current = null;
   }
 
   function addComponent(type: ComponentType) {
@@ -251,10 +339,11 @@ export default function ScenesPage() {
       type,
       name: COMPONENT_LIBRARY.find((item) => item.type === type)?.label ?? type,
       text: defaults[type],
-      x: 5 + (previewElements.length % 3) * 5,
-      y: 5 + (previewElements.length % 4) * 5,
-      width: type === "background" ? 90 : 42,
-      height: type === "now-playing" ? 24 : 18,
+      x: (5 + (previewElements.length % 3) * 5) * (canvasMode === "fixed" ? canvasWidth / 100 : 1),
+      y: (5 + (previewElements.length % 4) * 5) * (canvasMode === "fixed" ? canvasHeight / 100 : 1),
+      width: (type === "background" ? 90 : 42) * (canvasMode === "fixed" ? canvasWidth / 100 : 1),
+      height: (type === "now-playing" ? 24 : 18) * (canvasMode === "fixed" ? canvasHeight / 100 : 1),
+      locked: false,
     }]);
   }
 
@@ -415,10 +504,17 @@ export default function ScenesPage() {
                   <input value={typeof element.src === "string" ? element.src : ""} placeholder="https://…" onChange={(event) => updateComponent(index, { src: event.target.value })} />
                 </label>}
                 <div className="component-number-grid">
-                  {(["x", "y", "width", "height"] as const).map((key) => <label key={key}>{key.toUpperCase()} (%)
-                    <input type="number" min="0" max="100" value={previewPercent(element[key], key === "width" ? 42 : key === "height" ? 18 : 5, 0, 100)} onChange={(event) => updateComponent(index, { [key]: Number(event.target.value) })} />
+                  {(["x", "y", "width", "height"] as const).map((key) => <label key={key}>{key.toUpperCase()} ({canvasMode === "fixed" ? "px" : "%"})
+                    <input type="number" min={key === "width" || key === "height" ? 1 : 0} max={canvasMode === "fixed" ? (key === "x" || key === "width" ? canvasWidth : canvasHeight) : 100} disabled={element.locked === true} value={previewPercent(element[key], key === "width" ? 42 : key === "height" ? 18 : 5, 0, key === "x" || key === "width" ? (canvasMode === "fixed" ? canvasWidth : 100) : (canvasMode === "fixed" ? canvasHeight : 100))} onChange={(event) => {
+                      const value = Number(event.target.value);
+                      const maxWidth = canvasMode === "fixed" ? canvasWidth : 100;
+                      const maxHeight = canvasMode === "fixed" ? canvasHeight : 100;
+                      const maximum = key === "x" ? maxWidth - previewPercent(element.width, 42, 1, maxWidth) : key === "y" ? maxHeight - previewPercent(element.height, 18, 1, maxHeight) : key === "width" ? maxWidth - previewPercent(element.x, 5, 0, maxWidth) : maxHeight - previewPercent(element.y, 5, 0, maxHeight);
+                      updateComponent(index, { [key]: Math.min(maximum, Math.max(key === "width" || key === "height" ? 1 : 0, snapValue(value))) });
+                    }} />
                   </label>)}
                 </div>
+                <label className="component-lock-control"><input type="checkbox" checked={element.locked === true} onChange={(event) => updateComponent(index, { locked: event.target.checked })} /> Lock position and size</label>
                 <button type="button" className="text-button danger-text" onClick={() => removeComponent(index)}>Remove component</button>
               </fieldset>)}
             </div>
@@ -430,13 +526,32 @@ export default function ScenesPage() {
           </div>
           <div className="scene-preview-column">
             <div className="scene-preview-heading"><strong>Live draft preview</strong><span>LOCAL · UNSAVED CHANGES</span></div>
+            <div className="scene-layout-toolbar">
+              <label>Canvas mode<select value={canvasMode} onChange={(event) => updateCanvas({ mode: event.target.value })}><option value="responsive">Responsive (%)</option><option value="fixed">Fixed pixels</option></select></label>
+              {canvasMode === "fixed" && <>
+                <label>Width (px)<input type="number" min="320" max="7680" value={canvasWidth} onChange={(event) => updateCanvas({ width: previewPercent(Number(event.target.value), 1920, 320, 7680) })} /></label>
+                <label>Height (px)<input type="number" min="180" max="4320" value={canvasHeight} onChange={(event) => updateCanvas({ height: previewPercent(Number(event.target.value), 1080, 180, 4320) })} /></label>
+              </>}
+              <label className="snap-toggle"><input type="checkbox" checked={snapEnabled} onChange={(event) => updateCanvas({ snap: event.target.checked })} /> Snap to guides</label>
+              <label>Grid ({canvasMode === "fixed" ? "px" : "%"})<input type="number" min="1" max={canvasMode === "fixed" ? 500 : 25} value={snapSize} onChange={(event) => updateCanvas({ snapSize: previewPercent(Number(event.target.value), 2, 1, canvasMode === "fixed" ? 500 : 25) })} /></label>
+            </div>
             <div className="scene-preview-canvas">
-              <div className="scene-preview-stage">
+              <div
+                ref={previewStage}
+                className={`scene-preview-stage ${snapEnabled ? "has-layout-guides" : ""} ${canvasMode === "fixed" ? "is-fixed-canvas" : ""}`}
+                style={{
+                  ...(canvasMode === "fixed" ? { width: `${canvasWidth}px`, height: `${canvasHeight}px`, aspectRatio: "auto" } : {}),
+                  ...(snapEnabled ? { backgroundSize: canvasMode === "fixed" ? `${snapSize}px ${snapSize}px` : `${snapSize}% ${snapSize}%` } : {}),
+                }}
+                onPointerMove={moveComponentDrag}
+                onPointerUp={endComponentDrag}
+                onPointerCancel={endComponentDrag}
+              >
                 {previewElements.map((element, index) => {
-                  const left = previewPercent(element.x, 5 + (index % 3) * 30, 0, 99);
-                  const top = previewPercent(element.y, 8 + Math.floor(index / 3) * 28, 0, 99);
-                  const width = previewPercent(element.width, 28, 1, 100 - left);
-                  const height = previewPercent(element.height, 18, 1, 100 - top);
+                  const left = previewPercent(element.x, 5 + (index % 3) * 30, 0, canvasMode === "fixed" ? canvasWidth : 99);
+                  const top = previewPercent(element.y, 8 + Math.floor(index / 3) * 28, 0, canvasMode === "fixed" ? canvasHeight : 99);
+                  const width = previewPercent(element.width, canvasMode === "fixed" ? 28 * canvasWidth / 100 : 28, 1, (canvasMode === "fixed" ? canvasWidth : 100) - left);
+                  const height = previewPercent(element.height, canvasMode === "fixed" ? 18 * canvasHeight / 100 : 18, 1, (canvasMode === "fixed" ? canvasHeight : 100) - top);
                   const label = typeof element.text === "string"
                     ? element.text
                     : typeof element.name === "string"
@@ -445,10 +560,16 @@ export default function ScenesPage() {
                   return <div
                     className={`scene-preview-element scene-preview-${typeof element.type === "string" ? element.type : "component"}`}
                     key={typeof element.id === "string" ? element.id : index}
-                    style={{ left: `${left}%`, top: `${top}%`, width: `${width}%`, height: `${height}%` }}
+                    style={{ left: `${left}${canvasMode === "fixed" ? "px" : "%"}`, top: `${top}${canvasMode === "fixed" ? "px" : "%"}`, width: `${width}${canvasMode === "fixed" ? "px" : "%"}`, height: `${height}${canvasMode === "fixed" ? "px" : "%"}`, cursor: element.locked === true ? "not-allowed" : "move", touchAction: "none", outline: element.locked === true ? "1px solid #d7b56d" : undefined }}
+                    onPointerDown={(event) => startComponentDrag(event, index, element)}
                   >
-                    <small>{typeof element.type === "string" ? element.type.replaceAll("-", " ") : "Component"}</small>
+                    <small>{typeof element.type === "string" ? element.type.replaceAll("-", " ") : "Component"}{element.locked === true ? " · locked" : ""}</small>
                     <span>{label}</span>
+                    {element.locked !== true && <i
+                      className="scene-preview-resize"
+                      role="presentation"
+                      onPointerDown={(event) => startComponentDrag(event, index, element, "resize")}
+                    />}
                   </div>;
                 })}
                 {previewElements.length === 0 && <div className="scene-preview-empty">Empty scene · add components in the next editor milestone</div>}

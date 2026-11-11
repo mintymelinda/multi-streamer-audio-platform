@@ -114,14 +114,25 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
         typeof element === "object" && element !== null && !Array.isArray(element),
       )
     : [];
+  const canvas = publishedState?.canvas && typeof publishedState.canvas === "object"
+    ? publishedState.canvas as Record<string, unknown>
+    : {};
+  const fixedCanvas = canvas.mode === "fixed";
+  const canvasWidth = typeof canvas.width === "number" && Number.isFinite(canvas.width) ? Math.min(7680, Math.max(320, canvas.width)) : 1920;
+  const canvasHeight = typeof canvas.height === "number" && Number.isFinite(canvas.height) ? Math.min(4320, Math.max(180, canvas.height)) : 1080;
 
   return (
-    <main className="overlay-scene" aria-label={snapshot.name} data-scene-id={snapshot.sceneId}>
+    <main
+      className={`overlay-scene ${fixedCanvas ? "is-fixed-canvas" : "is-responsive-canvas"}`}
+      aria-label={snapshot.name}
+      data-scene-id={snapshot.sceneId}
+      style={fixedCanvas ? { width: `${canvasWidth}px`, height: `${canvasHeight}px`, minHeight: 0 } : undefined}
+    >
       {snapshot.publishedState === null
         ? <p className="overlay-message">This scene has not been published yet.</p>
         : elements.map((element, index) => {
-            const number = (value: unknown, fallback: number) =>
-              typeof value === "number" && Number.isFinite(value) ? Math.min(100, Math.max(0, value)) : fallback;
+            const number = (value: unknown, fallback: number, maximum: number) =>
+              typeof value === "number" && Number.isFinite(value) ? Math.min(maximum, Math.max(0, value)) : fallback;
             const type = typeof element.type === "string" ? element.type : "custom-text";
             const text = typeof element.text === "string" ? element.text : "";
             const imageUrl = typeof element.src === "string" && /^https?:\/\//i.test(element.src) ? element.src : null;
@@ -129,10 +140,10 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
               className={`overlay-component overlay-component--${type}`}
               key={typeof element.id === "string" ? element.id : index}
               style={{
-                left: `${number(element.x, 5)}%`,
-                top: `${number(element.y, 5)}%`,
-                width: `${number(element.width, 42)}%`,
-                height: `${number(element.height, 18)}%`,
+                left: `${number(element.x, fixedCanvas ? 96 : 5, fixedCanvas ? canvasWidth : 100)}${fixedCanvas ? "px" : "%"}`,
+                top: `${number(element.y, fixedCanvas ? 54 : 5, fixedCanvas ? canvasHeight : 100)}${fixedCanvas ? "px" : "%"}`,
+                width: `${number(element.width, fixedCanvas ? 806 : 42, fixedCanvas ? canvasWidth : 100)}${fixedCanvas ? "px" : "%"}`,
+                height: `${number(element.height, fixedCanvas ? 194 : 18, fixedCanvas ? canvasHeight : 100)}${fixedCanvas ? "px" : "%"}`,
               }}
             >
               {type === "now-playing" && <div className="overlay-now-playing">
