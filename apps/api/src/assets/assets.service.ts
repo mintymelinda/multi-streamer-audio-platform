@@ -205,12 +205,13 @@ export class AssetsService {
           RETURNING id, name, folder_path`,
         [assetId, workspaceId, name ?? null, folder ?? null],
       );
-      if (updated.rowCount) {
+      const updatedRow = updated.rows[0];
+      if (updatedRow) {
         await client.query(
           `INSERT INTO audit_events (workspace_id, actor_user_id, event_type, target_type, target_id, details)
            VALUES ($1, $2, 'asset.updated', 'workspace_asset', $3,
                    jsonb_build_object('name', $4::text, 'folder', $5::text))`,
-          [workspaceId, userId, assetId, updated.rows[0].name, updated.rows[0].folder_path],
+          [workspaceId, userId, assetId, updatedRow.name, updatedRow.folder_path],
         );
       }
       return updated;
