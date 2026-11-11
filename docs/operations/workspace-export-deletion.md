@@ -26,4 +26,4 @@ The database is authoritative for workspace and overlay access. No new overlay l
 
 The export function is a restricted SECURITY DEFINER function owned by `platform_migrator`, with explicit owner verification. It returns only rows belonging to the requested workspace and strips secret-bearing columns. The API runtime receives EXECUTE only; the migrator's row visibility is granted through table-specific SELECT policies.
 
-Deletion is performed in one owner-verified database transaction after private object deletion succeeds. Workspace-owned relational data is removed through foreign-key cascades. Account deletion and deletion-safe backup restoration remain separate roadmap items 63 and 64.
+Deletion is performed in one owner-verified database transaction after private object deletion succeeds. Workspace-owned relational data is removed through foreign-key cascades. Account deletion is covered by item 63. Workspace deletion is recorded in the signed [deletion ledger](deletion-ledger-recovery.md), which must be preserved independently and replayed before services restart after a backup restore.
