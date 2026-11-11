@@ -89,7 +89,7 @@ BEGIN
         recipient_user_id, notification_id, recipient_email, notice_title, notice_body,
         '<h2>' || replace(replace(replace(notice_title, '&', '&amp;'), '<', '&lt;'), '>', '&gt;') ||
         '</h2><p>' || replace(replace(replace(notice_body, '&', '&amp;'), '<', '&lt;'), '>', '&gt;') || '</p>',
-        'planned-maintenance:' || saved_id::text || ':' || recipient_user_id::text || ':' || revision::text
+        'planned-maintenance:' || saved_id::text || ':' || notification_id::text
       ) ON CONFLICT (unique_key) DO NOTHING;
     END IF;
     recipient_email := NULL;
