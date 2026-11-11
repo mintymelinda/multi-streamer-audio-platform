@@ -349,3 +349,5 @@ h1 { margin: 7px 0 8px; font-size: clamp(28px, 4vw, 38px); letter-spacing: -.055
 :root[data-theme="light"] .scene-layout-toolbar { background: #f7f8fb; border-color: #d5d9e2; }
 :root[data-theme="light"] .scene-layout-toolbar label { color: #626a7a; }
 :root[data-theme="light"] .scene-layout-toolbar input:not([type="checkbox"]), :root[data-theme="light"] .scene-layout-toolbar select { color: #202330; background: #fff; border-color: #cbd1dd; }
+
+.scene-preview-resize { position: absolute; right: 0; bottom: 0; width: 13px; height: 13px; border-top: 2px solid #e0d5ff; border-left: 2px solid #e0d5ff; background: #7256d5; cursor: nwse-resize; }
