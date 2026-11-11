@@ -28,6 +28,7 @@ export default function AssetsPage() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [workspaceId, setWorkspaceId] = useState("");
   const [assets, setAssets] = useState<Asset[]>([]);
+  const [folders, setFolders] = useState<string[]>([]);
   const [folder, setFolder] = useState("");
   const [newFolder, setNewFolder] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -43,7 +44,12 @@ export default function AssetsPage() {
   const loadAssets = useCallback(async () => {
     if (!workspaceId) { setAssets([]); return; }
     try {
-      setAssets(await request<Asset[]>(`/workspaces/${workspaceId}/assets?folder=${encodeURIComponent(folder)}`));
+      const [items, folderItems] = await Promise.all([
+        request<Asset[]>(`/workspaces/${workspaceId}/assets?folder=${encodeURIComponent(folder)}`),
+        request<string[]>(`/workspaces/${workspaceId}/assets/folders`),
+      ]);
+      setAssets(items);
+      setFolders(folderItems);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not load assets.");
     }
@@ -115,8 +121,6 @@ export default function AssetsPage() {
       else setError(failure.message);
     } finally { setBusy(false); }
   }
-
-  const folders = [...new Set(assets.map((asset) => asset.folder).filter(Boolean))].sort();
 
   return <main className="shell">
     <header className="topbar"><a className="brand" href="/">♫ Streamer Audio</a><nav className="page-nav"><a href="/">Dashboard</a><a href="/scenes">Scenes</a><a href="/team">Team</a><a href="/settings">Settings</a></nav></header>
