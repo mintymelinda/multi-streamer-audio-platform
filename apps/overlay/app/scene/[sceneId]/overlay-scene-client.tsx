@@ -94,6 +94,7 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
   const [renderedElements, setRenderedElements] = useState<Record<string, unknown>[]>([]);
   const [exitingIds, setExitingIds] = useState<string[]>([]);
   const [animatedIds, setAnimatedIds] = useState<string[]>([]);
+  const [sceneTransitionActive, setSceneTransitionActive] = useState(false);
   const previousElements = useRef<Record<string, unknown>[]>([]);
 
   const loadSnapshot = useCallback(async (accessToken: string) => {
@@ -184,6 +185,19 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
   }, [loadSnapshot, sceneId, token]);
 
   useEffect(() => {
+    if (!snapshot) return;
+    setSceneTransitionActive(true);
+    const duration = snapshot.publishedState && typeof snapshot.publishedState === "object"
+      ? (snapshot.publishedState as Record<string, unknown>).transition
+      : null;
+    const configuredDuration = duration && typeof duration === "object"
+      ? (duration as Record<string, unknown>).durationMs
+      : 320;
+    const timer = window.setTimeout(() => setSceneTransitionActive(false), typeof configuredDuration === "number" ? Math.min(5000, Math.max(0, configuredDuration)) + 80 : 400);
+    return () => window.clearTimeout(timer);
+  }, [snapshot]);
+
+  useEffect(() => {
     const state = snapshot?.publishedState && typeof snapshot.publishedState === 'object'
       ? snapshot.publishedState as Record<string, unknown>
       : null;
@@ -221,8 +235,7 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
       const animation = element.animation && typeof element.animation === 'object'
         ? element.animation as Record<string, unknown>
         : {};
-      if (animation.exit === "none") return 0;
-      const isExit = exitingIds.includes(typeof element.id === "string" ? element.id : "");
+      const isExit = removed.includes(element);
       if (isExit && animation.exit === "none") return 0;
       const duration = typeof animation.durationMs === 'number' ? animation.durationMs : 240;
       const delay = typeof animation.delayMs === 'number' ? animation.delayMs : 0;
@@ -256,8 +269,7 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
 
   return (
     <main
-      key={JSON.stringify(publishedState)}
-      className={`overlay-scene ${fixedCanvas ? "is-fixed-canvas" : "is-responsive-canvas"}`}
+      className={`overlay-scene ${fixedCanvas ? "is-fixed-canvas" : "is-responsive-canvas"} ${sceneTransitionActive ? "is-transitioning" : ""}`}
       data-transition={typeof publishedState?.transition === "object" && publishedState.transition !== null ? String((publishedState.transition as Record<string, unknown>).type ?? "none") : "none"}
       data-reduced-motion={publishedState?.reducedMotion === true ? "true" : "false"}
       aria-label={snapshot.name}
