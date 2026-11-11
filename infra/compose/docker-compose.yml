@@ -14,6 +14,13 @@ services:
       - ../..:/workspace
       - workspace_node_modules:/workspace/node_modules
       - pnpm_store:/home/node/.local/share/pnpm/store
+    environment:
+      OBJECT_STORAGE_ENDPOINT: ${OBJECT_STORAGE_ENDPOINT:-http://localhost:9000}
+      OBJECT_STORAGE_INTERNAL_ENDPOINT: ${OBJECT_STORAGE_INTERNAL_ENDPOINT:-http://object-storage:9000}
+      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-platform-assets}
+      OBJECT_STORAGE_ACCESS_KEY: ${OBJECT_STORAGE_ACCESS_KEY:-local-minio}
+      OBJECT_STORAGE_SECRET_KEY: ${OBJECT_STORAGE_SECRET_KEY:-local-minio-password}
+      OBJECT_STORAGE_REGION: ${OBJECT_STORAGE_REGION:-us-east-1}
     depends_on:
       postgres:
         condition: service_healthy
@@ -88,6 +95,8 @@ services:
     command: >-
       mc alias set local http://object-storage:9000 "${MINIO_ROOT_USER}" "${MINIO_ROOT_PASSWORD}" &&
       mc mb --ignore-existing local/platform-assets &&
+      printf '%s' '{"CORSRules":[{"AllowedOrigins":["*"],"AllowedMethods":["PUT","GET","HEAD"],"AllowedHeaders":["*"],"ExposeHeaders":["ETag","Content-Length","Content-Type"],"MaxAgeSeconds":3600}]}' > /tmp/assets-cors.json &&
+      mc cors set local/platform-assets /tmp/assets-cors.json &&
       mc anonymous set none local/platform-assets
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-local-minio}
