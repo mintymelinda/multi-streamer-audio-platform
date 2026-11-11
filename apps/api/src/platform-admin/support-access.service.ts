@@ -91,6 +91,17 @@ export class SupportAccessService {
     });
   }
 
+  async listAuditForWorkspace(userId: string, workspaceId: string) {
+    if (!validUuid(workspaceId)) throw new BadRequestException('A valid workspace ID is required.');
+    return this.database.transaction({ userId }, async (client) => {
+      const result = await client.query(
+        'SELECT * FROM list_workspace_support_access_audit($1)',
+        [workspaceId],
+      );
+      return result.rows;
+    });
+  }
+
   async revokeForWorkspace(userId: string, workspaceId: string, grantId: string, reasonInput: unknown) {
     if (!validUuid(workspaceId)) throw new BadRequestException('A valid workspace ID is required.');
     if (!validUuid(grantId)) throw new BadRequestException('A valid support grant ID is required.');
