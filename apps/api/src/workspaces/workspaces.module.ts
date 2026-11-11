@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../database/database.module.js';
 import { IdentityModule } from '../identity/identity.module.js';
+import { DeletionLedgerModule } from '../deletion-ledger/deletion-ledger.module.js';
 import { TeamController, MyInvitationsController } from './team.controller.js';
 import { TeamService } from './team.service.js';
 import { TwitchDirectoryService } from './twitch-directory.service.js';
@@ -12,7 +13,7 @@ import { WorkspaceOnboardingController } from './workspace-onboarding.controller
 import { WorkspaceOnboardingService } from './workspace-onboarding.service.js';
 
 @Module({
-  imports: [DatabaseModule, IdentityModule],
+  imports: [DatabaseModule, IdentityModule, DeletionLedgerModule],
   controllers: [WorkspacesController, TeamController, MyInvitationsController, WorkspaceOnboardingController],
   providers: [
     WorkspacesService,
