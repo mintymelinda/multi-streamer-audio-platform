@@ -50,6 +50,7 @@ export default function HomePage() {
   const [twitch, setTwitch] = useState<TwitchStatus | null>(null);
   const [onboarding, setOnboarding] = useState<Onboarding | null>(null);
   const [account, setAccount] = useState(false);
+  const [platformAdmin, setPlatformAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
@@ -63,6 +64,8 @@ export default function HomePage() {
     try {
       const me = await api<{ user: { id: string } }>("/auth/me");
       setAccount(Boolean(me.user.id));
+      const adminAccess = await api<{ isPlatformAdministrator: boolean }>("/platform-admin/me").catch(() => ({ isPlatformAdministrator: false }));
+      setPlatformAdmin(adminAccess.isPlatformAdministrator);
       const available = await api<Workspace[]>("/workspaces");
       setWorkspaces(available);
       const activeId = selectedId && available.some((workspace) => workspace.id === selectedId)
@@ -119,7 +122,7 @@ export default function HomePage() {
 
   if (!workspaces.length) return (
     <main className="shell">
-      <header className="topbar"><div className="brand"><span>♫</span> Streamer Audio</div><a href={`${API}/auth/twitch/start?returnTo=%2F`}>Reconnect</a></header>
+      <header className="topbar"><div className="brand"><span>♫</span> Streamer Audio</div><nav className="page-nav">{platformAdmin && <a href="/platform-admin">Platform administration</a>}<a href={`${API}/auth/twitch/start?returnTo=%2F`}>Reconnect</a></nav></header>
       <section className="empty-state">
         <p className="eyebrow">WELCOME</p><h1>Create your workspace</h1>
         <p>Your Twitch account is already linked as the channel identity. Choose a workspace name to complete the essential setup; you can configure providers, rewards, moderation, and overlays afterward.</p>
@@ -134,7 +137,7 @@ export default function HomePage() {
         <div className="brand"><span>♫</span> Streamer Audio</div>
         <div className="top-actions">
           <label className="workspace-picker"><span>WORKSPACE</span><select value={selectedId} onChange={(event) => setSelectedId(event.target.value)}>{workspaces.map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}</select></label>
-          <nav className="page-nav"><a href="/team">Team</a><a href="/invitations">Invitations</a><a href="/notifications">Notifications</a><a href="/scenes">Scenes</a><a href="/settings">Settings</a></nav><button className="icon-button" onClick={() => void load(true)} disabled={refreshing} aria-label="Refresh dashboard">↻</button>
+          <nav className="page-nav">{platformAdmin && <a href="/platform-admin">Platform administration</a>}<a href="/team">Team</a><a href="/invitations">Invitations</a><a href="/notifications">Notifications</a><a href="/scenes">Scenes</a><a href="/settings">Settings</a></nav><button className="icon-button" onClick={() => void load(true)} disabled={refreshing} aria-label="Refresh dashboard">↻</button>
         </div>
       </header>
       <section className="welcome">
