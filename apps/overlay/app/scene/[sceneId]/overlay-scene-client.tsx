@@ -92,6 +92,7 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
   const [status, setStatus] = useState<'connecting' | 'ready' | 'unauthorized' | 'error'>('connecting');
   const [renderedElements, setRenderedElements] = useState<Record<string, unknown>[]>([]);
   const [exitingIds, setExitingIds] = useState<string[]>([]);
+  const [animatedIds, setAnimatedIds] = useState<string[]>([]);
   const previousElements = useRef<Record<string, unknown>[]>([]);
 
   const loadSnapshot = useCallback(async (accessToken: string) => {
@@ -192,25 +193,43 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
       : [];
     const keyOf = (element: Record<string, unknown>, index: number) =>
       typeof element.id === 'string' ? element.id : String(index);
+    const previous = previousElements.current;
+    const previousByKey = new Map(previous.map((element, index) => [keyOf(element, index), element]));
     const nextKeys = new Set(next.map(keyOf));
-    const removed = previousElements.current.filter((element, index) => !nextKeys.has(keyOf(element, index)));
+    const removed = previous.filter((element, index) => !nextKeys.has(keyOf(element, index)));
     const ids = removed.map((element, index) => keyOf(element, index));
+    const entering = next.filter((element, index) => {
+      const key = keyOf(element, index);
+      const before = previousByKey.get(key);
+      if (!before) return true;
+      const animation = element.animation && typeof element.animation === 'object'
+        ? element.animation as Record<string, unknown>
+        : {};
+      const trigger = animation.trigger;
+      if (JSON.stringify(before) === JSON.stringify(element)) return false;
+      return (trigger === "content-change")
+        || (trigger === "new-song" && element.type === "now-playing")
+        || (trigger === "announcement" && element.type === "announcement");
+    }).map(keyOf);
     previousElements.current = next;
     setRenderedElements([...next, ...removed]);
     setExitingIds(ids);
-    if (ids.length) {
-      const longestExit = Math.max(0, ...removed.map((element) => {
-        const animation = element.animation && typeof element.animation === 'object'
-          ? element.animation as Record<string, unknown>
-          : {};
-        const duration = typeof animation.durationMs === 'number' ? animation.durationMs : 240;
-        const delay = typeof animation.delayMs === 'number' ? animation.delayMs : 0;
-        return Math.min(5000, Math.max(0, duration + delay));
-      }));
+    setAnimatedIds(entering);
+    const allAnimated = [...removed, ...next.filter((element, index) => entering.includes(keyOf(element, index)))];
+    const longest = Math.max(0, ...allAnimated.map((element) => {
+      const animation = element.animation && typeof element.animation === 'object'
+        ? element.animation as Record<string, unknown>
+        : {};
+      const duration = typeof animation.durationMs === 'number' ? animation.durationMs : 240;
+      const delay = typeof animation.delayMs === 'number' ? animation.delayMs : 0;
+      return Math.min(5000, Math.max(0, duration + delay));
+    }));
+    if (allAnimated.length) {
       const timer = window.setTimeout(() => {
         setRenderedElements(next);
         setExitingIds([]);
-      }, longestExit + 80);
+        setAnimatedIds([]);
+      }, longest + 80);
       return () => window.clearTimeout(timer);
     }
     return undefined;
@@ -250,7 +269,7 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
             const candidateImageUrl = typeof element.assetUrl === "string" ? element.assetUrl : element.src;
             const imageUrl = typeof candidateImageUrl === "string" && /^https?:\/\//i.test(candidateImageUrl) ? candidateImageUrl : null;
             return <section
-              className={`overlay-component overlay-component--${type} ${exitingIds.includes(typeof element.id === "string" ? element.id : String(index)) ? "is-exiting" : "is-entering"}`}
+              className={`overlay-component overlay-component--${type} ${exitingIds.includes(typeof element.id === "string" ? element.id : String(index)) ? "is-exiting" : animatedIds.includes(typeof element.id === "string" ? element.id : String(index)) ? "is-entering" : ""}`}
               key={typeof element.id === "string" ? element.id : index}
               style={{
                 "--component-enter": animationName(element, "enter"),
@@ -259,7 +278,9 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
                 "--component-delay": animationDelay(element),
                 animationName: exitingIds.includes(typeof element.id === "string" ? element.id : String(index))
                   ? animationName(element, "exit")
-                  : animationName(element, "enter"),
+                  : animatedIds.includes(typeof element.id === "string" ? element.id : String(index))
+                    ? animationName(element, "enter")
+                    : "none",
                 animationDuration: animationDuration(element),
                 animationDelay: animationDelay(element),
                 animationFillMode: "both",
