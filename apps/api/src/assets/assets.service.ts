@@ -18,6 +18,7 @@ type AssetRow = {
   status: 'pending' | 'ready';
   object_key: string | null;
   pending_object_key: string | null;
+  pending_content_type?: string | null;
   created_at: Date;
   updated_at: Date;
 };
