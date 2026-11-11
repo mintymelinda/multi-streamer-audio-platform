@@ -255,6 +255,45 @@ BEGIN
 END;
 $$;
 
+CREATE FUNCTION list_workspace_support_access_audit(target_workspace_id uuid)
+RETURNS TABLE (
+  id uuid, grant_id uuid, actor_user_id uuid, action text, reason text,
+  details jsonb, created_at timestamptz
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $
+DECLARE
+  actor_id uuid := nullif(current_setting('app.user_id', true), '')::uuid;
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM public.workspaces
+     WHERE id = target_workspace_id AND owner_user_id = actor_id
+  ) THEN
+    RAISE EXCEPTION 'workspace owner access is required'
+      USING ERRCODE = '42501';
+  END IF;
+
+  RETURN QUERY
+    SELECT audit.id, audit.grant_id, audit.actor_user_id, audit.action,
+           audit.reason, audit.details, audit.created_at
+      FROM public.workspace_support_access_audit audit
+     WHERE audit.workspace_id = target_workspace_id
+     ORDER BY audit.created_at DESC
+     LIMIT 100;
+
+  INSERT INTO public.workspace_support_access_audit (
+    workspace_id, actor_user_id, action, reason, details
+  )
+  VALUES (
+    target_workspace_id, actor_id, 'support_access.audit_viewed',
+    'Workspace owner reviewed support access audit history',
+    jsonb_build_object('limit', 100)
+  );
+END;
+$;
+
 CREATE FUNCTION revoke_workspace_support_access(target_workspace_id uuid, grant_id uuid, action_reason text)
 RETURNS void
 LANGUAGE plpgsql
@@ -462,12 +501,14 @@ REVOKE ALL ON workspace_support_access FROM platform_runtime;
 REVOKE ALL ON workspace_support_access_audit FROM platform_runtime;
 REVOKE ALL ON FUNCTION create_workspace_support_access(uuid, text[], text, integer) FROM PUBLIC;
 REVOKE ALL ON FUNCTION list_workspace_support_access(uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION list_workspace_support_access_audit(uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION revoke_workspace_support_access(uuid, uuid, text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION read_support_workspace_content(uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION get_workspace_technical_diagnostics(uuid) FROM PUBLIC;
 
 GRANT EXECUTE ON FUNCTION create_workspace_support_access(uuid, text[], text, integer) TO platform_runtime;
 GRANT EXECUTE ON FUNCTION list_workspace_support_access(uuid) TO platform_runtime;
+GRANT EXECUTE ON FUNCTION list_workspace_support_access_audit(uuid) TO platform_runtime;
 GRANT EXECUTE ON FUNCTION revoke_workspace_support_access(uuid, uuid, text) TO platform_runtime;
 GRANT EXECUTE ON FUNCTION read_support_workspace_content(uuid) TO platform_runtime;
 GRANT EXECUTE ON FUNCTION get_workspace_technical_diagnostics(uuid) TO platform_runtime;
