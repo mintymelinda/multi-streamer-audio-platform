@@ -40,6 +40,33 @@ BEGIN
 END;
 $platform_access$;
 
+-- These RLS predicates expose global rows only through the matching platform
+-- read permission. The helper consults the administrator table only, avoiding
+-- recursive reads of platform_users or workspaces from their own policies.
+CREATE FUNCTION platform_has_permission(required_permission text)
+RETURNS boolean
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $platform_access$
+  SELECT EXISTS (
+    SELECT 1
+      FROM public.platform_administrators administrators
+     WHERE administrators.user_id = nullif(current_setting('app.user_id', true), '')::uuid
+       AND administrators.revoked_at IS NULL
+       AND (
+         administrators.role = 'owner'
+         OR required_permission = ANY(administrators.permissions)
+       )
+  )
+$platform_access$;
+
+CREATE POLICY platform_users_admin_read ON platform_users
+  FOR SELECT USING (platform_has_permission('accounts.read'));
+
+CREATE POLICY workspaces_platform_admin_read ON workspaces
+  FOR SELECT USING (platform_has_permission('workspaces.read'));
+
 CREATE FUNCTION list_platform_accounts(search_term text DEFAULT NULL)
 RETURNS TABLE (
   user_id uuid,
@@ -248,12 +275,14 @@ END;
 $platform_access$;
 
 REVOKE ALL ON FUNCTION require_platform_permission(text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION platform_has_permission(text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION list_platform_accounts(text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION list_platform_workspaces(text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION set_platform_account_status(uuid, account_status, text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION set_platform_workspace_status(uuid, workspace_status, text) FROM PUBLIC;
 
 GRANT USAGE ON TYPE account_status TO platform_runtime;
+GRANT EXECUTE ON FUNCTION platform_has_permission(text) TO platform_runtime;
 GRANT USAGE ON TYPE workspace_status TO platform_runtime;
 GRANT EXECUTE ON FUNCTION list_platform_accounts(text) TO platform_runtime;
 GRANT EXECUTE ON FUNCTION list_platform_workspaces(text) TO platform_runtime;
