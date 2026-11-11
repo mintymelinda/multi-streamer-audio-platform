@@ -230,7 +230,9 @@ export class PlatformAdminService {
         'SELECT set_platform_service_incident($1::uuid, $2, $3, $4::service_incident_status, $5::service_incident_impact, $6::text[]) AS id',
         [id, title, summary, input.status, input.impact, input.affectedServices],
       );
-      return { id: result.rows[0].id };
+      const saved = result.rows[0];
+      if (!saved) throw new Error('Incident save returned no record.');
+      return { id: saved.id };
     });
   }
 
