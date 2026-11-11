@@ -31,15 +31,19 @@ for (const file of await walk(root)) {
   const record = JSON.parse(await readFile(file, 'utf8'));
   if (record?.format !== 'multi-streamer-audio-platform.deletion-tombstone'
       || record.version !== 1
-      || !['account', 'workspace', 'credential'].includes(record.entityType)
+      || !['account', 'workspace', 'credential', 'membership_revocation'].includes(record.entityType)
       || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(record.entityId)
-      || (record.entityType === 'credential' && (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(record.workspaceId) || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(record.providerInstanceId)))
+      || ((record.entityType === 'credential' || record.entityType === 'membership_revocation') && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(record.workspaceId))
+      || (record.entityType === 'credential' && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(record.providerInstanceId))
+      || (record.entityType === 'membership_revocation' && (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(record.eventId) || typeof record.revokedAt !== 'string' || Number.isNaN(Date.parse(record.revokedAt))))
       || typeof record.deletedAt !== 'string'
       || Number.isNaN(Date.parse(record.deletedAt))) {
     throw new Error(`Invalid deletion tombstone: ${relative(root, file)}`);
   }
-  const prefix = record.entityType === 'workspace' ? 'workspaces' : record.entityType === 'account' ? 'accounts' : 'credentials';
-  const expected = join('v1', prefix, `${record.entityId.toLowerCase()}.json`);
+  const prefix = record.entityType === 'workspace' ? 'workspaces' : record.entityType === 'account' ? 'accounts' : record.entityType === 'credential' ? 'credentials' : 'membership-revocations';
+  const expected = record.entityType === 'membership_revocation'
+    ? join('v1', prefix, record.workspaceId.toLowerCase(), record.entityId.toLowerCase(), `${record.eventId}.json`)
+    : join('v1', prefix, `${record.entityId.toLowerCase()}.json`);
   if (relative(root, file).split(sep).join('/') !== expected.split(sep).join('/')) {
     throw new Error(`Tombstone path does not match its entity identity: ${relative(root, file)}`);
   }
@@ -49,7 +53,7 @@ for (const file of await walk(root)) {
 // Workspace tombstones must be replayed before account tombstones so the
 // account-deletion guard sees the same lifecycle ordering as the live system.
 records.sort((left, right) => {
-  const rank = (record) => record.entityType === 'workspace' ? 0 : record.entityType === 'credential' ? 1 : 2;
+  const rank = (record) => record.entityType === 'workspace' ? 0 : record.entityType === 'credential' ? 1 : record.entityType === 'membership_revocation' ? 2 : 3;
   return rank(left) - rank(right) || left.entityId.localeCompare(right.entityId);
 });
 
@@ -62,7 +66,11 @@ try {
   for (const record of records) {
     await pool.query('BEGIN');
     try {
-      if (record.entityType === 'credential') {
+      if (record.entityType === 'membership_revocation') {
+        await pool.query('SELECT apply_membership_revocation($1::uuid, $2::uuid, $3::timestamptz)', [
+          record.workspaceId, record.entityId, record.revokedAt,
+        ]);
+      } else if (record.entityType === 'credential') {
         await pool.query('SELECT apply_credential_tombstone($1::uuid, $2::uuid, $3::uuid)', [
           record.entityId, record.workspaceId, record.providerInstanceId,
         ]);
@@ -77,7 +85,7 @@ try {
       throw error;
     }
   }
-  console.log(`Replayed ${records.length} deletion tombstone(s) (workspaces, credentials, then accounts).`);
+  console.log(`Replayed ${records.length} deletion tombstone(s) (workspaces, credentials, membership revocations, then accounts).`);
 } finally {
   await pool.end();
 }
