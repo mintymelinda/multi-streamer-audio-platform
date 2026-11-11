@@ -368,6 +368,25 @@ export default function ScenesPage() {
     writeElements(previewElements.filter((_, elementIndex) => elementIndex !== index));
   }
 
+  function updateComponentAnimation(index: number, patch: Record<string, unknown>) {
+    const element = previewElements[index];
+    if (!element) return;
+    const current = element.animation && typeof element.animation === "object"
+      ? element.animation as Record<string, unknown>
+      : {};
+    updateComponent(index, { animation: { enter: "fade", exit: "fade", durationMs: 240, delayMs: 0, trigger: "always", ...current, ...patch } });
+  }
+
+  function updateSceneMotion(patch: Record<string, unknown>) {
+    if (!previewState) return;
+    const current = previewState.transition && typeof previewState.transition === "object"
+      ? previewState.transition as Record<string, unknown>
+      : {};
+    setDraftText(JSON.stringify({ ...previewState, ...patch, transition: { type: "none", durationMs: 320, ...current, ...(patch.transition as Record<string, unknown> | undefined) } }, null, 2));
+  }
+
+
+
   async function saveDraft() {
     if (!editor || !workspaceId || !previewState) {
       setError("Fix the JSON document before saving the draft.");
@@ -511,6 +530,29 @@ export default function ScenesPage() {
                 <label>Content
                   <input value={typeof element.text === "string" ? element.text : ""} onChange={(event) => updateComponent(index, { text: event.target.value })} />
                 </label>
+                <div className="component-number-grid">
+                  <label>Enter effect
+                    <select value={typeof (element.animation as Record<string, unknown> | undefined)?.enter === "string" ? String((element.animation as Record<string, unknown>).enter) : "fade"} onChange={(event) => updateComponentAnimation(index, { enter: event.target.value })}>
+                      <option value="none">None</option><option value="fade">Fade</option><option value="slide">Slide</option><option value="scale">Scale</option>
+                    </select>
+                  </label>
+                  <label>Exit effect
+                    <select value={typeof (element.animation as Record<string, unknown> | undefined)?.exit === "string" ? String((element.animation as Record<string, unknown>).exit) : "fade"} onChange={(event) => updateComponentAnimation(index, { exit: event.target.value })}>
+                      <option value="none">None</option><option value="fade">Fade</option><option value="slide">Slide</option><option value="scale">Scale</option>
+                    </select>
+                  </label>
+                  <label>Duration (ms)
+                    <input type="number" min="0" max="5000" step="50" value={previewPercent((element.animation as Record<string, unknown> | undefined)?.durationMs, 240, 0, 5000)} onChange={(event) => updateComponentAnimation(index, { durationMs: Number(event.target.value) })} />
+                  </label>
+                  <label>Delay (ms)
+                    <input type="number" min="0" max="5000" step="50" value={previewPercent((element.animation as Record<string, unknown> | undefined)?.delayMs, 0, 0, 5000)} onChange={(event) => updateComponentAnimation(index, { delayMs: Number(event.target.value) })} />
+                  </label>
+                </div>
+                <label>Animation trigger
+                  <select value={typeof (element.animation as Record<string, unknown> | undefined)?.trigger === "string" ? String((element.animation as Record<string, unknown>).trigger) : "always"} onChange={(event) => updateComponentAnimation(index, { trigger: event.target.value })}>
+                    <option value="always">When added</option><option value="content-change">Content changes</option><option value="new-song">New song</option><option value="announcement">New announcement</option>
+                  </select>
+                </label>
                 {element.type === "custom-image" && <label>Workspace asset
                   <select value={typeof element.assetId === "string" ? element.assetId : ""} onChange={(event) => updateComponent(index, { assetId: event.target.value, src: "" })}>
                     <option value="">Choose an uploaded asset…</option>
@@ -542,6 +584,15 @@ export default function ScenesPage() {
           <div className="scene-preview-column">
             <div className="scene-preview-heading"><strong>Live draft preview</strong><span>LOCAL · UNSAVED CHANGES</span></div>
             <div className="scene-layout-toolbar">
+              <label>Scene transition
+                <select value={typeof (previewState?.transition as Record<string, unknown> | undefined)?.type === "string" ? String((previewState?.transition as Record<string, unknown> | undefined)?.type) : "none"} onChange={(event) => updateSceneMotion({ transition: { type: event.target.value, durationMs: 320 } })}>
+                  <option value="none">None</option><option value="fade">Fade</option><option value="slide">Slide</option><option value="scale">Scale</option>
+                </select>
+              </label>
+              <label>Transition duration (ms)
+                <input type="number" min="0" max="5000" step="50" value={previewPercent((previewState?.transition as Record<string, unknown> | undefined)?.durationMs, 320, 0, 5000)} onChange={(event) => updateSceneMotion({ transition: { ...((previewState?.transition as Record<string, unknown> | undefined) ?? {}), durationMs: Number(event.target.value) } })} />
+              </label>
+              <label className="snap-toggle"><input type="checkbox" checked={previewState?.reducedMotion === true} onChange={(event) => updateSceneMotion({ reducedMotion: event.target.checked })} /> Reduce motion</label>
               <label>Canvas mode<select value={canvasMode} onChange={(event) => updateCanvas({ mode: event.target.value })}><option value="responsive">Responsive (%)</option><option value="fixed">Fixed pixels</option></select></label>
               {canvasMode === "fixed" && <>
                 <label>Width (px)<input type="number" min="320" max="7680" value={canvasWidth} onChange={(event) => updateCanvas({ width: previewPercent(Number(event.target.value), 1920, 320, 7680) })} /></label>
