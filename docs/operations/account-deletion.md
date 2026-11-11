@@ -24,4 +24,4 @@ Workspaces the user only participates in are not deleted. Their integrations, pr
 
 Basic Twitch sign-in requests no scopes and discards the short-lived identity token. Provider credentials are workspace-owned rather than personal-account-owned. Deleting a non-owner account therefore does not disconnect another person's workspace integrations. Deleting an owned workspace first removes its stored credential material through the workspace deletion workflow; neither workflow claims that a third-party provider has confirmed remote token revocation.
 
-Deletion-safe restoration and durable tombstones are implemented separately under Phase 7, item 64.
+Deletion-safe restoration and durable tombstones are implemented under Phase 7, item 64. Follow the [deletion ledger and recovery runbook](deletion-ledger-recovery.md) to export the signed ledger independently and replay it before restarting services after a restore.
