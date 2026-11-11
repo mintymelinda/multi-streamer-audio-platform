@@ -99,7 +99,7 @@ SELECT apply_credential_tombstone(
   '75000000-0000-4000-8000-000000000002',
   '76000000-0000-4000-8000-000000000001'
 );
-DO $
+DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM provider_credentials WHERE id = '77000000-0000-4000-8000-000000000001') THEN
     RAISE EXCEPTION 'credential tombstone did not remove the encrypted credential';
