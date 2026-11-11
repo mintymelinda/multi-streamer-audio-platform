@@ -50,6 +50,7 @@ export default function HomePage() {
   const [twitch, setTwitch] = useState<TwitchStatus | null>(null);
   const [onboarding, setOnboarding] = useState<Onboarding | null>(null);
   const [account, setAccount] = useState(false);
+  const [platformAdmin, setPlatformAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
@@ -134,7 +135,7 @@ export default function HomePage() {
         <div className="brand"><span>♫</span> Streamer Audio</div>
         <div className="top-actions">
           <label className="workspace-picker"><span>WORKSPACE</span><select value={selectedId} onChange={(event) => setSelectedId(event.target.value)}>{workspaces.map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}</select></label>
-          <nav className="page-nav"><a href="/team">Team</a><a href="/invitations">Invitations</a><a href="/notifications">Notifications</a><a href="/scenes">Scenes</a><a href="/settings">Settings</a></nav><button className="icon-button" onClick={() => void load(true)} disabled={refreshing} aria-label="Refresh dashboard">↻</button>
+          <nav className="page-nav">{platformAdmin && <a href="/platform-admin">Platform administration</a>}<a href="/team">Team</a><a href="/invitations">Invitations</a><a href="/notifications">Notifications</a><a href="/scenes">Scenes</a><a href="/settings">Settings</a></nav><button className="icon-button" onClick={() => void load(true)} disabled={refreshing} aria-label="Refresh dashboard">↻</button>
         </div>
       </header>
       <section className="welcome">
