@@ -54,6 +54,7 @@ DECLARE
   account_count integer;
   workspace_count integer;
   revoked_sessions integer;
+  affected_rows integer;
 BEGIN
   IF has_table_privilege(current_user, 'public.platform_administration_audit', 'SELECT')
      OR has_table_privilege(current_user, 'public.platform_administration_audit', 'INSERT') THEN
@@ -69,6 +70,22 @@ BEGIN
   END;
 
   PERFORM set_config('app.user_id', admin_id::text, true);
+
+  UPDATE platform_users
+     SET status = 'suspended', suspended_at = now(), suspension_reason = 'Unapproved direct update'
+   WHERE id = account_id;
+  GET DIAGNOSTICS affected_rows = ROW_COUNT;
+  IF affected_rows <> 0 THEN
+    RAISE EXCEPTION 'account status was changed outside the audited transition function';
+  END IF;
+
+  UPDATE workspaces
+     SET status = 'suspended', restriction_reason = 'Unapproved direct update'
+   WHERE id = workspace_id;
+  GET DIAGNOSTICS affected_rows = ROW_COUNT;
+  IF affected_rows <> 0 THEN
+    RAISE EXCEPTION 'workspace status was changed outside the audited transition function';
+  END IF;
 
   SELECT count(*) INTO account_count FROM list_platform_accounts('980000031')
    WHERE user_id = account_id AND status = 'active';
