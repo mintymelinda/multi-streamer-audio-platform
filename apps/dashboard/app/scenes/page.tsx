@@ -18,7 +18,7 @@ type SceneSecret = { sceneId: string; url: string };
 type WorkspaceAsset = { id: string; name: string; url: string; contentType: string; width: number; height: number };
 type SceneEditor = { sceneId: string; name: string; draftState: Record<string, unknown>; draftRevision: number; publishedAt: string | null; updatedAt: string; hasPublishedState: boolean };
 type SceneIssue = { scene: Scene; accessToken: string; overlayPath: string };
-type StarterSceneResult = { scene: Scene; accessToken: string | null; overlayPath: string; created: boolean };
+type StarterSceneResult = { scene: Scene | null; accessToken: string | null; overlayPath: string | null; created: boolean };
 type ComponentType = "now-playing" | "request-queue" | "recent-tracks" | "announcement" | "custom-text" | "custom-image" | "background" | "decoration";
 const COMPONENT_LIBRARY: { type: ComponentType; label: string; description: string }[] = [
   { type: "now-playing", label: "Now Playing", description: "Current track information and progress" },
@@ -138,7 +138,7 @@ export default function ScenesPage() {
     )
       .then(async (result) => {
         const accessToken = result.accessToken;
-        if (result.created && accessToken) {
+        if (result.created && result.scene && result.overlayPath && accessToken) {
           setSecrets((current) => [
             ...current.filter((secret) => secret.sceneId !== result.scene.id),
             { sceneId: result.scene.id, url: obsUrl(result.overlayPath, accessToken) },
