@@ -86,7 +86,7 @@ END $$;
 
 -- An active platform administrator must first be revoked by the platform owner.
 SELECT set_config('app.user_id', '71000000-0000-4000-8000-000000000002', true);
-DO $
+DO $$
 BEGIN
   PERFORM delete_current_platform_account();
   RAISE EXCEPTION 'account deletion unexpectedly allowed for an active platform administrator';
@@ -102,7 +102,7 @@ SET LOCAL ROLE platform_runtime;
 SELECT set_config('app.user_id', '71000000-0000-4000-8000-000000000002', true);
 SELECT delete_current_platform_account();
 
-DO $
+DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM platform_users WHERE id = '71000000-0000-4000-8000-000000000002') THEN
     RAISE EXCEPTION 'deleted account row remains';
