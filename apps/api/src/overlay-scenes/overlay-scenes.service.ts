@@ -113,6 +113,13 @@ export class OverlayScenesService {
         if (current) {
           return { scene: current, accessToken: null, overlayPath: `/scene/${current.id}`, created: false };
         }
+        const provisioned = await client.query<{ overlay_starter_provisioned_at: Date | null }>(
+          'SELECT overlay_starter_provisioned_at FROM workspaces WHERE id = $1',
+          [workspaceId],
+        );
+        if (provisioned.rows[0]?.overlay_starter_provisioned_at) {
+          return { scene: null, accessToken: null, overlayPath: null, created: false };
+        }
 
         const sceneId = randomUUID();
         const accessToken = newOpaqueToken();
@@ -136,9 +143,13 @@ export class OverlayScenesService {
                    jsonb_build_object('name', 'Now Playing'))`,
           [workspaceId, userId, sceneId],
         );
+        await client.query(
+          'UPDATE workspaces SET overlay_starter_provisioned_at = now() WHERE id = $1 AND overlay_starter_provisioned_at IS NULL',
+          [workspaceId],
+        );
         return { scene, accessToken, overlayPath: `/scene/${sceneId}`, created: true };
       },
-    );
+    ).catch((error: unknown) => this.mapSceneMutationError(error));
   }
 
   async create(workspaceId: VerifiedWorkspaceId, userId: string, nameInput: unknown) {
@@ -148,14 +159,19 @@ export class OverlayScenesService {
     const scene = await this.database.transaction(
       { userId, verifiedWorkspaceId: workspaceId },
       async (client) => {
+        await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))', [workspaceId]);
+        const position = await client.query<{ next_order: number }>(
+          'SELECT COALESCE(MAX(sort_order) + 1, 0) AS next_order FROM overlay_scenes WHERE workspace_id = $1',
+          [workspaceId],
+        );
         const created = await client.query<OverlaySceneRecord>(
           `INSERT INTO overlay_scenes
-             (id, workspace_id, name, access_token_hash, token_created_at, created_by_user_id)
-           VALUES ($1, $2, $3, $4, now(), $5)
+             (id, workspace_id, name, sort_order, access_token_hash, token_created_at, created_by_user_id)
+           VALUES ($1, $2, $3, $4, $5, now(), $6)
            RETURNING id, name, sort_order, created_at, updated_at, token_created_at,
                      token_revoked_at,
                      (access_token_hash IS NOT NULL AND token_revoked_at IS NULL) AS has_active_access`,
-          [sceneId, workspaceId, name, sha256(accessToken), userId],
+          [sceneId, workspaceId, name, position.rows[0]?.next_order ?? 0, sha256(accessToken), userId],
         );
         const row = created.rows[0];
         if (!row) throw new Error('Scene creation did not return a record.');
@@ -168,8 +184,105 @@ export class OverlayScenesService {
         );
         return row;
       },
-    );
+    ).catch((error: unknown) => this.mapSceneMutationError(error));
     return { scene, accessToken, overlayPath: `/scene/${sceneId}` };
+  }
+
+  async rename(workspaceId: VerifiedWorkspaceId, userId: string, sceneId: string, nameInput: unknown) {
+    const name = sceneName(nameInput);
+    return this.database.transaction({ userId, verifiedWorkspaceId: workspaceId }, async (client) => {
+      const updated = await client.query<OverlaySceneRecord>(
+        `UPDATE overlay_scenes
+            SET name = $3, updated_at = now()
+          WHERE id = $1 AND workspace_id = $2
+          RETURNING id, name, sort_order, created_at, updated_at, token_created_at,
+                    token_revoked_at,
+                    (access_token_hash IS NOT NULL AND token_revoked_at IS NULL) AS has_active_access`,
+        [sceneId, workspaceId, name],
+      );
+      const scene = updated.rows[0];
+      if (!scene) throw new NotFoundException('Scene not found.');
+      await client.query(
+        `INSERT INTO audit_events
+           (workspace_id, actor_user_id, event_type, target_type, target_id, details)
+         VALUES ($1, $2, 'overlay.scene.renamed', 'overlay_scene', $3,
+                 jsonb_build_object('name', $4::text))`,
+        [workspaceId, userId, sceneId, name],
+      );
+      return scene;
+    });
+  }
+
+  async reorder(workspaceId: VerifiedWorkspaceId, userId: string, sceneIdsInput: unknown) {
+    if (!Array.isArray(sceneIdsInput) || sceneIdsInput.some((id) =>
+      typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id),
+    )) {
+      throw new BadRequestException('A complete ordered list of scene IDs is required.');
+    }
+    const sceneIds = sceneIdsInput as string[];
+    if (new Set(sceneIds).size !== sceneIds.length) {
+      throw new BadRequestException('Scene order cannot contain duplicate IDs.');
+    }
+    return this.database.transaction({ userId, verifiedWorkspaceId: workspaceId }, async (client) => {
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))', [workspaceId]);
+      const existing = await client.query<{ id: string }>(
+        'SELECT id FROM overlay_scenes WHERE workspace_id = $1 ORDER BY sort_order, created_at, id FOR UPDATE',
+        [workspaceId],
+      );
+      const existingIds = new Set(existing.rows.map((scene) => scene.id));
+      if (sceneIds.length !== existingIds.size || sceneIds.some((id) => !existingIds.has(id))) {
+        throw new BadRequestException('Scene order must include every scene in this workspace exactly once.');
+      }
+      if (sceneIds.length > 0) {
+        await client.query(
+          `UPDATE overlay_scenes AS scene
+              SET sort_order = ordered.ordinal - 1, updated_at = now()
+             FROM unnest($2::uuid[]) WITH ORDINALITY AS ordered(id, ordinal)
+            WHERE scene.id = ordered.id AND scene.workspace_id = $1`,
+          [workspaceId, sceneIds],
+        );
+      }
+      await client.query(
+        `INSERT INTO audit_events
+           (workspace_id, actor_user_id, event_type, target_type, target_id, details)
+         VALUES ($1, $2, 'overlay.scene.reordered', 'overlay_scenes', $1,
+                 jsonb_build_object('sceneIds', $3::jsonb))`,
+        [workspaceId, userId, JSON.stringify(sceneIds)],
+      );
+      return { sceneIds };
+    });
+  }
+
+  async delete(workspaceId: VerifiedWorkspaceId, userId: string, sceneId: string) {
+    return this.database.transaction({ userId, verifiedWorkspaceId: workspaceId }, async (client) => {
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))', [workspaceId]);
+      const deleted = await client.query<{ id: string; name: string }>(
+        'DELETE FROM overlay_scenes WHERE id = $1 AND workspace_id = $2 RETURNING id, name',
+        [sceneId, workspaceId],
+      );
+      const scene = deleted.rows[0];
+      if (!scene) throw new NotFoundException('Scene not found.');
+      await client.query(
+        `INSERT INTO audit_events
+           (workspace_id, actor_user_id, event_type, target_type, target_id, details)
+         VALUES ($1, $2, 'overlay.scene.deleted', 'overlay_scene', $3,
+                 jsonb_build_object('name', $4::text, 'accessRevoked', true))`,
+        [workspaceId, userId, scene.id, scene.name],
+      );
+      await client.query("SELECT pg_notify('overlay_scene_access_changed', $1)", [scene.id]);
+      return { sceneId: scene.id, deleted: true, accessRevoked: true };
+    }).catch((error: unknown) => this.mapSceneMutationError(error));
+  }
+
+  private mapSceneMutationError(error: unknown): never {
+    if (
+      error && typeof error === 'object' && 'code' in error
+      && error.code === 'P0001' && 'message' in error
+      && error.message === 'OVERLAY_SCENE_SAFETY_CEILING_REACHED'
+    ) {
+      throw new ConflictException('The platform-wide overlay scene safety ceiling has been reached. Contact the platform operator.');
+    }
+    throw error;
   }
 
   async rotateAccessToken(workspaceId: VerifiedWorkspaceId, userId: string, sceneId: string) {
