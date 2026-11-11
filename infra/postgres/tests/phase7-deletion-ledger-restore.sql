@@ -18,6 +18,11 @@ BEGIN
      OR has_function_privilege('platform_worker', 'apply_deletion_tombstone(text,uuid)', 'EXECUTE') THEN
     RAISE EXCEPTION 'deletion replay execute privilege is not restricted to platform_migrator';
   END IF;
+  IF NOT has_function_privilege('platform_migrator', 'apply_membership_revocation(uuid,uuid,timestamptz)', 'EXECUTE')
+     OR has_function_privilege('platform_runtime', 'apply_membership_revocation(uuid,uuid,timestamptz)', 'EXECUTE')
+     OR has_function_privilege('platform_worker', 'apply_membership_revocation(uuid,uuid,timestamptz)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'membership revocation replay execute privilege is not restricted to platform_migrator';
+  END IF;
   IF NOT has_function_privilege('platform_migrator', 'apply_credential_tombstone(uuid,uuid,uuid)', 'EXECUTE')
      OR has_function_privilege('platform_runtime', 'apply_credential_tombstone(uuid,uuid,uuid)', 'EXECUTE')
      OR has_function_privilege('platform_worker', 'apply_credential_tombstone(uuid,uuid,uuid)', 'EXECUTE') THEN
@@ -48,6 +53,44 @@ BEGIN
   IF EXISTS (SELECT 1 FROM workspaces WHERE id = '75000000-0000-4000-8000-000000000001')
      OR NOT EXISTS (SELECT 1 FROM platform_users WHERE id = '74000000-0000-4000-8000-000000000001') THEN
     RAISE EXCEPTION 'workspace tombstone did not delete only the workspace';
+  END IF;
+END $$;
+
+-- Membership revocation survives restore, but a later re-invitation is preserved.
+SELECT apply_membership_revocation(
+  '75000000-0000-4000-8000-000000000002',
+  '74000000-0000-4000-8000-000000000001',
+  now() + interval '1 second'
+);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM workspace_memberships
+     WHERE workspace_id = '75000000-0000-4000-8000-000000000002'
+       AND user_id = '74000000-0000-4000-8000-000000000001'
+       AND status = 'revoked'
+  ) THEN
+    RAISE EXCEPTION 'membership revocation tombstone was not applied';
+  END IF;
+END $$;
+UPDATE workspace_memberships
+   SET status = 'active', revoked_at = NULL, updated_at = now() + interval '2 seconds'
+ WHERE workspace_id = '75000000-0000-4000-8000-000000000002'
+   AND user_id = '74000000-0000-4000-8000-000000000001';
+SELECT apply_membership_revocation(
+  '75000000-0000-4000-8000-000000000002',
+  '74000000-0000-4000-8000-000000000001',
+  now() + interval '1 second'
+);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM workspace_memberships
+     WHERE workspace_id = '75000000-0000-4000-8000-000000000002'
+       AND user_id = '74000000-0000-4000-8000-000000000001'
+       AND status = 'active'
+  ) THEN
+    RAISE EXCEPTION 'an access grant newer than the tombstone was incorrectly revoked';
   END IF;
 END $$;
 
