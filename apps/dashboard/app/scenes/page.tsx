@@ -497,7 +497,7 @@ export default function ScenesPage() {
                 </label>}
                 <div className="component-number-grid">
                   {(["x", "y", "width", "height"] as const).map((key) => <label key={key}>{key.toUpperCase()} ({canvasMode === "fixed" ? "px" : "%"})
-                    <input type="number" min="0" max="100" value={previewPercent(element[key], key === "width" ? 42 : key === "height" ? 18 : 5, 0, key === "x" || key === "width" ? (canvasMode === "fixed" ? canvasWidth : 100) : (canvasMode === "fixed" ? canvasHeight : 100))} onChange={(event) => {
+                    <input type="number" min={key === "width" || key === "height" ? 1 : 0} max={canvasMode === "fixed" ? (key === "x" || key === "width" ? canvasWidth : canvasHeight) : 100} value={previewPercent(element[key], key === "width" ? 42 : key === "height" ? 18 : 5, 0, key === "x" || key === "width" ? (canvasMode === "fixed" ? canvasWidth : 100) : (canvasMode === "fixed" ? canvasHeight : 100))} onChange={(event) => {
                       const value = Number(event.target.value);
                       const maxWidth = canvasMode === "fixed" ? canvasWidth : 100;
                       const maxHeight = canvasMode === "fixed" ? canvasHeight : 100;
@@ -525,13 +525,16 @@ export default function ScenesPage() {
                 <label>Height (px)<input type="number" min="180" max="4320" value={canvasHeight} onChange={(event) => updateCanvas({ height: previewPercent(Number(event.target.value), 1080, 180, 4320) })} /></label>
               </>}
               <label className="snap-toggle"><input type="checkbox" checked={snapEnabled} onChange={(event) => updateCanvas({ snap: event.target.checked })} /> Snap to guides</label>
-              <label>Grid (%)<input type="number" min="1" max="25" value={snapSize} onChange={(event) => updateCanvas({ snapSize: previewPercent(Number(event.target.value), 2, 1, 25) })} /></label>
+              <label>Grid ({canvasMode === "fixed" ? "px" : "%"})<input type="number" min="1" max={canvasMode === "fixed" ? 500 : 25} value={snapSize} onChange={(event) => updateCanvas({ snapSize: previewPercent(Number(event.target.value), 2, 1, 25) })} /></label>
             </div>
             <div className="scene-preview-canvas">
               <div
                 ref={previewStage}
                 className={`scene-preview-stage ${snapEnabled ? "has-layout-guides" : ""} ${canvasMode === "fixed" ? "is-fixed-canvas" : ""}`}
-                style={canvasMode === "fixed" ? { width: `${canvasWidth}px`, height: `${canvasHeight}px`, aspectRatio: "auto" } : undefined}
+                style={{
+                  ...(canvasMode === "fixed" ? { width: `${canvasWidth}px`, height: `${canvasHeight}px`, aspectRatio: "auto" } : {}),
+                  ...(snapEnabled ? { backgroundSize: `${snapSize}% ${snapSize}%` } : {}),
+                }}
                 onPointerMove={moveComponentDrag}
                 onPointerUp={endComponentDrag}
                 onPointerCancel={endComponentDrag}
