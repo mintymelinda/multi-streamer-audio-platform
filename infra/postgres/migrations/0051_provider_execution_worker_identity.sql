@@ -10,11 +10,31 @@ BEGIN
 END;
 $$;
 GRANT USAGE ON SCHEMA public TO platform_provider_execution_owner;
-GRANT SELECT ON platform_users, workspaces, workspace_memberships, media_requests, logical_queue_entries,
-  provider_instances, provider_execution_states, provider_output_assignments,
-  twitch_eventsub_intake, workspace_playback_policies,
-  workspace_provider_path_restrictions, rights_content_blocks, provider_credentials
-TO platform_provider_execution_owner;
+GRANT SELECT (id, status) ON platform_users TO platform_provider_execution_owner;
+GRANT SELECT (id, owner_user_id, status) ON workspaces TO platform_provider_execution_owner;
+GRANT SELECT (workspace_id, user_id, status) ON workspace_memberships TO platform_provider_execution_owner;
+GRANT SELECT (
+  id, workspace_id, source, submitted_by_user_id, source_event_id, status,
+  media_id, media_url, title, artist, duration_ms, metadata
+) ON media_requests TO platform_provider_execution_owner;
+GRANT SELECT (workspace_id, request_id) ON logical_queue_entries TO platform_provider_execution_owner;
+GRANT SELECT (
+  id, workspace_id, provider_id, contract_version, capabilities, connection_health, enabled
+) ON provider_instances TO platform_provider_execution_owner;
+GRANT SELECT (
+  id, workspace_id, request_id, provider_instance_id, state, attempt,
+  dispatch_generation, next_attempt_at
+) ON provider_execution_states TO platform_provider_execution_owner;
+GRANT SELECT (workspace_id, provider_instance_id, output_id, player_id, active)
+  ON provider_output_assignments TO platform_provider_execution_owner;
+GRANT SELECT (workspace_id, routed_request_id, event_id, routing_status, service_actor_user_id)
+  ON twitch_eventsub_intake TO platform_provider_execution_owner;
+GRANT SELECT (workspace_id, enabled) ON workspace_playback_policies TO platform_provider_execution_owner;
+GRANT SELECT (workspace_id, provider_id, disabled_at)
+  ON workspace_provider_path_restrictions TO platform_provider_execution_owner;
+GRANT SELECT (workspace_id, content_id) ON rights_content_blocks TO platform_provider_execution_owner;
+GRANT SELECT (workspace_id, provider_instance_id, status, expires_at)
+  ON provider_credentials TO platform_provider_execution_owner;
 CREATE FUNCTION platform_validate_provider_execution_job(
   p_execution_state_id uuid, p_workspace_id uuid, p_request_id uuid,
   p_provider_instance_id uuid, p_dispatch_generation integer
