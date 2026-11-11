@@ -8,11 +8,18 @@ DECLARE
   support_id uuid := gen_random_uuid();
   workspace_id uuid := gen_random_uuid();
 BEGIN
+  PERFORM set_config('app.user_id', owner_id::text, true);
   INSERT INTO platform_users (id, twitch_user_id)
-  VALUES (owner_id, '980000020'), (support_id, '980000021');
+  VALUES (owner_id, '980000020');
 
+  PERFORM set_config('app.user_id', support_id::text, true);
+  INSERT INTO platform_users (id, twitch_user_id)
+  VALUES (support_id, '980000021');
+
+  PERFORM set_config('app.user_id', owner_id::text, true);
   INSERT INTO workspaces (id, name, owner_user_id, broadcaster_twitch_user_id)
   VALUES (workspace_id, 'Support access test', owner_id, '980000020');
+  PERFORM set_config('app.workspace_id', workspace_id::text, true);
 
   INSERT INTO workspace_memberships (workspace_id, user_id, role)
   VALUES (workspace_id, owner_id, 'owner');
