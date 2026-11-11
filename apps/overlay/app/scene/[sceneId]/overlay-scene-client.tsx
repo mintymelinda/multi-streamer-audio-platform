@@ -96,6 +96,9 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
     let retryDelay = 1_000;
     let rejected = false;
+    const refreshTimer = window.setInterval(() => {
+      void loadSnapshot(token).catch(() => setStatus('error'));
+    }, 45 * 60 * 1000);
 
     const connect = () => {
       if (stopped) return;
@@ -142,6 +145,7 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
     return () => {
       stopped = true;
       if (retryTimer) clearTimeout(retryTimer);
+      window.clearInterval(refreshTimer);
       socket?.close();
     };
   }, [loadSnapshot, sceneId, token]);
