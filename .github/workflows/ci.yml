@@ -112,10 +112,6 @@ jobs:
           docker cp infra/postgres/tests/phase4-account-export-worker-isolation.sql "$container_id:/tmp/phase4-account-export-worker-isolation.sql"
           docker exec -e PGPASSWORD=ci-bootstrap-only "$container_id" psql -h 127.0.0.1 -U platform_bootstrap -d platform -v ON_ERROR_STOP=1 -f /tmp/phase4-account-export-worker-isolation.sql
 
-      - name: Lint (non-blocking)
-        continue-on-error: true
-        run: pnpm lint
-
       - name: Type check
         run: pnpm typecheck
 
