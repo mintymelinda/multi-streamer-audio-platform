@@ -23,7 +23,7 @@ BEGIN
      OR has_function_privilege('platform_worker', 'apply_credential_tombstone(uuid,uuid,uuid)', 'EXECUTE') THEN
     RAISE EXCEPTION 'credential tombstone replay execute privilege is not restricted to platform_migrator';
   END IF;
-END $;
+END $$;
 
 INSERT INTO platform_users (id, twitch_user_id) VALUES
   ('74000000-0000-4000-8000-000000000001', '740001'),
@@ -104,6 +104,6 @@ BEGIN
   IF EXISTS (SELECT 1 FROM provider_credentials WHERE id = '77000000-0000-4000-8000-000000000001') THEN
     RAISE EXCEPTION 'credential tombstone did not remove the encrypted credential';
   END IF;
-END $;
+END $$;
 
 ROLLBACK;
