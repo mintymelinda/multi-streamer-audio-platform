@@ -14,6 +14,7 @@ type Scene = {
   has_active_access: boolean;
 };
 type SceneSecret = { sceneId: string; url: string };
+type WorkspaceAsset = { id: string; name: string; url: string; contentType: string; width: number; height: number };
 type SceneEditor = { sceneId: string; name: string; draftState: Record<string, unknown>; draftRevision: number; publishedAt: string | null; updatedAt: string; hasPublishedState: boolean };
 type SceneIssue = { scene: Scene; accessToken: string; overlayPath: string };
 type StarterSceneResult = { scene: Scene; accessToken: string | null; overlayPath: string; created: boolean };
@@ -72,6 +73,7 @@ export default function ScenesPage() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [workspaceId, setWorkspaceId] = useState("");
   const [scenes, setScenes] = useState<Scene[]>([]);
+  const [assets, setAssets] = useState<WorkspaceAsset[]>([]);
   const [name, setName] = useState("Now Playing");
   const [secrets, setSecrets] = useState<SceneSecret[]>([]);
   const [loading, setLoading] = useState(true);
@@ -109,6 +111,13 @@ export default function ScenesPage() {
   }, []);
 
   useEffect(() => { void loadScenes(); }, [loadScenes]);
+
+  useEffect(() => {
+    if (!workspaceId) { setAssets([]); return; }
+    request<WorkspaceAsset[]>(`/workspaces/${workspaceId}/assets`)
+      .then(setAssets)
+      .catch(() => setAssets([]));
+  }, [workspaceId]);
 
   const selectedWorkspace = workspaces.find((workspace) => workspace.id === workspaceId);
   const canManage = selectedWorkspace && ["owner", "admin"].includes(selectedWorkspace.role);
@@ -330,7 +339,7 @@ export default function ScenesPage() {
       "recent-tracks": "Recently Played",
       announcement: "Your announcement goes here",
       "custom-text": "Edit this text",
-      "custom-image": "https://example.com/image.png",
+      "custom-image": "",
       background: "Background",
       decoration: "Decoration",
     };
@@ -425,7 +434,7 @@ export default function ScenesPage() {
   return <main className="shell">
     <header className="topbar">
       <a className="brand" href="/">♫ Streamer Audio</a>
-      <nav className="page-nav"><a href="/">Dashboard</a><a href="/team">Team</a><a href="/notifications">Notifications</a><a href="/settings">Settings</a></nav>
+      <nav className="page-nav"><a href="/">Dashboard</a><a href="/assets">Assets</a><a href="/team">Team</a><a href="/notifications">Notifications</a><a href="/settings">Settings</a></nav>
     </header>
     <section className="welcome">
       <div><p className="eyebrow">HOSTED OBS OVERLAYS</p><h1>Scenes</h1><p className="subheading">Each scene has its own stable path and independently revocable read-only access token. Set NEXT_PUBLIC_OVERLAY_BASE_URL to the hosted overlay origin when it is deployed separately.</p></div>
