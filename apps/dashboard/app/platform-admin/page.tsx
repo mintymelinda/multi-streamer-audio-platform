@@ -66,7 +66,7 @@ export default function PlatformAdministrationPage() {
       const current = await request<Access>("/platform-admin/me");
       setAccess(current);
       if (current.role === "admin") setPermissions(current.permissions);
-      if (current.isPlatformAdministrator && current.permissions.includes("administrators.read")) {
+      if (current.isPlatformAdministrator && (current.permissions.includes("administrators.read") || current.permissions.includes("administrators.manage"))) {
         setAdministrators(await request<Assignment[]>("/platform-admin/administrators"));
       }
     } catch (cause) {
