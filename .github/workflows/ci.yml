@@ -92,7 +92,7 @@ jobs:
         run: |
           container_id="$(docker ps --filter 'ancestor=postgres:18.6' --format '{{.ID}}' | head -n 1)"
           docker cp infra/postgres/tests/. "$container_id:/tmp/db-tests/"
-          docker exec -e PGPASSWORD=local-runtime-only "$container_id" sh -c 'set -eu; for test_file in /tmp/db-tests/*.sql; do if [ "$test_file" != /tmp/db-tests/phase2-worker-outbox-isolation.sql ] && [ "$test_file" != /tmp/db-tests/phase2-worker-eventsub-intake-isolation.sql ] && [ "$test_file" != /tmp/db-tests/phase4-account-export-worker-isolation.sql ] && [ "$test_file" != /tmp/db-tests/phase6-platform-administration.sql ] && [ "$test_file" != /tmp/db-tests/phase6-support-access.sql ]; then psql -h 127.0.0.1 -U platform_runtime -d platform -v ON_ERROR_STOP=1 -f "$test_file"; fi; done'
+          docker exec -e PGPASSWORD=local-runtime-only "$container_id" sh -c 'set -eu; for test_file in /tmp/db-tests/*.sql; do if [ "$test_file" != /tmp/db-tests/phase2-worker-outbox-isolation.sql ] && [ "$test_file" != /tmp/db-tests/phase2-worker-eventsub-intake-isolation.sql ] && [ "$test_file" != /tmp/db-tests/phase4-account-export-worker-isolation.sql ] && [ "$test_file" != /tmp/db-tests/phase6-platform-administration.sql ] && [ "$test_file" != /tmp/db-tests/phase6-support-access.sql ] && [ "$test_file" != /tmp/db-tests/phase6-platform-restrictions.sql ]; then psql -h 127.0.0.1 -U platform_runtime -d platform -v ON_ERROR_STOP=1 -f "$test_file"; fi; done'
 
       - name: Verify platform administration authorization
         run: |
@@ -105,6 +105,13 @@ jobs:
           container_id="$(docker ps --filter 'ancestor=postgres:18.6' --format '{{.ID}}' | head -n 1)"
           docker cp infra/postgres/tests/phase6-support-access.sql "$container_id:/tmp/phase6-support-access.sql"
           docker exec -e PGPASSWORD=ci-bootstrap-only "$container_id" psql -h 127.0.0.1 -U platform_bootstrap -d platform -v ON_ERROR_STOP=1 -f /tmp/phase6-support-access.sql
+
+
+      - name: Verify audited platform account and workspace restrictions
+        run: |
+          container_id="$(docker ps --filter 'ancestor=postgres:18.6' --format '{{.ID}}' | head -n 1)"
+          docker cp infra/postgres/tests/phase6-platform-restrictions.sql "$container_id:/tmp/phase6-platform-restrictions.sql"
+          docker exec -e PGPASSWORD=ci-bootstrap-only "$container_id" psql -h 127.0.0.1 -U platform_bootstrap -d platform -v ON_ERROR_STOP=1 -f /tmp/phase6-platform-restrictions.sql
 
       - name: Verify worker database role isolation
         run: |

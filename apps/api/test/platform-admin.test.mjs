@@ -16,6 +16,12 @@ function harness(responses = {}) {
           if (sql.includes('list_platform_administrators')) {
             return { rows: responses.administrators ?? [], rowCount: responses.administrators?.length ?? 0 };
           }
+          if (sql.includes('list_platform_accounts')) {
+            return { rows: responses.accounts ?? [], rowCount: responses.accounts?.length ?? 0 };
+          }
+          if (sql.includes('list_platform_workspaces')) {
+            return { rows: responses.workspaces ?? [], rowCount: responses.workspaces?.length ?? 0 };
+          }
           return { rows: [], rowCount: 1 };
         },
       });
@@ -119,4 +125,58 @@ test('revocation uses the audited database function and requires a reason', asyn
     service.revoke('owner-user', '123e4567-e89b-12d3-a456-426614174000', ''),
     /reason between 1 and 1,000/,
   );
+});
+
+test('platform account directory uses the permission-checked database function', async () => {
+  const account = { user_id: 'account-id', twitch_user_id: '123456', status: 'active' };
+  const { service, calls } = harness({ accounts: [account] });
+  assert.deepEqual(await service.listAccounts('admin-user', '123456'), [account]);
+  assert.deepEqual(calls[0].context, { userId: 'admin-user' });
+  assert.deepEqual(calls[1].values, ['123456']);
+  assert.match(calls[1].sql, /list_platform_accounts/);
+});
+
+test('platform workspace directory uses the permission-checked database function', async () => {
+  const workspace = { workspace_id: 'workspace-id', name: 'Test workspace', status: 'active' };
+  const { service, calls } = harness({ workspaces: [workspace] });
+  assert.deepEqual(await service.listWorkspaces('admin-user'), [workspace]);
+  assert.deepEqual(calls[0].context, { userId: 'admin-user' });
+  assert.deepEqual(calls[1].values, [null]);
+  assert.match(calls[1].sql, /list_platform_workspaces/);
+});
+
+test('account suspension and reinstatement use audited database transitions', async () => {
+  const { service, calls } = harness();
+  const targetId = '123e4567-e89b-42d3-a456-426614174000';
+  await service.setAccountStatus('admin-user', targetId, 'suspended', 'Abuse investigation');
+  await service.setAccountStatus('admin-user', targetId, 'active', 'Investigation concluded');
+  assert.deepEqual(calls.filter((call) => call.sql?.includes('set_platform_account_status')).map((call) => call.values), [
+    [targetId, 'suspended', 'Abuse investigation'],
+    [targetId, 'active', 'Investigation concluded'],
+  ]);
+  assert.deepEqual(calls[0].context, { userId: 'admin-user' });
+});
+
+test('workspace restriction, suspension, and restoration use audited database transitions', async () => {
+  const { service, calls } = harness();
+  const workspaceId = '123e4567-e89b-42d3-a456-426614174001';
+  await service.setWorkspaceStatus('admin-user', workspaceId, 'restricted', 'Policy review');
+  await service.setWorkspaceStatus('admin-user', workspaceId, 'suspended', 'Continued abuse');
+  await service.setWorkspaceStatus('admin-user', workspaceId, 'active', 'Review completed');
+  assert.deepEqual(calls.filter((call) => call.sql?.includes('set_platform_workspace_status')).map((call) => call.values), [
+    [workspaceId, 'restricted', 'Policy review'],
+    [workspaceId, 'suspended', 'Continued abuse'],
+    [workspaceId, 'active', 'Review completed'],
+  ]);
+});
+
+test('restriction operations reject invalid targets, states, and missing reasons before database access', async () => {
+  const { service, calls } = harness();
+  const validId = '123e4567-e89b-42d3-a456-426614174000';
+  await assert.rejects(service.setAccountStatus('admin-user', 'not-a-uuid', 'suspended', 'Reason'), /valid target account/);
+  await assert.rejects(service.setAccountStatus('admin-user', validId, 'restricted', 'Reason'), /Account status/);
+  await assert.rejects(service.setAccountStatus('admin-user', validId, 'suspended', ' '), /reason between 1 and 1,000/);
+  await assert.rejects(service.setWorkspaceStatus('admin-user', validId, 'deleted', 'Reason'), /Workspace status/);
+  await assert.rejects(service.setWorkspaceStatus('admin-user', validId, 'suspended', ''), /reason between 1 and 1,000/);
+  assert.equal(calls.length, 0);
 });
