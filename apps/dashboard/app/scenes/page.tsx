@@ -82,6 +82,8 @@ export default function ScenesPage() {
   const [draftText, setDraftText] = useState("");
   const [editorBusy, setEditorBusy] = useState(false);
   const starterRequests = useRef(new Set<string>());
+  const previewStage = useRef<HTMLDivElement | null>(null);
+  const dragState = useRef<{ index: number; pointerId: number; startX: number; startY: number; x: number; y: number } | null>(null);
 
   const loadScenes = useCallback(async () => {
     if (!workspaceId) {
@@ -230,9 +232,66 @@ export default function ScenesPage() {
       )
     : [];
 
-  function writeElements(elements: Record<string, unknown>[]) {
+  const canvasState = previewState?.canvas && typeof previewState.canvas === "object"
+    ? previewState.canvas as Record<string, unknown>
+    : {};
+  const canvasMode = canvasState.mode === "fixed" ? "fixed" : "responsive";
+  const snapEnabled = canvasState.snap !== false;
+  const snapSize = previewPercent(canvasState.snapSize, 2, 1, 25);
+  const canvasWidth = previewPercent(canvasState.width, 1920, 320, 7680);
+  const canvasHeight = previewPercent(canvasState.height, 1080, 180, 4320);
+
+  function writeDocument(elements: Record<string, unknown>[], canvas = canvasState) {
     if (!previewState) return;
-    setDraftText(JSON.stringify({ ...previewState, version: 1, elements }, null, 2));
+    setDraftText(JSON.stringify({ ...previewState, version: 1, canvas, elements }, null, 2));
+  }
+
+  function writeElements(elements: Record<string, unknown>[]) {
+    writeDocument(elements);
+  }
+
+  function updateCanvas(patch: Record<string, unknown>) {
+    writeDocument(previewElements, { ...canvasState, ...patch });
+  }
+
+  function snapValue(value: number) {
+    return snapEnabled ? Math.round(value / snapSize) * snapSize : value;
+  }
+
+  function startComponentDrag(event: React.PointerEvent<HTMLDivElement>, index: number, element: Record<string, unknown>) {
+    if (element.locked === true || !previewStage.current) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragState.current = {
+      index,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      x: previewPercent(element.x, 5, 0, 100),
+      y: previewPercent(element.y, 5, 0, 100),
+    };
+  }
+
+  function moveComponentDrag(event: React.PointerEvent<HTMLDivElement>) {
+    const drag = dragState.current;
+    const stage = previewStage.current;
+    if (!drag || drag.pointerId !== event.pointerId || !stage) return;
+    const bounds = stage.getBoundingClientRect();
+    if (!bounds.width || !bounds.height) return;
+    const dx = ((event.clientX - drag.startX) / bounds.width) * 100;
+    const dy = ((event.clientY - drag.startY) / bounds.height) * 100;
+    const element = previewElements[drag.index];
+    if (!element || element.locked === true) return;
+    const width = previewPercent(element.width, 42, 1, 100);
+    const height = previewPercent(element.height, 18, 1, 100);
+    updateComponent(drag.index, {
+      x: Math.min(100 - width, Math.max(0, snapValue(drag.x + dx))),
+      y: Math.min(100 - height, Math.max(0, snapValue(drag.y + dy))),
+    });
+  }
+
+  function endComponentDrag(event: React.PointerEvent<HTMLDivElement>) {
+    if (dragState.current?.pointerId === event.pointerId) dragState.current = null;
   }
 
   function addComponent(type: ComponentType) {
@@ -255,6 +314,7 @@ export default function ScenesPage() {
       y: 5 + (previewElements.length % 4) * 5,
       width: type === "background" ? 90 : 42,
       height: type === "now-playing" ? 24 : 18,
+      locked: false,
     }]);
   }
 
@@ -416,9 +476,14 @@ export default function ScenesPage() {
                 </label>}
                 <div className="component-number-grid">
                   {(["x", "y", "width", "height"] as const).map((key) => <label key={key}>{key.toUpperCase()} (%)
-                    <input type="number" min="0" max="100" value={previewPercent(element[key], key === "width" ? 42 : key === "height" ? 18 : 5, 0, 100)} onChange={(event) => updateComponent(index, { [key]: Number(event.target.value) })} />
+                    <input type="number" min="0" max="100" value={previewPercent(element[key], key === "width" ? 42 : key === "height" ? 18 : 5, 0, 100)} onChange={(event) => {
+                      const value = Number(event.target.value);
+                      const maximum = key === "x" ? 100 - previewPercent(element.width, 42, 1, 100) : key === "y" ? 100 - previewPercent(element.height, 18, 1, 100) : 100;
+                      updateComponent(index, { [key]: Math.min(maximum, Math.max(key === "width" || key === "height" ? 1 : 0, snapValue(value))) });
+                    }} />
                   </label>)}
                 </div>
+                <label className="component-lock-control"><input type="checkbox" checked={element.locked === true} onChange={(event) => updateComponent(index, { locked: event.target.checked })} /> Lock position and size</label>
                 <button type="button" className="text-button danger-text" onClick={() => removeComponent(index)}>Remove component</button>
               </fieldset>)}
             </div>
@@ -430,8 +495,24 @@ export default function ScenesPage() {
           </div>
           <div className="scene-preview-column">
             <div className="scene-preview-heading"><strong>Live draft preview</strong><span>LOCAL · UNSAVED CHANGES</span></div>
+            <div className="scene-layout-toolbar">
+              <label>Canvas mode<select value={canvasMode} onChange={(event) => updateCanvas({ mode: event.target.value })}><option value="responsive">Responsive (%)</option><option value="fixed">Fixed pixels</option></select></label>
+              {canvasMode === "fixed" && <>
+                <label>Width (px)<input type="number" min="320" max="7680" value={canvasWidth} onChange={(event) => updateCanvas({ width: previewPercent(Number(event.target.value), 1920, 320, 7680) })} /></label>
+                <label>Height (px)<input type="number" min="180" max="4320" value={canvasHeight} onChange={(event) => updateCanvas({ height: previewPercent(Number(event.target.value), 1080, 180, 4320) })} /></label>
+              </>}
+              <label className="snap-toggle"><input type="checkbox" checked={snapEnabled} onChange={(event) => updateCanvas({ snap: event.target.checked })} /> Snap to guides</label>
+              <label>Grid (%)<input type="number" min="1" max="25" value={snapSize} onChange={(event) => updateCanvas({ snapSize: previewPercent(Number(event.target.value), 2, 1, 25) })} /></label>
+            </div>
             <div className="scene-preview-canvas">
-              <div className="scene-preview-stage">
+              <div
+                ref={previewStage}
+                className={`scene-preview-stage ${snapEnabled ? "has-layout-guides" : ""} ${canvasMode === "fixed" ? "is-fixed-canvas" : ""}`}
+                style={canvasMode === "fixed" ? { width: `${canvasWidth}px`, height: `${canvasHeight}px`, aspectRatio: "auto" } : undefined}
+                onPointerMove={moveComponentDrag}
+                onPointerUp={endComponentDrag}
+                onPointerCancel={endComponentDrag}
+              >
                 {previewElements.map((element, index) => {
                   const left = previewPercent(element.x, 5 + (index % 3) * 30, 0, 99);
                   const top = previewPercent(element.y, 8 + Math.floor(index / 3) * 28, 0, 99);
@@ -445,9 +526,10 @@ export default function ScenesPage() {
                   return <div
                     className={`scene-preview-element scene-preview-${typeof element.type === "string" ? element.type : "component"}`}
                     key={typeof element.id === "string" ? element.id : index}
-                    style={{ left: `${left}%`, top: `${top}%`, width: `${width}%`, height: `${height}%` }}
+                    style={{ left: `${left}%`, top: `${top}%`, width: `${width}%`, height: `${height}%`, cursor: element.locked === true ? "not-allowed" : "move", touchAction: "none", outline: element.locked === true ? "1px solid #d7b56d" : undefined }}
+                    onPointerDown={(event) => startComponentDrag(event, index, element)}
                   >
-                    <small>{typeof element.type === "string" ? element.type.replaceAll("-", " ") : "Component"}</small>
+                    <small>{typeof element.type === "string" ? element.type.replaceAll("-", " ") : "Component"}{element.locked === true ? " · locked" : ""}</small>
                     <span>{label}</span>
                   </div>;
                 })}
