@@ -76,7 +76,9 @@ test('deletion ledger writes a timestamped workspace membership revocation', asy
   assert.equal(record.workspaceId, '75000000-0000-4000-8000-000000000002');
   assert.equal(record.entityId, '74000000-0000-4000-8000-000000000001');
   assert.equal(record.revokedAt, '2026-11-11T08:00:00.000Z');
+  assert.ok(record.eventId);
   assert.match(calls[0].url, /membership-revocations/);
+  assert.match(calls[0].url, new RegExp('/' + record.eventId + '\\.json'));
 });
 
 test('deletion ledger treats a conditional-create conflict as an idempotent success', async () => {
