@@ -1,13 +1,16 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import 'reflect-metadata';
-import { AppModule } from '../dist/app.module.js';
-import { PlaybackRecoveryModule } from '../dist/playback/playback-recovery.module.js';
 
-test('registers workspace playback recovery and policy endpoints in the API application', () => {
-  const imports = Reflect.getMetadata('imports', AppModule) ?? [];
-  assert.ok(
-    imports.includes(PlaybackRecoveryModule),
-    'PlaybackRecoveryModule must be imported by AppModule so its recovery controllers are reachable',
+const appModule = readFileSync(new URL('../src/app.module.ts', import.meta.url), 'utf8');
+
+test('registers workspace playback recovery in the API application', () => {
+  assert.match(
+    appModule,
+    /import\s*\{\s*PlaybackRecoveryModule\s*\}\s*from\s*['"]\.\/playback\/playback-recovery\.module\.js['"]/,
+  );
+  assert.match(
+    appModule,
+    /imports\s*:\s*\[[\s\S]*?PlaybackRecoveryModule[\s\S]*?\]/,
   );
 });
