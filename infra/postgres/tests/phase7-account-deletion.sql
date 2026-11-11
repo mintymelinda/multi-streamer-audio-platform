@@ -54,7 +54,7 @@ INSERT INTO workspace_memberships (workspace_id, user_id, role) VALUES
   ('72000000-0000-4000-8000-000000000002', '71000000-0000-4000-8000-000000000003', 'owner');
 
 INSERT INTO platform_administrators (user_id, twitch_user_id, role, permissions, revoked_at)
-VALUES ('71000000-0000-4000-8000-000000000002', '710002', 'admin', ARRAY['accounts.read'], now());
+VALUES ('71000000-0000-4000-8000-000000000002', '710002', 'admin', ARRAY['accounts.read'], NULL);
 
 INSERT INTO platform_administration_audit (actor_user_id, target_user_id, action, reason)
 VALUES ('71000000-0000-4000-8000-000000000002', '71000000-0000-4000-8000-000000000002', 'test.account_deletion', 'Exercise audit anonymization');
