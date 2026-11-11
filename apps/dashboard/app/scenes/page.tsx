@@ -387,6 +387,40 @@ export default function ScenesPage() {
 
 
 
+  async function restoreDefaults() {
+    if (!editor || !workspaceId) return;
+    const confirmed = window.confirm(
+      "Restore this scene's default visual layout? This replaces the current draft, but does not publish it. The OBS URL, access token, and currently published scene will remain unchanged.",
+    );
+    if (!confirmed) return;
+    setEditorBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const restored = await request<{
+        draftState: Record<string, unknown>;
+        draftRevision: number;
+        updatedAt: string;
+      }>(`/workspaces/${workspaceId}/scenes/${editor.sceneId}/restore-defaults`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ expectedRevision: editor.draftRevision }),
+      });
+      setEditor({
+        ...editor,
+        draftState: restored.draftState,
+        draftRevision: restored.draftRevision,
+        updatedAt: restored.updatedAt,
+      });
+      setDraftText(JSON.stringify(restored.draftState, null, 2));
+      setMessage("Default layout restored to the draft. Publish it when ready; the OBS URL, access token, and current published scene are unchanged.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not restore scene defaults.");
+    } finally {
+      setEditorBusy(false);
+    }
+  }
+
   async function saveDraft() {
     if (!editor || !workspaceId || !previewState) {
       setError("Fix the JSON document before saving the draft.");
@@ -576,6 +610,7 @@ export default function ScenesPage() {
               </fieldset>)}
             </div>
             <div className="scene-editor-actions">
+              <button type="button" className="secondary-button" disabled={editorBusy || !editor} onClick={() => void restoreDefaults()}>Restore Defaults</button>
               <button type="button" className="secondary-button" disabled={editorBusy || !previewState} onClick={() => void saveDraft()}>{editorBusy ? "Working…" : "Save draft"}</button>
               <button type="button" className="primary-button" disabled={editorBusy || !previewState} onClick={() => void publishDraft()}>Publish draft</button>
             </div>
