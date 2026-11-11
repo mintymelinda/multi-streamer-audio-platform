@@ -69,13 +69,25 @@ CREATE POLICY workspaces_platform_admin_read ON workspaces
 
 CREATE POLICY platform_users_admin_status_update ON platform_users
   FOR UPDATE
-  USING (platform_has_permission('accounts.suspend'))
-  WITH CHECK (platform_has_permission('accounts.suspend'));
+  USING (
+    platform_has_permission('accounts.suspend')
+    AND nullif(btrim(current_setting('app.platform_status_reason', true)), '') IS NOT NULL
+  )
+  WITH CHECK (
+    platform_has_permission('accounts.suspend')
+    AND nullif(btrim(current_setting('app.platform_status_reason', true)), '') IS NOT NULL
+  );
 
 CREATE POLICY workspaces_platform_admin_status_update ON workspaces
   FOR UPDATE
-  USING (platform_has_permission('workspaces.restrict'))
-  WITH CHECK (platform_has_permission('workspaces.restrict'));
+  USING (
+    platform_has_permission('workspaces.restrict')
+    AND nullif(btrim(current_setting('app.platform_status_reason', true)), '') IS NOT NULL
+  )
+  WITH CHECK (
+    platform_has_permission('workspaces.restrict')
+    AND nullif(btrim(current_setting('app.platform_status_reason', true)), '') IS NOT NULL
+  );
 
 CREATE FUNCTION list_platform_accounts(search_term text DEFAULT NULL)
 RETURNS TABLE (
@@ -151,7 +163,6 @@ AS $platform_access$
 DECLARE
   actor_id uuid := public.require_platform_permission('accounts.suspend');
   previous_status account_status;
-  target_twitch_user_id text;
   previous_reason text := current_setting('app.platform_status_reason', true);
 BEGIN
   IF target_user_id IS NULL OR desired_status IS NULL
@@ -160,8 +171,8 @@ BEGIN
       USING ERRCODE = '22023';
   END IF;
 
-  SELECT users.status, users.twitch_user_id
-    INTO previous_status, target_twitch_user_id
+  SELECT users.status
+    INTO previous_status
     FROM public.platform_users users
    WHERE users.id = target_user_id
    FOR UPDATE;
@@ -218,8 +229,6 @@ AS $platform_access$
 DECLARE
   actor_id uuid := public.require_platform_permission('workspaces.restrict');
   previous_status workspace_status;
-  owner_id uuid;
-  target_name text;
   previous_reason text := current_setting('app.platform_status_reason', true);
 BEGIN
   IF target_workspace_id IS NULL OR desired_status IS NULL
@@ -228,8 +237,8 @@ BEGIN
       USING ERRCODE = '22023';
   END IF;
 
-  SELECT workspace.status, workspace.owner_user_id, workspace.name
-    INTO previous_status, owner_id, target_name
+  SELECT workspace.status
+    INTO previous_status
     FROM public.workspaces workspace
    WHERE workspace.id = target_workspace_id
    FOR UPDATE;
