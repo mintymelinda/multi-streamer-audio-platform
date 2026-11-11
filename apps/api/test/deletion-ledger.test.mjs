@@ -71,7 +71,7 @@ test('deletion ledger writes a timestamped workspace membership revocation', asy
     '74000000-0000-4000-8000-000000000001',
     '2026-11-11T08:00:00.000Z',
   );
-  const record = JSON.parse(calls[1].init.body);
+  const record = JSON.parse(calls[0].init.body);
   assert.equal(record.entityType, 'membership_revocation');
   assert.equal(record.workspaceId, '75000000-0000-4000-8000-000000000002');
   assert.equal(record.entityId, '74000000-0000-4000-8000-000000000001');
