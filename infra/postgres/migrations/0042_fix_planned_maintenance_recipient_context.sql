@@ -62,8 +62,8 @@ BEGIN
     CASE WHEN end_time IS NULL THEN '' ELSE E'\nScheduled end: ' ||
       to_char(end_time AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI') || ' UTC' END;
 
-  SELECT array_agg(u.id) INTO recipient_ids
-    FROM public.platform_users u WHERE u.status = 'active';
+  SELECT array_agg(r.user_id) INTO recipient_ids
+    FROM public.platform_notification_recipients r WHERE r.active = true;
 
   FOREACH recipient_user_id IN ARRAY COALESCE(recipient_ids, ARRAY[]::uuid[])
   LOOP
@@ -128,8 +128,8 @@ BEGIN
       USING ERRCODE = 'P0002';
   END IF;
 
-  SELECT array_agg(u.id) INTO recipient_ids
-    FROM public.platform_users u WHERE u.status = 'active';
+  SELECT array_agg(r.user_id) INTO recipient_ids
+    FROM public.platform_notification_recipients r WHERE r.active = true;
   FOREACH recipient_user_id IN ARRAY COALESCE(recipient_ids, ARRAY[]::uuid[])
   LOOP
     PERFORM set_config('app.user_id', recipient_user_id::text, true);
