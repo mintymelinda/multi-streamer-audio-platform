@@ -42,6 +42,80 @@ CREATE INDEX workspace_support_access_audit_workspace
 CREATE INDEX workspace_support_access_audit_actor
   ON workspace_support_access_audit (actor_user_id, created_at DESC);
 
+-- SECURITY DEFINER support/diagnostic readers still obey FORCE RLS. These
+-- narrowly-scoped SELECT policies expose rows only while one of the approved
+-- database functions has installed its transaction-local access context.
+CREATE FUNCTION has_workspace_support_scope(target_workspace_id uuid, required_scope text)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $
+  SELECT EXISTS (
+    SELECT 1 FROM public.workspace_support_access access
+     WHERE access.id = nullif(current_setting('app.support_grant_id', true), '')::uuid
+       AND access.workspace_id = target_workspace_id
+       AND access.support_user_id = nullif(current_setting('app.user_id', true), '')::uuid
+       AND access.revoked_at IS NULL
+       AND access.expires_at > now()
+       AND required_scope = ANY(access.scopes)
+  )
+$;
+
+CREATE FUNCTION can_read_workspace_technical_diagnostics()
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $
+  SELECT EXISTS (
+    SELECT 1 FROM public.platform_administrators administrators
+     WHERE administrators.user_id = nullif(current_setting('app.user_id', true), '')::uuid
+       AND administrators.revoked_at IS NULL
+       AND (administrators.role = 'owner' OR 'workspaces.read' = ANY(administrators.permissions))
+  )
+$;
+
+REVOKE ALL ON FUNCTION has_workspace_support_scope(uuid, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION can_read_workspace_technical_diagnostics() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION has_workspace_support_scope(uuid, text) TO platform_runtime;
+GRANT EXECUTE ON FUNCTION can_read_workspace_technical_diagnostics() TO platform_runtime;
+
+CREATE POLICY workspaces_support_read ON workspaces
+  FOR SELECT USING (
+    id = nullif(current_setting('app.workspace_id', true), '')::uuid
+    AND has_workspace_support_scope(id, 'workspace.read')
+  );
+CREATE POLICY workspaces_platform_diagnostics_read ON workspaces
+  FOR SELECT USING (
+    id = nullif(current_setting('app.workspace_id', true), '')::uuid
+    AND can_read_workspace_technical_diagnostics()
+  );
+
+CREATE POLICY media_requests_support_read ON media_requests
+  FOR SELECT USING (
+    workspace_id = nullif(current_setting('app.workspace_id', true), '')::uuid
+    AND has_workspace_support_scope(workspace_id, 'requests.read')
+  );
+CREATE POLICY media_requests_platform_diagnostics_read ON media_requests
+  FOR SELECT USING (
+    workspace_id = nullif(current_setting('app.workspace_id', true), '')::uuid
+    AND can_read_workspace_technical_diagnostics()
+  );
+
+CREATE POLICY provider_instances_support_read ON provider_instances
+  FOR SELECT USING (
+    workspace_id = nullif(current_setting('app.workspace_id', true), '')::uuid
+    AND has_workspace_support_scope(workspace_id, 'providers.read')
+  );
+CREATE POLICY provider_instances_platform_diagnostics_read ON provider_instances
+  FOR SELECT USING (
+    workspace_id = nullif(current_setting('app.workspace_id', true), '')::uuid
+    AND can_read_workspace_technical_diagnostics()
+  );
+
 CREATE FUNCTION prevent_workspace_support_audit_mutation()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -218,6 +292,9 @@ BEGIN
       USING ERRCODE = '42501';
   END IF;
 
+  PERFORM set_config('app.workspace_id', grant_row.workspace_id::text, true);
+  PERFORM set_config('app.support_grant_id', grant_row.id::text, true);
+
   IF 'workspace.read' = ANY(grant_row.scopes) THEN
     result := result || jsonb_build_object(
       'workspace',
@@ -298,6 +375,8 @@ BEGIN
     RAISE EXCEPTION 'workspace not found'
       USING ERRCODE = 'P0002';
   END IF;
+
+  PERFORM set_config('app.workspace_id', target_workspace_id::text, true);
 
   RETURN jsonb_build_object(
     'workspaceId', target_workspace_id,
