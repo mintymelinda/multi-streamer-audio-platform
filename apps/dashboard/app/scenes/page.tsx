@@ -593,7 +593,7 @@ export default function ScenesPage() {
                 <input type="number" min="0" max="5000" step="50" value={previewPercent((previewState?.transition as Record<string, unknown> | undefined)?.durationMs, 320, 0, 5000)} onChange={(event) => updateSceneMotion({ transition: { ...((previewState?.transition as Record<string, unknown> | undefined) ?? {}), durationMs: Number(event.target.value) } })} />
               </label>
               <label className="snap-toggle"><input type="checkbox" checked={previewState?.reducedMotion === true} onChange={(event) => updateSceneMotion({ reducedMotion: event.target.checked })} /> Reduce motion</label>
-                            <label>Canvas mode<select value={canvasMode} onChange={(event) => updateCanvas({ mode: event.target.value })}><option value="responsive">Responsive (%)</option><option value="fixed">Fixed pixels</option></select></label>
+              <label>Canvas mode<select value={canvasMode} onChange={(event) => updateCanvas({ mode: event.target.value })}><option value="responsive">Responsive (%)</option><option value="fixed">Fixed pixels</option></select></label>
               {canvasMode === "fixed" && <>
                 <label>Width (px)<input type="number" min="320" max="7680" value={canvasWidth} onChange={(event) => updateCanvas({ width: previewPercent(Number(event.target.value), 1920, 320, 7680) })} /></label>
                 <label>Height (px)<input type="number" min="180" max="4320" value={canvasHeight} onChange={(event) => updateCanvas({ height: previewPercent(Number(event.target.value), 1080, 180, 4320) })} /></label>
