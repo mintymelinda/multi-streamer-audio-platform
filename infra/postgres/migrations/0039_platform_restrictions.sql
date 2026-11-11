@@ -165,7 +165,7 @@ DECLARE
   previous_status account_status;
   previous_reason text := current_setting('app.platform_status_reason', true);
 BEGIN
-  IF target_user_id IS NULL OR desired_status IS NULL
+  IF target_user_id IS NULL OR desired_status IS NULL OR action_reason IS NULL
      OR length(btrim(action_reason)) NOT BETWEEN 1 AND 1000 THEN
     RAISE EXCEPTION 'target account, status, and reason are required'
       USING ERRCODE = '22023';
@@ -233,7 +233,7 @@ DECLARE
   previous_status workspace_status;
   previous_reason text := current_setting('app.platform_status_reason', true);
 BEGIN
-  IF target_workspace_id IS NULL OR desired_status IS NULL
+  IF target_workspace_id IS NULL OR desired_status IS NULL OR action_reason IS NULL
      OR length(btrim(action_reason)) NOT BETWEEN 1 AND 1000 THEN
     RAISE EXCEPTION 'target workspace, status, and reason are required'
       USING ERRCODE = '22023';
