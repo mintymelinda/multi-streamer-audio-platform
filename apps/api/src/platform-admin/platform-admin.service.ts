@@ -236,6 +236,108 @@ export class PlatformAdminService {
     });
   }
 
+  async listRightsReports(actorUserId: string, status?: unknown, search?: unknown) {
+    if (status !== undefined && status !== '' && !['received', 'investigating', 'decision_pending', 'escalated', 'closed'].includes(String(status))) {
+      throw new BadRequestException('Rights report status filter is invalid.');
+    }
+    const term = this.validateSearch(search);
+    return this.database.transaction({ userId: actorUserId }, async (client) => {
+      const result = await client.query(
+        'SELECT * FROM list_platform_rights_reports($1, $2)',
+        [status || null, term],
+      );
+      return result.rows;
+    });
+  }
+
+  async listRightsReportEvents(actorUserId: string, reportId: string) {
+    this.validateUuid(reportId, 'rights report');
+    return this.database.transaction({ userId: actorUserId }, async (client) => {
+      const result = await client.query('SELECT * FROM get_platform_rights_report_events($1)', [reportId]);
+      return result.rows;
+    });
+  }
+
+  async assignRightsReport(actorUserId: string, reportId: string, reviewerId: unknown, reason: unknown) {
+    this.validateUuid(reportId, 'rights report');
+    this.validateUuid(reviewerId, 'reviewer');
+    const documentedReason = this.validateDocumentedReason(reason);
+    await this.database.transaction({ userId: actorUserId }, async (client) => {
+      await client.query('SELECT assign_platform_rights_report($1, $2, $3)', [reportId, reviewerId, documentedReason]);
+    });
+  }
+
+  async transitionRightsReport(actorUserId: string, reportId: string, status: unknown, reason: unknown) {
+    this.validateUuid(reportId, 'rights report');
+    if (!['investigating', 'decision_pending', 'escalated'].includes(String(status))) {
+      throw new BadRequestException('Rights report status is invalid.');
+    }
+    const documentedReason = this.validateDocumentedReason(reason);
+    await this.database.transaction({ userId: actorUserId }, async (client) => {
+      await client.query('SELECT transition_platform_rights_report($1, $2, $3)', [reportId, status, documentedReason]);
+    });
+  }
+
+  async decideRightsReport(actorUserId: string, reportId: string, decision: unknown, reason: unknown, preserveEvidence: unknown) {
+    this.validateUuid(reportId, 'rights report');
+    if (!['takedown', 'no_action', 'insufficient_evidence'].includes(String(decision))) {
+      throw new BadRequestException('Rights report decision is invalid.');
+    }
+    if (typeof preserveEvidence !== 'boolean') {
+      throw new BadRequestException('Evidence preservation choice is required.');
+    }
+    const documentedReason = this.validateDocumentedReason(reason);
+    await this.database.transaction({ userId: actorUserId }, async (client) => {
+      await client.query('SELECT decide_platform_rights_report($1, $2, $3, $4)', [
+        reportId, decision, documentedReason, preserveEvidence,
+      ]);
+    });
+  }
+
+  async disableRightsProviderPath(actorUserId: string, workspaceId: string, provider: unknown, reason: unknown) {
+    this.validateUuid(workspaceId, 'workspace');
+    if (typeof provider !== 'string' || !/^[a-z0-9_-]{1,80}$/i.test(provider.trim())) {
+      throw new BadRequestException('A valid provider identifier is required.');
+    }
+    const documentedReason = this.validateDocumentedReason(reason);
+    await this.database.transaction({ userId: actorUserId }, async (client) => {
+      await client.query('SELECT disable_platform_rights_provider_path($1, $2, $3)', [
+        workspaceId, provider.trim().toLowerCase(), documentedReason,
+      ]);
+    });
+  }
+
+  async repeatInfringerSummary(actorUserId: string, workspaceId: string) {
+    this.validateUuid(workspaceId, 'workspace');
+    return this.database.transaction({ userId: actorUserId }, async (client) => {
+      const result = await client.query('SELECT * FROM get_platform_repeat_infringer_summary($1)', [workspaceId]);
+      return result.rows[0] ?? null;
+    });
+  }
+
+  async restrictRepeatInfringerWorkspace(actorUserId: string, workspaceId: string, reason: unknown) {
+    this.validateUuid(workspaceId, 'workspace');
+    const documentedReason = this.validateDocumentedReason(reason);
+    await this.database.transaction({ userId: actorUserId }, async (client) => {
+      await client.query('SELECT restrict_platform_repeat_infringer_workspace($1, $2)', [workspaceId, documentedReason]);
+    });
+  }
+
+  private validateUuid(value: unknown, label: string): asserts value is string {
+    if (typeof value !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
+      throw new BadRequestException(`A valid ${label} ID is required.`);
+    }
+  }
+
+  private validateDocumentedReason(value: unknown): string {
+    const reason = typeof value === 'string' ? value.trim() : '';
+    if (reason.length < 10 || reason.length > 1000) {
+      throw new BadRequestException('A documented reason between 10 and 1,000 characters is required.');
+    }
+    return reason;
+  }
+
+
   async appoint(
     actorUserId: string,
     input: { twitchUserId: unknown; role: unknown; permissions: unknown; reason: unknown },

@@ -115,6 +115,68 @@ export class PlatformAdminController {
     });
   }
 
+
+  @Get('rights-reports')
+  listRightsReports(@Req() request: HttpRequest, @Query('status') status?: string, @Query('search') search?: string) {
+    return this.platformAdmin.listRightsReports(authenticatedUser(request).id, status, search);
+  }
+
+  @Get('rights-reports/:reportId/events')
+  listRightsReportEvents(@Req() request: HttpRequest, @Param('reportId') reportId: string) {
+    return this.platformAdmin.listRightsReportEvents(authenticatedUser(request).id, reportId);
+  }
+
+  @Post('rights-reports/:reportId/assign')
+  @UseGuards(CsrfGuard)
+  assignRightsReport(@Req() request: HttpRequest, @Param('reportId') reportId: string, @Body() body: unknown) {
+    const input = typeof body === 'object' && body !== null
+      ? body as { reviewerUserId?: unknown; reason?: unknown } : {};
+    return this.platformAdmin.assignRightsReport(authenticatedUser(request).id, reportId, input.reviewerUserId, input.reason)
+      .then(() => ({ success: true }));
+  }
+
+  @Post('rights-reports/:reportId/status')
+  @UseGuards(CsrfGuard)
+  transitionRightsReport(@Req() request: HttpRequest, @Param('reportId') reportId: string, @Body() body: unknown) {
+    const input = typeof body === 'object' && body !== null
+      ? body as { status?: unknown; reason?: unknown } : {};
+    return this.platformAdmin.transitionRightsReport(authenticatedUser(request).id, reportId, input.status, input.reason)
+      .then(() => ({ success: true }));
+  }
+
+  @Post('rights-reports/:reportId/decision')
+  @UseGuards(CsrfGuard)
+  decideRightsReport(@Req() request: HttpRequest, @Param('reportId') reportId: string, @Body() body: unknown) {
+    const input = typeof body === 'object' && body !== null
+      ? body as { decision?: unknown; reason?: unknown; preserveEvidence?: unknown } : {};
+    return this.platformAdmin.decideRightsReport(
+      authenticatedUser(request).id, reportId, input.decision, input.reason, input.preserveEvidence,
+    ).then(() => ({ success: true }));
+  }
+
+  @Post('rights-reports/provider-path')
+  @UseGuards(CsrfGuard)
+  disableRightsProviderPath(@Req() request: HttpRequest, @Body() body: unknown) {
+    const input = typeof body === 'object' && body !== null
+      ? body as { workspaceId?: unknown; providerId?: unknown; reason?: unknown } : {};
+    return this.platformAdmin.disableRightsProviderPath(
+      authenticatedUser(request).id, String(input.workspaceId ?? ''), input.providerId, input.reason,
+    ).then(() => ({ success: true }));
+  }
+
+  @Get('rights-reports/workspaces/:workspaceId/repeat-infringer')
+  repeatInfringerSummary(@Req() request: HttpRequest, @Param('workspaceId') workspaceId: string) {
+    return this.platformAdmin.repeatInfringerSummary(authenticatedUser(request).id, workspaceId);
+  }
+
+  @Post('rights-reports/workspaces/:workspaceId/restrict')
+  @UseGuards(CsrfGuard)
+  restrictRepeatInfringerWorkspace(@Req() request: HttpRequest, @Param('workspaceId') workspaceId: string, @Body() body: unknown) {
+    const reason = typeof body === 'object' && body !== null ? (body as { reason?: unknown }).reason : undefined;
+    return this.platformAdmin.restrictRepeatInfringerWorkspace(authenticatedUser(request).id, workspaceId, reason)
+      .then(() => ({ success: true }));
+  }
+
   @Get('administrators')
   listAdministrators(@Req() request: HttpRequest) {
     return this.platformAdmin.listAdministrators(authenticatedUser(request).id);
