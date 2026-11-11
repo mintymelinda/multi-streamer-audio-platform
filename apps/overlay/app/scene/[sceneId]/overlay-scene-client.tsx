@@ -261,9 +261,11 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
       const trigger = animation.trigger;
       const changed = JSON.stringify(withoutAssetUrl(before)) !== JSON.stringify(withoutAssetUrl(element));
       const freshEvent = overlayEvent.sequence > lastHandledEvent.current;
+      const newSongEvent = ['playback.session.started', 'playback.track.started', 'playback.track.changed', 'track.started', 'song.started'].includes(overlayEvent.type);
+      const announcementEvent = ['announcement.created', 'announcement.published', 'overlay.announcement.created'].includes(overlayEvent.type);
       return (trigger === 'content-change' && changed)
-        || (freshEvent && trigger === 'new-song' && element.type === 'now-playing' && /playback|track/i.test(overlayEvent.type))
-        || (freshEvent && trigger === 'announcement' && element.type === 'announcement' && /announcement/i.test(overlayEvent.type));
+        || (freshEvent && trigger === 'new-song' && element.type === 'now-playing' && newSongEvent)
+        || (freshEvent && trigger === 'announcement' && element.type === 'announcement' && announcementEvent);
     }).filter((element) => animationName(element, 'enter') !== 'none');
     if (overlayEvent.sequence > lastHandledEvent.current) lastHandledEvent.current = overlayEvent.sequence;
     previousElements.current = next;
