@@ -91,14 +91,15 @@ export class SupportAccessService {
     });
   }
 
-  async revokeForWorkspace(userId: string, workspaceId: VerifiedWorkspaceId, grantId: string, reasonInput: unknown) {
+  async revokeForWorkspace(userId: string, workspaceId: string, grantId: string, reasonInput: unknown) {
+    if (!validUuid(workspaceId)) throw new BadRequestException('A valid workspace ID is required.');
     if (!validUuid(grantId)) throw new BadRequestException('A valid support grant ID is required.');
     const reason = typeof reasonInput === 'string' ? reasonInput.trim() : '';
     if (!reason || reason.length > 1000) {
       throw new BadRequestException('A reason between 1 and 1,000 characters is required.');
     }
-    await this.database.transaction({ userId, verifiedWorkspaceId: workspaceId }, async (client) => {
-      await client.query('SELECT revoke_workspace_support_access($1, $2)', [grantId, reason]);
+    await this.database.transaction({ userId }, async (client) => {
+      await client.query('SELECT revoke_workspace_support_access($1, $2, $3)', [workspaceId, grantId, reason]);
     });
   }
 }
