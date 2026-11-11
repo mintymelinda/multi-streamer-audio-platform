@@ -69,24 +69,46 @@ LANGUAGE sql
 STABLE
 SECURITY DEFINER
 SET search_path = pg_catalog, public
-AS $$
+AS $
   SELECT EXISTS (
     SELECT 1 FROM public.platform_administrators administrators
      WHERE administrators.user_id = nullif(current_setting('app.user_id', true), '')::uuid
        AND administrators.revoked_at IS NULL
        AND (administrators.role = 'owner' OR 'workspaces.read' = ANY(administrators.permissions))
   )
-$$;
+$;
+
+CREATE FUNCTION can_manage_workspace_support_access()
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $
+  SELECT EXISTS (
+    SELECT 1 FROM public.platform_administrators administrators
+     WHERE administrators.user_id = nullif(current_setting('app.user_id', true), '')::uuid
+       AND administrators.revoked_at IS NULL
+       AND (administrators.role = 'owner' OR 'support_access.manage' = ANY(administrators.permissions))
+  )
+$;
 
 REVOKE ALL ON FUNCTION has_workspace_support_scope(uuid, text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION can_read_workspace_technical_diagnostics() FROM PUBLIC;
+REVOKE ALL ON FUNCTION can_manage_workspace_support_access() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION has_workspace_support_scope(uuid, text) TO platform_runtime;
 GRANT EXECUTE ON FUNCTION can_read_workspace_technical_diagnostics() TO platform_runtime;
+GRANT EXECUTE ON FUNCTION can_manage_workspace_support_access() TO platform_runtime;
 
 CREATE POLICY workspaces_support_read ON workspaces
   FOR SELECT USING (
     id = nullif(current_setting('app.workspace_id', true), '')::uuid
     AND has_workspace_support_scope(id, 'workspace.read')
+  );
+CREATE POLICY workspaces_support_admin_read ON workspaces
+  FOR SELECT USING (
+    id = nullif(current_setting('app.workspace_id', true), '')::uuid
+    AND can_manage_workspace_support_access()
   );
 CREATE POLICY workspaces_platform_diagnostics_read ON workspaces
   FOR SELECT USING (
