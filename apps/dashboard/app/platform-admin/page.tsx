@@ -51,7 +51,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export default function PlatformAdministrationPage() {
   const [access, setAccess] = useState<Access | null>(null);
   const [administrators, setAdministrators] = useState<Assignment[]>([]);
-  const [targetUserId, setTargetUserId] = useState("");
+  const [twitchUserId, setTwitchUserId] = useState("");
   const [role, setRole] = useState<"admin" | "owner">("admin");
   const [permissions, setPermissions] = useState<string[]>(["administrators.read"]);
   const [reason, setReason] = useState("");
@@ -92,9 +92,9 @@ export default function PlatformAdministrationPage() {
       await request("/platform-admin/administrators", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: targetUserId.trim(), role, permissions, reason }),
+        body: JSON.stringify({ twitchUserId: twitchUserId.trim(), role, permissions, reason }),
       });
-      setTargetUserId("");
+      setTwitchUserId("");
       setReason("");
       setMessage("Platform administrator assignment saved.");
       await load();
@@ -168,7 +168,7 @@ export default function PlatformAdministrationPage() {
             <section className="panel">
               <div className="panel-heading"><div><p className="eyebrow">APPOINTMENT</p><h2>Appoint an administrator</h2></div></div>
               <form onSubmit={appoint} className="settings-form">
-                <label>Platform account ID<input value={targetUserId} onChange={(event) => setTargetUserId(event.target.value)} placeholder="UUID from the platform account record" required /></label>
+                <label>Twitch numeric user ID<input value={twitchUserId} onChange={(event) => setTwitchUserId(event.target.value)} inputMode="numeric" pattern="[0-9]{1,32}" placeholder="Stable numeric Twitch ID" required /></label>
                 <label>Role<select value={role} onChange={(event) => setRole(event.target.value as "admin" | "owner")} disabled={access.role !== "owner"}><option value="admin">Administrator</option>{access.role === "owner" && <option value="owner">Platform owner</option>}</select></label>
                 <fieldset><legend>Function-scoped permissions</legend>{PERMISSIONS.map(([key, label]) => (
                   <label className="checkbox-row" key={key}><input type="checkbox" checked={permissions.includes(key)} onChange={() => togglePermission(key)} disabled={access.role !== "owner" && !access.permissions.includes(key)} />{label}</label>
