@@ -359,7 +359,7 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
                 top: `${number(element.y, fixedCanvas ? 54 : 5, fixedCanvas ? canvasHeight : 100)}${fixedCanvas ? "px" : "%"}`,
                 width: `${number(element.width, fixedCanvas ? 806 : 42, fixedCanvas ? canvasWidth : 100)}${fixedCanvas ? "px" : "%"}`,
                 height: `${number(element.height, fixedCanvas ? 194 : 18, fixedCanvas ? canvasHeight : 100)}${fixedCanvas ? "px" : "%"}`,
-              }}
+              } as CSSProperties}
             >
               {type === "now-playing" && <div className="overlay-now-playing">
                 <div className="overlay-artwork">♫</div>
