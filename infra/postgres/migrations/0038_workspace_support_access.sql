@@ -161,6 +161,7 @@ BEGIN
 
   IF action_reason IS NULL OR length(btrim(action_reason)) NOT BETWEEN 1 AND 1000
      OR duration_minutes IS NULL OR duration_minutes NOT BETWEEN 5 AND 240
+     OR requested_scopes IS NULL
      OR cardinality(requested_scopes) NOT BETWEEN 1 AND 3
      OR NOT (requested_scopes <@ ARRAY['workspace.read', 'requests.read', 'providers.read']::text[]) THEN
     RAISE EXCEPTION 'a reason, valid read-only scopes, and a 5-240 minute duration are required'
@@ -290,6 +291,22 @@ BEGIN
    FOR UPDATE;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'active support access grant is required'
+      USING ERRCODE = '42501';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+      FROM public.platform_administrators administrators
+      JOIN public.platform_users users ON users.id = administrators.user_id
+     WHERE administrators.user_id = actor_id
+       AND administrators.revoked_at IS NULL
+       AND users.status = 'active'
+       AND (
+         administrators.role = 'owner'
+         OR 'support_access.manage' = ANY(administrators.permissions)
+       )
+  ) THEN
+    RAISE EXCEPTION 'active platform support permission is required'
       USING ERRCODE = '42501';
   END IF;
 
