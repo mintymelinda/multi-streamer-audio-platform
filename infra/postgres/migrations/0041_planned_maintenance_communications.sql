@@ -28,11 +28,33 @@ CREATE INDEX platform_planned_maintenance_window
   WHERE cancelled_at IS NULL;
 REVOKE ALL ON platform_planned_maintenance FROM PUBLIC, platform_runtime, platform_worker;
 
--- The SECURITY DEFINER maintenance functions need to enumerate active account
--- IDs for recipient fan-out, but do not expose those records to the API.
-CREATE POLICY platform_users_maintenance_recipient_scan
-  ON platform_users FOR SELECT TO platform_runtime, platform_migrator
-  USING (platform_has_permission('status.manage'));
+-- Keep only recipient IDs in a private platform-owned directory. This avoids
+-- granting status managers broad SELECT access to platform account records.
+CREATE TABLE platform_notification_recipients (
+  user_id uuid PRIMARY KEY REFERENCES platform_users(id) ON DELETE CASCADE,
+  active boolean NOT NULL
+);
+REVOKE ALL ON platform_notification_recipients FROM PUBLIC, platform_runtime, platform_worker;
+
+INSERT INTO platform_notification_recipients (user_id, active)
+SELECT id, status = 'active' FROM platform_users;
+
+CREATE FUNCTION sync_platform_notification_recipient()
+RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public
+AS $notification_recipient$
+BEGIN
+  INSERT INTO public.platform_notification_recipients (user_id, active)
+  VALUES (NEW.id, NEW.status = 'active')
+  ON CONFLICT (user_id) DO UPDATE SET active = EXCLUDED.active;
+  RETURN NEW;
+END;
+$notification_recipient$;
+REVOKE ALL ON FUNCTION sync_platform_notification_recipient() FROM PUBLIC;
+
+CREATE TRIGGER platform_notification_recipient_sync
+AFTER INSERT OR UPDATE OF status ON platform_users
+FOR EACH ROW EXECUTE FUNCTION sync_platform_notification_recipient();
 
 CREATE FUNCTION list_public_planned_maintenance()
 RETURNS TABLE (
