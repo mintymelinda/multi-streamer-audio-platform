@@ -16,6 +16,13 @@ function identity(request: HttpRequest): { user: AuthenticatedUser; workspace: W
 export class AssetsController {
   constructor(@Inject(AssetsService) private readonly assets: AssetsService) {}
 
+  @Get('folders')
+  @RequireWorkspacePermission('workspace:read')
+  folders(@Req() request: HttpRequest) {
+    const { user, workspace } = identity(request);
+    return this.assets.folders(workspace.id, user.id);
+  }
+
   @Get()
   @RequireWorkspacePermission('workspace:read')
   list(@Req() request: HttpRequest, @Query('folder') folder?: string) {
