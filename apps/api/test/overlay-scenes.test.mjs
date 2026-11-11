@@ -267,3 +267,91 @@ test('starter creation is scoped to the requested workspace', async () => {
   assert.equal(starters.size, 2);
 });
 
+
+
+test('renames a scene within its workspace and audits the new name', async () => {
+  const statements = [];
+  const scene = { id: 'scene-a', name: 'Starting Soon', sort_order: 2, has_active_access: true };
+  const database = {
+    transaction: async (context, operation) => {
+      assert.deepEqual(context, { userId: 'user-a', verifiedWorkspaceId: 'workspace-a' });
+      return operation({
+        query: async (sql, values = []) => {
+          statements.push({ sql, values });
+          return sql.includes('UPDATE overlay_scenes')
+            ? { rows: [scene], rowCount: 1 }
+            : { rows: [], rowCount: 1 };
+        },
+      });
+    },
+  };
+  const service = new OverlayScenesService(database);
+  const result = await service.rename('workspace-a', 'user-a', 'scene-a', '  Starting Soon  ');
+  assert.equal(result.name, 'Starting Soon');
+  assert.deepEqual(statements[0].values, ['scene-a', 'workspace-a', 'Starting Soon']);
+  assert.ok(statements.some((entry) => entry.sql.includes('overlay.scene.renamed')));
+});
+
+test('reorders only a complete, duplicate-free set of workspace scenes', async () => {
+  const statements = [];
+  const database = {
+    transaction: async (_context, operation) => operation({
+      query: async (sql, values = []) => {
+        statements.push({ sql, values });
+        if (sql.includes('SELECT id FROM overlay_scenes')) {
+          return { rows: [{ id: 'scene-a' }, { id: 'scene-b' }], rowCount: 2 };
+        }
+        return { rows: [], rowCount: 1 };
+      },
+    }),
+  };
+  const service = new OverlayScenesService(database);
+  const result = await service.reorder('workspace-a', 'user-a', ['scene-b', 'scene-a']);
+  assert.deepEqual(result.sceneIds, ['scene-b', 'scene-a']);
+  const update = statements.find((entry) => entry.sql.includes('WITH ORDINALITY'));
+  assert.deepEqual(update.values, ['workspace-a', ['scene-b', 'scene-a']]);
+  await assert.rejects(service.reorder('workspace-a', 'user-a', ['scene-a', 'scene-a']), /duplicate IDs/);
+  await assert.rejects(service.reorder('workspace-a', 'user-a', ['scene-a']), /every scene/);
+});
+
+test('deletes a scene, audits deletion, and notifies overlay sockets to disconnect', async () => {
+  const statements = [];
+  const database = {
+    transaction: async (_context, operation) => operation({
+      query: async (sql, values = []) => {
+        statements.push({ sql, values });
+        if (sql.includes('DELETE FROM overlay_scenes')) {
+          return { rows: [{ id: 'scene-a', name: 'Starting Soon' }], rowCount: 1 };
+        }
+        return { rows: [], rowCount: 1 };
+      },
+    }),
+  };
+  const service = new OverlayScenesService(database);
+  const result = await service.delete('workspace-a', 'user-a', 'scene-a');
+  assert.deepEqual(result, { sceneId: 'scene-a', deleted: true, accessRevoked: true });
+  assert.ok(statements.some((entry) => entry.sql.includes('overlay.scene.deleted')));
+  assert.ok(statements.some((entry) => entry.sql.includes("pg_notify('overlay_scene_access_changed'") && entry.values[0] === 'scene-a'));
+});
+
+test('maps the database-enforced platform-wide scene ceiling to a conflict', async () => {
+  const database = {
+    transaction: async (_context, operation) => operation({
+      query: async (sql) => {
+        if (sql.includes('MAX(sort_order)')) return { rows: [{ next_order: 0 }], rowCount: 1 };
+        if (sql.includes('INSERT INTO overlay_scenes')) {
+          throw Object.assign(new Error('OVERLAY_SCENE_SAFETY_CEILING_REACHED'), {
+            code: 'P0001',
+            message: 'OVERLAY_SCENE_SAFETY_CEILING_REACHED',
+          });
+        }
+        return { rows: [], rowCount: 1 };
+      },
+    }),
+  };
+  const service = new OverlayScenesService(database);
+  await assert.rejects(
+    service.create('workspace-a', 'user-a', 'Extra scene'),
+    /platform-wide overlay scene safety ceiling/,
+  );
+});
