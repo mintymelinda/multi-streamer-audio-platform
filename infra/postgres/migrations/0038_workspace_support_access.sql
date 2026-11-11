@@ -499,7 +499,7 @@ BEGIN
 
   RETURN diagnostics;
 END;
-$;
+$$;
 
 REVOKE ALL ON workspace_support_access FROM platform_runtime;
 REVOKE ALL ON workspace_support_access_audit FROM platform_runtime;
