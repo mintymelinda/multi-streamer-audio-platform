@@ -910,10 +910,6 @@ BEGIN
 END;
 $platform_audit$;
 
-CREATE TRIGGER platform_users_status_audit
-BEFORE UPDATE OF status, suspended_at, suspension_reason ON platform_users
-FOR EACH ROW EXECUTE FUNCTION audit_platform_account_status_change();
-
 
 CREATE OR REPLACE FUNCTION audit_platform_workspace_status_change()
 RETURNS trigger
