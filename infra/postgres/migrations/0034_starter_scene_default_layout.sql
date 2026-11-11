@@ -1,4 +1,9 @@
 -- Phase 5: backfill starter scenes created before the default Now Playing layout existed.
+-- This file runs as the non-BYPASSRLS migrator, so disable/restore RLS in one
+-- transaction to let the data migration see every tenant without exposing a gap.
+BEGIN;
+
+ALTER TABLE overlay_scenes DISABLE ROW LEVEL SECURITY;
 WITH starter_defaults AS (
   SELECT
     id,
@@ -50,3 +55,8 @@ UPDATE overlay_scenes AS scenes
        updated_at = now()
   FROM starter_defaults
  WHERE scenes.id = starter_defaults.id;
+
+ALTER TABLE overlay_scenes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE overlay_scenes FORCE ROW LEVEL SECURITY;
+
+COMMIT;
