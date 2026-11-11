@@ -35,7 +35,7 @@ export class DeletionLedgerService {
   constructor(@Optional() @Inject('DELETION_LEDGER_FETCH') request?: typeof fetch) {
     this.request = request ?? fetch;
     const endpoint = process.env.DELETION_LEDGER_INTERNAL_ENDPOINT
-      ?? process.env.DELETION_LEDGER_ENDPOINT;
+      || process.env.DELETION_LEDGER_ENDPOINT;
     const bucket = process.env.DELETION_LEDGER_BUCKET;
     const accessKey = process.env.DELETION_LEDGER_ACCESS_KEY;
     const secretKey = process.env.DELETION_LEDGER_SECRET_KEY;
@@ -44,7 +44,8 @@ export class DeletionLedgerService {
       return;
     }
     const parsed = new URL(endpoint);
-    if (parsed.protocol !== 'https:' && parsed.hostname !== 'localhost' && parsed.hostname !== '127.0.0.1') {
+    if (parsed.protocol !== 'https:' && parsed.hostname !== 'localhost' && parsed.hostname !== '127.0.0.1'
+      && process.env.DELETION_LEDGER_ALLOW_INSECURE_HTTP !== 'true') {
       throw new Error('Deletion ledger storage must use HTTPS outside local development.');
     }
     this.config = {
