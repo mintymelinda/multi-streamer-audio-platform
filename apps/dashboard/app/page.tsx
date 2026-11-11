@@ -137,7 +137,7 @@ export default function HomePage() {
         <div className="brand"><span>♫</span> Streamer Audio</div>
         <div className="top-actions">
           <label className="workspace-picker"><span>WORKSPACE</span><select value={selectedId} onChange={(event) => setSelectedId(event.target.value)}>{workspaces.map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}</select></label>
-          <nav className="page-nav">{platformAdmin && <a href="/platform-admin">Platform administration</a>}<a href="/team">Team</a><a href="/invitations">Invitations</a><a href="/notifications">Notifications</a><a href="/scenes">Scenes</a><a href="/settings">Settings</a></nav><button className="icon-button" onClick={() => void load(true)} disabled={refreshing} aria-label="Refresh dashboard">↻</button>
+          <nav className="page-nav">{platformAdmin && <a href="/platform-admin">Platform administration</a>}{selected?.role === "owner" && <a href={`/support-access?workspaceId=${selectedId}`}>Support access</a>}<a href="/team">Team</a><a href="/invitations">Invitations</a><a href="/notifications">Notifications</a><a href="/scenes">Scenes</a><a href="/settings">Settings</a></nav><button className="icon-button" onClick={() => void load(true)} disabled={refreshing} aria-label="Refresh dashboard">↻</button>
         </div>
       </header>
       <section className="welcome">
