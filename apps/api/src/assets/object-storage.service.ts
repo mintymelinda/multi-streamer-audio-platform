@@ -73,7 +73,7 @@ export class ObjectStorageService {
     const canonicalRequest = [method, path, canonicalQuery, canonicalHeaders, signedHeaders, 'UNSIGNED-PAYLOAD'].join('\n');
     const stringToSign = ['AWS4-HMAC-SHA256', amzDate, scope, createHash('sha256').update(canonicalRequest).digest('hex')].join('\n');
     const signature = hmac(signingKey(this.config.secretKey, date, this.config.region), stringToSign, 'hex') as string;
-    return `${this.config.endpoint}${path}?${canonicalQuery}&X-Amz-Signature=${signature}`;
+    return `${endpoint.origin}${path}?${canonicalQuery}&X-Amz-Signature=${signature}`;
   }
 
   async delete(key: string): Promise<void> {
