@@ -2,6 +2,14 @@
 -- The journal is exported as a signed artifact and stored independently of database backups.
 BEGIN;
 
+-- A revoked support grant is already inactive. Deleting the account that
+-- revoked it should remove that inactive grant row while the separate
+-- append-only support audit and deletion ledger retain the history.
+ALTER TABLE workspace_support_access
+  DROP CONSTRAINT workspace_support_access_revoked_by_user_id_fkey,
+  ADD CONSTRAINT workspace_support_access_revoked_by_user_id_fkey
+    FOREIGN KEY (revoked_by_user_id) REFERENCES platform_users(id) ON DELETE CASCADE;
+
 CREATE TABLE platform_deletion_ledger (
   entry_id bigint GENERATED ALWAYS AS IDENTITY UNIQUE,
   event_id uuid NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -19,7 +27,8 @@ CREATE TABLE platform_deletion_ledger (
     'user.access.granted',
     'user.access.revoked',
     'support_access.granted',
-    'support_access.revoked'
+    'support_access.revoked',
+    'session.revoked'
   )),
   subject_id uuid NOT NULL,
   affected_workspace_id uuid,
@@ -143,6 +152,14 @@ BEGIN
         'credentialFingerprint', md5(encode(OLD.credential_ciphertext, 'hex')),
         'provider', OLD.provider
       );
+    END IF;
+  ELSIF TG_TABLE_NAME = 'user_sessions' THEN
+    IF TG_OP = 'DELETE' OR (TG_OP = 'UPDATE'
+       AND OLD.revoked_at IS NULL AND NEW.revoked_at IS NOT NULL) THEN
+      event_type_value := 'session.revoked';
+      subject_id_value := OLD.id;
+      user_id_value := OLD.user_id;
+      metadata_value := jsonb_build_object('expiresAt', OLD.expires_at);
     END IF;
   ELSIF TG_TABLE_NAME = 'workspace_memberships' THEN
     IF TG_OP = 'INSERT' THEN
@@ -291,6 +308,9 @@ CREATE TRIGGER platform_users_deletion_ledger
 CREATE TRIGGER platform_users_access_ledger
   AFTER UPDATE OF status, suspension_reason ON platform_users
   FOR EACH ROW EXECUTE FUNCTION record_platform_deletion_ledger_event();
+CREATE TRIGGER user_sessions_deletion_ledger
+  AFTER DELETE OR UPDATE OF revoked_at ON user_sessions
+  FOR EACH ROW EXECUTE FUNCTION record_platform_deletion_ledger_event();
 CREATE TRIGGER workspaces_access_ledger
   AFTER UPDATE OF status, restriction_reason ON workspaces
   FOR EACH ROW EXECUTE FUNCTION record_platform_deletion_ledger_event();
@@ -371,6 +391,9 @@ CREATE TRIGGER provider_credentials_deletion_tombstone
 CREATE POLICY deletion_ledger_replay_context ON platform_users
   TO platform_migrator USING (current_setting('app.deletion_ledger_replay', true) = 'on')
   WITH CHECK (current_setting('app.deletion_ledger_replay', true) = 'on');
+CREATE POLICY deletion_ledger_replay_context ON user_sessions
+  TO platform_migrator USING (current_setting('app.deletion_ledger_replay', true) = 'on')
+  WITH CHECK (current_setting('app.deletion_ledger_replay', true) = 'on');
 CREATE POLICY deletion_ledger_replay_context ON workspaces
   TO platform_migrator USING (current_setting('app.deletion_ledger_replay', true) = 'on')
   WITH CHECK (current_setting('app.deletion_ledger_replay', true) = 'on');
@@ -414,6 +437,15 @@ SELECT CASE WHEN status = 'active' THEN 'user.access.granted' ELSE 'user.access.
        jsonb_build_object('status', status, 'suspendedAt', suspended_at, 'suspensionReason', suspension_reason),
        updated_at
   FROM platform_users;
+
+INSERT INTO platform_deletion_ledger (
+  event_type, subject_id, user_id, metadata, occurred_at
+)
+SELECT 'session.revoked', id, user_id,
+       jsonb_build_object('expiresAt', expires_at),
+       revoked_at
+  FROM user_sessions
+ WHERE revoked_at IS NOT NULL;
 
 INSERT INTO platform_deletion_ledger (
   event_type, subject_id, affected_workspace_id, user_id, metadata, occurred_at
@@ -602,6 +634,24 @@ BEGIN
            suspension_reason = event_row.metadata->>'suspensionReason',
            updated_at = event_row.occurred_at
      WHERE id = event_row.subject_id;
+    IF event_row.metadata->>'status' = 'suspended' THEN
+      UPDATE public.user_sessions
+         SET revoked_at = event_row.occurred_at
+       WHERE user_id = event_row.subject_id
+         AND revoked_at IS NULL;
+    END IF;
+  END LOOP;
+
+  FOR event_row IN
+    SELECT DISTINCT ON (subject_id) subject_id, occurred_at
+      FROM public.platform_deletion_ledger
+     WHERE event_type = 'session.revoked'
+     ORDER BY subject_id, occurred_at DESC, entry_id DESC
+  LOOP
+    UPDATE public.user_sessions
+       SET revoked_at = event_row.occurred_at
+     WHERE id = event_row.subject_id
+       AND revoked_at IS NULL;
   END LOOP;
 
   FOR event_row IN
@@ -816,5 +866,101 @@ $$;
 ALTER FUNCTION replay_platform_deletion_ledger(jsonb) OWNER TO platform_migrator;
 REVOKE ALL ON FUNCTION replay_platform_deletion_ledger(jsonb) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION replay_platform_deletion_ledger(jsonb) TO platform_migrator;
+
+CREATE OR REPLACE FUNCTION audit_platform_account_status_change()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $platform_audit$
+DECLARE
+  actor_id uuid := nullif(current_setting('app.user_id', true), '')::uuid;
+  action_reason text := nullif(btrim(current_setting('app.platform_status_reason', true)), '');
+BEGIN
+  IF current_setting('app.deletion_ledger_replay', true) = 'on' THEN
+    RETURN NEW;
+  END IF;
+
+  IF NEW.status IS DISTINCT FROM OLD.status THEN
+    IF actor_id IS NULL OR action_reason IS NULL OR length(action_reason) > 1000 THEN
+      RAISE EXCEPTION 'account status changes require an authenticated actor and reason'
+        USING ERRCODE = '42501';
+    END IF;
+
+    INSERT INTO public.platform_administration_audit (
+      actor_user_id, target_user_id, action, reason, details
+    )
+    VALUES (
+      actor_id, NEW.id,
+      CASE WHEN NEW.status = 'suspended' THEN 'account.suspended' ELSE 'account.reinstated' END,
+      action_reason,
+      jsonb_build_object(
+        'twitch_user_id', NEW.twitch_user_id,
+        'previous_status', OLD.status,
+        'new_status', NEW.status
+      )
+    );
+  ELSIF NEW.suspended_at IS DISTINCT FROM OLD.suspended_at
+     OR NEW.suspension_reason IS DISTINCT FROM OLD.suspension_reason THEN
+    RAISE EXCEPTION 'account suspension details must change with account status'
+      USING ERRCODE = '42501';
+  END IF;
+
+  RETURN NEW;
+END;
+$platform_audit$;
+
+CREATE TRIGGER platform_users_status_audit
+BEFORE UPDATE OF status, suspended_at, suspension_reason ON platform_users
+FOR EACH ROW EXECUTE FUNCTION audit_platform_account_status_change();
+
+
+CREATE OR REPLACE FUNCTION audit_platform_workspace_status_change()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $platform_audit$
+DECLARE
+  actor_id uuid := nullif(current_setting('app.user_id', true), '')::uuid;
+  action_reason text := nullif(btrim(current_setting('app.platform_status_reason', true)), '');
+BEGIN
+  IF current_setting('app.deletion_ledger_replay', true) = 'on' THEN
+    RETURN NEW;
+  END IF;
+
+  IF NEW.status IS DISTINCT FROM OLD.status THEN
+    IF actor_id IS NULL OR action_reason IS NULL OR length(action_reason) > 1000 THEN
+      RAISE EXCEPTION 'workspace status changes require an authenticated actor and reason'
+        USING ERRCODE = '42501';
+    END IF;
+
+    INSERT INTO public.platform_administration_audit (
+      actor_user_id, target_user_id, action, reason, details
+    )
+    VALUES (
+      actor_id, NEW.owner_user_id,
+      CASE NEW.status
+        WHEN 'restricted' THEN 'workspace.restricted'
+        WHEN 'suspended' THEN 'workspace.suspended'
+        ELSE 'workspace.restored'
+      END,
+      action_reason,
+      jsonb_build_object(
+        'workspace_id', NEW.id,
+        'workspace_name', NEW.name,
+        'previous_status', OLD.status,
+        'new_status', NEW.status
+      )
+    );
+  ELSIF NEW.restriction_reason IS DISTINCT FROM OLD.restriction_reason THEN
+    RAISE EXCEPTION 'workspace restriction reason must change with workspace status'
+      USING ERRCODE = '42501';
+  END IF;
+
+  RETURN NEW;
+END;
+$platform_audit$;
+
 
 COMMIT;
