@@ -25,6 +25,7 @@ import { OverlayScenesModule } from './overlay-scenes/overlay-scenes.module.js';
 import { AssetsModule } from './assets/assets.module.js';
 import { PlatformAdminModule } from './platform-admin/platform-admin.module.js';
 import { PlannedMaintenanceModule } from './platform-admin/planned-maintenance.module.js';
+import { WorkspaceLifecycleModule } from './workspaces/workspace-lifecycle.module.js';
 
 @Module({
   imports: [
@@ -32,7 +33,7 @@ import { PlannedMaintenanceModule } from './platform-admin/planned-maintenance.m
     UserPreferencesModule, OverlayScenesModule, AssetsModule, ProviderInstanceModule,
     ProviderCredentialsModule, ProviderOutputAssignmentModule, PlaybackCoordinatorModule,
     ProviderExecutionQueueModule, SpotifyConnectOAuthModule, RightsComplianceModule,
-    PlatformAdminModule, PlannedMaintenanceModule, OutboxModule, RequestsModule, TwitchEventSubModule, TwitchRewardsModule,
+    PlatformAdminModule, PlannedMaintenanceModule, WorkspaceLifecycleModule, OutboxModule, RequestsModule, TwitchEventSubModule, TwitchRewardsModule,
     TwitchIntegrationModule, TwitchWorkspaceRecoveryModule, RealtimeModule, OutboxRecoveryModule,
   ],
   controllers: [HealthController],
