@@ -63,13 +63,14 @@ test('provider restrictions and repeat-infringer actions use dedicated database 
   await service.disableRightsProviderPath('rights-admin', workspaceId, 'Spotify', reason);
   await service.repeatInfringerSummary('rights-admin', workspaceId);
   await service.restrictRepeatInfringerWorkspace('rights-admin', workspaceId, reason);
-  assert.deepEqual(calls.filter((call) => call.sql).map((call) => call.values), [
+  const queries = calls.filter((call) => call.sql);
+  assert.deepEqual(queries.map((call) => call.values), [
     [workspaceId, 'spotify', reason],
     [workspaceId],
     [workspaceId, reason],
   ]);
-  assert.match(calls[1].sql, /get_platform_repeat_infringer_summary/);
-  assert.match(calls[2].sql, /restrict_platform_repeat_infringer_workspace/);
+  assert.match(queries[1].sql, /get_platform_repeat_infringer_summary/);
+  assert.match(queries[2].sql, /restrict_platform_repeat_infringer_workspace/);
 });
 
 test('invalid rights operation inputs are rejected before opening a transaction', async () => {
