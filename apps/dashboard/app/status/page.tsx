@@ -65,7 +65,7 @@ export default function PublicStatusPage() {
         <>
           <section className={`status-overview status-overview--${data.status}`}>
             <span className="status-overview-mark">{data.status === "operational" ? "✓" : "!"}</span>
-            <div><strong>{data.status === "operational" ? "All systems operational" : "Some systems are experiencing issues"}</strong><p>{data.status === "operational" ? "No active incidents have been reported." : "Our team is investigating or addressing the incidents below."}</p></div>
+            <div><strong>{data.status === "operational" ? "No active incidents reported" : "Some systems are experiencing issues"}</strong><p>{data.status === "operational" ? "No active incidents have been published." : "Our team is investigating or addressing the incidents below."}</p></div>
             <span className="status-overview-label">{label(data.status)}</span>
           </section>
           <section className="panel status-incidents">
@@ -80,7 +80,7 @@ export default function PublicStatusPage() {
           </section>
         </>
       )}
-      <footer className="footer"><span>Streamer Audio Platform</span><span>Public service information only</span></footer>
+      <footer className="footer"><span>Streamer Audio Platform</span><span>Operator-published incident updates; not live component telemetry</span></footer>
     </main>
   );
 }
