@@ -159,6 +159,7 @@ body {
 .overlay-scene[data-reduced-motion="true"] .overlay-component,
 .overlay-scene[data-reduced-motion="true"] .overlay-component.is-entering,
 .overlay-scene[data-reduced-motion="true"] .overlay-component.is-exiting,
+.overlay-scene[data-reduced-motion="true"] .overlay-marquee__content.is-scrolling,
 .overlay-scene[data-reduced-motion="true"] {
   animation: none !important;
   transition: none !important;
