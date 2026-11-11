@@ -96,6 +96,9 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
     let retryDelay = 1_000;
     let rejected = false;
+    const refreshTimer = window.setInterval(() => {
+      void loadSnapshot(token).catch(() => setStatus('error'));
+    }, 45 * 60 * 1000);
 
     const connect = () => {
       if (stopped) return;
@@ -142,6 +145,7 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
     return () => {
       stopped = true;
       if (retryTimer) clearTimeout(retryTimer);
+      window.clearInterval(refreshTimer);
       socket?.close();
     };
   }, [loadSnapshot, sceneId, token]);
@@ -179,7 +183,8 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
               typeof value === "number" && Number.isFinite(value) ? Math.min(maximum, Math.max(0, value)) : fallback;
             const type = typeof element.type === "string" ? element.type : "custom-text";
             const text = typeof element.text === "string" ? element.text : "";
-            const imageUrl = typeof element.src === "string" && /^https?:\/\//i.test(element.src) ? element.src : null;
+            const candidateImageUrl = typeof element.assetUrl === "string" ? element.assetUrl : element.src;
+            const imageUrl = typeof candidateImageUrl === "string" && /^https?:\/\//i.test(candidateImageUrl) ? candidateImageUrl : null;
             return <section
               className={`overlay-component overlay-component--${type}`}
               key={typeof element.id === "string" ? element.id : index}
@@ -202,7 +207,7 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
               {type === "custom-text" && <div className="overlay-custom-text">{text}</div>}
               {type === "custom-image" && (imageUrl
                 ? <img className="overlay-custom-image" src={imageUrl} alt={text || "Custom scene image"} />
-                : <div className="overlay-image-placeholder">Add an image URL in the editor</div>)}
+                : <div className="overlay-image-placeholder">Choose an image asset in the editor</div>)}
               {type === "background" && <div className="overlay-background-label">{text}</div>}
               {type === "decoration" && <div className="overlay-decoration" aria-hidden="true" />}
             </section>;

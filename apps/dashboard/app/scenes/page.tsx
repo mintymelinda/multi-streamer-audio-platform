@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type Workspace = { id: string; name: string; role: "owner" | "admin" | "moderator" | "viewer" };
@@ -14,6 +15,7 @@ type Scene = {
   has_active_access: boolean;
 };
 type SceneSecret = { sceneId: string; url: string };
+type WorkspaceAsset = { id: string; name: string; url: string; contentType: string; width: number; height: number };
 type SceneEditor = { sceneId: string; name: string; draftState: Record<string, unknown>; draftRevision: number; publishedAt: string | null; updatedAt: string; hasPublishedState: boolean };
 type SceneIssue = { scene: Scene; accessToken: string; overlayPath: string };
 type StarterSceneResult = { scene: Scene; accessToken: string | null; overlayPath: string; created: boolean };
@@ -72,6 +74,7 @@ export default function ScenesPage() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [workspaceId, setWorkspaceId] = useState("");
   const [scenes, setScenes] = useState<Scene[]>([]);
+  const [assets, setAssets] = useState<WorkspaceAsset[]>([]);
   const [name, setName] = useState("Now Playing");
   const [secrets, setSecrets] = useState<SceneSecret[]>([]);
   const [loading, setLoading] = useState(true);
@@ -109,6 +112,13 @@ export default function ScenesPage() {
   }, []);
 
   useEffect(() => { void loadScenes(); }, [loadScenes]);
+
+  useEffect(() => {
+    if (!workspaceId) { setAssets([]); return; }
+    request<WorkspaceAsset[]>(`/workspaces/${workspaceId}/assets`)
+      .then(setAssets)
+      .catch(() => setAssets([]));
+  }, [workspaceId]);
 
   const selectedWorkspace = workspaces.find((workspace) => workspace.id === workspaceId);
   const canManage = selectedWorkspace && ["owner", "admin"].includes(selectedWorkspace.role);
@@ -330,7 +340,7 @@ export default function ScenesPage() {
       "recent-tracks": "Recently Played",
       announcement: "Your announcement goes here",
       "custom-text": "Edit this text",
-      "custom-image": "https://example.com/image.png",
+      "custom-image": "",
       background: "Background",
       decoration: "Decoration",
     };
@@ -339,6 +349,7 @@ export default function ScenesPage() {
       type,
       name: COMPONENT_LIBRARY.find((item) => item.type === type)?.label ?? type,
       text: defaults[type],
+      ...(type === 'custom-image' ? { assetId: '' } : {}),
       x: (5 + (previewElements.length % 3) * 5) * (canvasMode === "fixed" ? canvasWidth / 100 : 1),
       y: (5 + (previewElements.length % 4) * 5) * (canvasMode === "fixed" ? canvasHeight / 100 : 1),
       width: (type === "background" ? 90 : 42) * (canvasMode === "fixed" ? canvasWidth / 100 : 1),
@@ -425,7 +436,7 @@ export default function ScenesPage() {
   return <main className="shell">
     <header className="topbar">
       <a className="brand" href="/">♫ Streamer Audio</a>
-      <nav className="page-nav"><a href="/">Dashboard</a><a href="/team">Team</a><a href="/notifications">Notifications</a><a href="/settings">Settings</a></nav>
+      <nav className="page-nav"><a href="/">Dashboard</a><a href="/assets">Assets</a><a href="/team">Team</a><a href="/notifications">Notifications</a><a href="/settings">Settings</a></nav>
     </header>
     <section className="welcome">
       <div><p className="eyebrow">HOSTED OBS OVERLAYS</p><h1>Scenes</h1><p className="subheading">Each scene has its own stable path and independently revocable read-only access token. Set NEXT_PUBLIC_OVERLAY_BASE_URL to the hosted overlay origin when it is deployed separately.</p></div>
@@ -500,8 +511,12 @@ export default function ScenesPage() {
                 <label>Content
                   <input value={typeof element.text === "string" ? element.text : ""} onChange={(event) => updateComponent(index, { text: event.target.value })} />
                 </label>
-                {element.type === "custom-image" && <label>Image URL
-                  <input value={typeof element.src === "string" ? element.src : ""} placeholder="https://…" onChange={(event) => updateComponent(index, { src: event.target.value })} />
+                {element.type === "custom-image" && <label>Workspace asset
+                  <select value={typeof element.assetId === "string" ? element.assetId : ""} onChange={(event) => updateComponent(index, { assetId: event.target.value, src: "" })}>
+                    <option value="">Choose an uploaded asset…</option>
+                    {assets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name} · {asset.width} × {asset.height}</option>)}
+                  </select>
+                  {assets.length === 0 && <small><a href="/assets">Upload an image in the asset library</a>.</small>}
                 </label>}
                 <div className="component-number-grid">
                   {(["x", "y", "width", "height"] as const).map((key) => <label key={key}>{key.toUpperCase()} ({canvasMode === "fixed" ? "px" : "%"})
@@ -564,7 +579,9 @@ export default function ScenesPage() {
                     onPointerDown={(event) => startComponentDrag(event, index, element)}
                   >
                     <small>{typeof element.type === "string" ? element.type.replaceAll("-", " ") : "Component"}{element.locked === true ? " · locked" : ""}</small>
-                    <span>{label}</span>
+                    {typeof element.type === "string" && element.type === "custom-image" && typeof element.assetId === "string" && assets.some((asset) => asset.id === element.assetId)
+                      ? <Image src={assets.find((asset) => asset.id === element.assetId)?.url ?? ""} alt="" width={640} height={360} unoptimized style={{ width: "100%", height: "calc(100% - 18px)", objectFit: "contain" }} />
+                      : <span>{label}</span>}
                     {element.locked !== true && <i
                       className="scene-preview-resize"
                       role="presentation"

@@ -14,11 +14,20 @@ services:
       - ../..:/workspace
       - workspace_node_modules:/workspace/node_modules
       - pnpm_store:/home/node/.local/share/pnpm/store
+    environment:
+      OBJECT_STORAGE_ENDPOINT: ${OBJECT_STORAGE_ENDPOINT:-http://localhost:9000}
+      OBJECT_STORAGE_INTERNAL_ENDPOINT: ${OBJECT_STORAGE_INTERNAL_ENDPOINT:-http://object-storage:9000}
+      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-platform-assets}
+      OBJECT_STORAGE_ACCESS_KEY: ${OBJECT_STORAGE_ACCESS_KEY:-local-minio}
+      OBJECT_STORAGE_SECRET_KEY: ${OBJECT_STORAGE_SECRET_KEY:-local-minio-password}
+      OBJECT_STORAGE_REGION: ${OBJECT_STORAGE_REGION:-us-east-1}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      object-storage-init:
+        condition: service_completed_successfully
 
   checks:
     profiles: ["checks"]
@@ -79,6 +88,21 @@ services:
       - "127.0.0.1:9001:9001"
     volumes:
       - object_storage_data:/data
+  object-storage-init:
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+    depends_on:
+      object-storage:
+        condition: service_started
+    entrypoint: ["/bin/sh", "-lc"]
+    command: >-
+      until mc alias set local http://object-storage:9000 "${MINIO_ROOT_USER}" "${MINIO_ROOT_PASSWORD}"; do sleep 2; done &&
+      mc mb --ignore-existing local/platform-assets &&
+      printf '%s' '{"CORSRules":[{"AllowedOrigins":["*"],"AllowedMethods":["PUT","GET","HEAD"],"AllowedHeaders":["*"],"ExposeHeaders":["ETag","Content-Length","Content-Type"],"MaxAgeSeconds":3600}]}' > /tmp/assets-cors.json &&
+      mc cors set local/platform-assets /tmp/assets-cors.json &&
+      mc anonymous set none local/platform-assets
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-local-minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-local-minio-password}
 
 volumes:
   postgres_data:

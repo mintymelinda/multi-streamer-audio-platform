@@ -22,10 +22,11 @@ import { NotificationsModule } from './notifications/notifications.module.js';
 import { AccountExportsModule } from './account-exports/account-exports.module.js';
 import { UserPreferencesModule } from './user-preferences/user-preferences.module.js';
 import { OverlayScenesModule } from './overlay-scenes/overlay-scenes.module.js';
+import { AssetsModule } from './assets/assets.module.js';
 
 @Module({
   imports: [
-    DatabaseModule, IdentityModule, WorkspacesModule, NotificationsModule, AccountExportsModule, UserPreferencesModule, OverlayScenesModule, ProviderInstanceModule, ProviderCredentialsModule,
+    DatabaseModule, IdentityModule, WorkspacesModule, NotificationsModule, AccountExportsModule, UserPreferencesModule, OverlayScenesModule, AssetsModule, ProviderInstanceModule, ProviderCredentialsModule,
     ProviderOutputAssignmentModule, PlaybackCoordinatorModule, ProviderExecutionQueueModule,
     SpotifyConnectOAuthModule, RightsComplianceModule, OutboxModule, RequestsModule, TwitchEventSubModule,
     TwitchRewardsModule, TwitchIntegrationModule, TwitchWorkspaceRecoveryModule, RealtimeModule, OutboxRecoveryModule,
