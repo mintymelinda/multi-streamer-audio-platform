@@ -58,9 +58,9 @@ test('creates a scene with a high-entropy token and persists only its SHA-256 ha
   const result = await service.create('workspace-a', 'user-a', '  Now Playing  ');
   const insert = calls.find((call) => call.sql?.includes('INSERT INTO overlay_scenes'));
   assert.equal(insert.values[2], 'Now Playing');
-  assert.equal(insert.values[3], sha256(result.accessToken));
+  assert.equal(insert.values[4], sha256(result.accessToken));
   assert.match(result.accessToken, /^[A-Za-z0-9_-]{43}$/);
-  assert.notEqual(insert.values[3], result.accessToken);
+  assert.notEqual(insert.values[4], result.accessToken);
   assert.deepEqual(calls[0].context, {
     userId: 'user-a',
     verifiedWorkspaceId: 'workspace-a',
