@@ -283,6 +283,59 @@ export class OverlayScenesService {
     });
   }
 
+  async restoreDefaults(
+    workspaceId: VerifiedWorkspaceId,
+    userId: string,
+    sceneId: string,
+    expectedRevisionInput: unknown,
+  ) {
+    if (!Number.isSafeInteger(expectedRevisionInput) || (expectedRevisionInput as number) < 0) {
+      throw new BadRequestException('A valid draft revision is required to restore defaults.');
+    }
+    const expectedRevision = expectedRevisionInput as number;
+    const restoredState = sceneDocument(defaultSceneDocument());
+    return this.database.transaction({ userId, verifiedWorkspaceId: workspaceId }, async (client) => {
+      const updated = await client.query<{
+        id: string;
+        name: string;
+        draft_state: Record<string, unknown>;
+        draft_revision: string;
+        updated_at: Date;
+      }>(
+        `UPDATE overlay_scenes
+            SET draft_state = $4::jsonb,
+                draft_revision = draft_revision + 1,
+                updated_at = now()
+          WHERE id = $1 AND workspace_id = $2 AND draft_revision = $3
+          RETURNING id, name, draft_state, draft_revision, updated_at`,
+        [sceneId, workspaceId, expectedRevision, JSON.stringify(restoredState)],
+      );
+      const scene = updated.rows[0];
+      if (!scene) {
+        const exists = await client.query(
+          'SELECT 1 FROM overlay_scenes WHERE id = $1 AND workspace_id = $2',
+          [sceneId, workspaceId],
+        );
+        if (exists.rowCount === 0) throw new NotFoundException('Scene not found.');
+        throw new ConflictException('This scene draft changed elsewhere. Reload it before restoring defaults.');
+      }
+      await client.query(
+        `INSERT INTO audit_events
+           (workspace_id, actor_user_id, event_type, target_type, target_id, details)
+         VALUES ($1, $2, 'overlay.scene.defaults_restored', 'overlay_scene', $3,
+                 jsonb_build_object('draftRevision', $4::bigint))`,
+        [workspaceId, userId, sceneId, scene.draft_revision],
+      );
+      return {
+        sceneId: scene.id,
+        name: scene.name,
+        draftState: scene.draft_state,
+        draftRevision: Number(scene.draft_revision),
+        updatedAt: scene.updated_at,
+      };
+    });
+  }
+
   async publishDraft(workspaceId: VerifiedWorkspaceId, userId: string, sceneId: string, expectedRevisionInput: unknown) {
     if (!Number.isSafeInteger(expectedRevisionInput) || (expectedRevisionInput as number) < 0) {
       throw new BadRequestException('A valid draft revision is required to publish.');
