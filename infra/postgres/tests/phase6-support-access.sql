@@ -60,6 +60,7 @@ DECLARE
   content jsonb;
   visible_grants integer;
   visible_audit integer;
+  visible_actions text[];
 BEGIN
   IF has_table_privilege(current_user, 'public.workspace_support_access', 'SELECT')
      OR has_table_privilege(current_user, 'public.workspace_support_access', 'INSERT')
@@ -98,11 +99,13 @@ BEGIN
     RAISE EXCEPTION 'workspace owner cannot see the active support grant';
   END IF;
 
-  SELECT count(*) INTO visible_audit
-    FROM list_workspace_support_access_audit(workspace_id)
-   WHERE action IN ('workspace.diagnostics.read', 'support_access.granted', 'support_access.content_read');
+  SELECT count(*), array_agg(event.action)
+    INTO visible_audit, visible_actions
+    FROM list_workspace_support_access_audit(workspace_id) event
+   WHERE event.action IN ('workspace.diagnostics.read', 'support_access.granted', 'support_access.content_read');
   IF visible_audit <> 3 THEN
-    RAISE EXCEPTION 'workspace owner cannot see the support access audit trail';
+    RAISE EXCEPTION 'workspace owner cannot see the support access audit trail: count %, actions %',
+      visible_audit, visible_actions;
   END IF;
 
   PERFORM revoke_workspace_support_access(workspace_id, grant_id, 'Workspace owner ended support access');
