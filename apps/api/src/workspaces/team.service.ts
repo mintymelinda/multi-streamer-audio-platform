@@ -9,6 +9,7 @@ import {
 import { randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { DatabaseService } from '../database/database.service.js';
+import { DeletionLedgerService } from '../deletion-ledger/deletion-ledger.service.js';
 import type { AuthenticatedUser } from '../identity/http.types.js';
 import { newOpaqueToken, sha256 } from '../identity/security.js';
 import type { WorkspaceRole } from './workspace-permissions.js';
@@ -33,6 +34,7 @@ export class TeamService {
   constructor(
     @Inject(DatabaseService) private readonly database: DatabaseService,
     @Inject(TwitchDirectoryService) private readonly twitchDirectory: TwitchDirectoryService,
+    @Inject(DeletionLedgerService) private readonly ledger: DeletionLedgerService,
   ) {}
 
   async listMembers(userId: string, workspaceId: VerifiedWorkspaceId) {
@@ -196,10 +198,12 @@ export class TeamService {
       { userId: actor.id, verifiedWorkspaceId: workspaceId },
       async (client) => {
         const result = await client.query(
-          "UPDATE workspace_memberships SET status = 'revoked', revoked_at = now(), updated_at = now() WHERE workspace_id = $1 AND user_id = $2 AND status = 'active' AND role <> 'owner' RETURNING user_id",
+          "UPDATE workspace_memberships SET status = 'revoked', revoked_at = now(), updated_at = now() WHERE workspace_id = $1 AND user_id = $2 AND status = 'active' AND role <> 'owner' RETURNING user_id, revoked_at",
           [workspaceId, memberUserId],
         );
         if (!result.rowCount) throw new NotFoundException('Active non-owner member not found.');
+        const revoked = result.rows[0] as { user_id: string; revoked_at: Date };
+        await this.ledger.appendMembershipRevocation(workspaceId, revoked.user_id, revoked.revoked_at);
         await this.audit(
           client,
           workspaceId,
