@@ -4,7 +4,7 @@ Phase 7 item 64 protects permanent workspace and account deletions from ordinary
 
 ## Ledger design
 
-Every successful permanent workspace/account deletion and confirmed provider-credential disconnection and workspace-membership revocation write versioned tombstones to a dedicated S3-compatible bucket before its PostgreSQL transaction commits. Object keys are deterministic (v1/workspaces/UUID.json, v1/accounts/UUID.json, and v1/credentials/UUID.json, and v1/membership-revocations/workspace-UUID/user-UUID/event-UUID.json), writes use conditional create semantics, and retries are idempotent. Tombstones contain only entity kinds, internal UUIDs, format version, event timestamps, and a random event ID where needed; they do not retain Twitch IDs, names, credential material, or workspace content.
+Permanent workspace/account deletions, confirmed provider-credential disconnections, and workspace-membership revocations each write versioned tombstones to a dedicated S3-compatible bucket before their PostgreSQL transaction commits. Every event gets a fresh UUID key beneath its entity path (for example v1/workspaces/UUID/event-UUID.json, v1/accounts/UUID/event-UUID.json, v1/credentials/UUID/event-UUID.json, and v1/membership-revocations/workspace-UUID/user-UUID/event-UUID.json). Conditional create prevents overwrites, and replay is idempotent, so duplicate events from an API retry are harmless. Tombstones contain only entity kinds, internal UUIDs, format version, event timestamps, and a random event ID where needed; they do not retain Twitch IDs, names, credential material, or workspace content.
 
 The ledger is deliberately separate from PostgreSQL and the workspace asset bucket. Configure its endpoint and credentials independently:
 
