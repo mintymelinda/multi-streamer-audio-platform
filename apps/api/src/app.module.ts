@@ -15,6 +15,7 @@ import { ProviderInstanceModule } from './providers/provider-instance.module.js'
 import { ProviderCredentialsModule } from './providers/provider-credentials.module.js';
 import { ProviderOutputAssignmentModule } from './providers/provider-output-assignment.module.js';
 import { PlaybackCoordinatorModule } from './playback/playback-coordinator.module.js';
+import { PlaybackRecoveryModule } from './playback/playback-recovery.module.js';
 import { ProviderExecutionQueueModule } from './providers/provider-execution-queue.module.js';
 import { SpotifyConnectOAuthModule } from './providers/spotify-connect-oauth.module.js';
 import { RightsComplianceModule } from './compliance/rights-compliance.module.js';
@@ -33,7 +34,7 @@ import { WorkspaceLifecycleModule } from './workspaces/workspace-lifecycle.modul
     DatabaseModule, IdentityModule, WorkspacesModule, NotificationsModule, AccountExportsModule, AccountDeletionModule,
     UserPreferencesModule, OverlayScenesModule, AssetsModule, ProviderInstanceModule,
     ProviderCredentialsModule, ProviderOutputAssignmentModule, PlaybackCoordinatorModule,
-    ProviderExecutionQueueModule, SpotifyConnectOAuthModule, RightsComplianceModule,
+    PlaybackRecoveryModule, ProviderExecutionQueueModule, SpotifyConnectOAuthModule, RightsComplianceModule,
     PlatformAdminModule, PlannedMaintenanceModule, WorkspaceLifecycleModule, OutboxModule, RequestsModule, TwitchEventSubModule, TwitchRewardsModule,
     TwitchIntegrationModule, TwitchWorkspaceRecoveryModule, RealtimeModule, OutboxRecoveryModule,
   ],
