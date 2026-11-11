@@ -355,3 +355,24 @@ test('maps the database-enforced platform-wide scene ceiling to a conflict', asy
     /platform-wide overlay scene safety ceiling/,
   );
 });
+
+
+test('does not recreate a starter scene after its one-time provisioning marker remains', async () => {
+  const statements = [];
+  const database = {
+    transaction: async (_context, operation) => operation({
+      query: async (sql, values = []) => {
+        statements.push({ sql, values });
+        if (sql.includes('is_starter = true')) return { rows: [], rowCount: 0 };
+        if (sql.includes('SELECT overlay_starter_provisioned_at')) {
+          return { rows: [{ overlay_starter_provisioned_at: new Date() }], rowCount: 1 };
+        }
+        return { rows: [], rowCount: 0 };
+      },
+    }),
+  };
+  const service = new OverlayScenesService(database);
+  const result = await service.ensureStarter('workspace-a', 'user-a');
+  assert.deepEqual(result, { scene: null, accessToken: null, overlayPath: null, created: false });
+  assert.equal(statements.some((entry) => entry.sql.includes('INSERT INTO overlay_scenes')), false);
+});
