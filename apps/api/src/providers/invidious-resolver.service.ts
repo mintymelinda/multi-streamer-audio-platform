@@ -98,7 +98,7 @@ export class InvidiousResolverService {
     // Clone the configured URL and extend its pathname. This preserves both
     // the configured origin and any reverse-proxy path prefix.
     const endpoint = new URL(this.instanceUrl);
-    endpoint.pathname = \`\${endpoint.pathname}/api/v1/videos/\${encodeURIComponent(mediaId)}\`;
+    endpoint.pathname = endpoint.pathname + '/api/v1/videos/' + encodeURIComponent(mediaId);
 
     let response: Response;
     try {
@@ -112,7 +112,7 @@ export class InvidiousResolverService {
     }
     if (!response.ok) {
       throw new InvidiousResolutionError(
-        \`The Invidious instance returned HTTP \${response.status}.\`,
+        'The Invidious instance returned HTTP ' + response.status + '.',
         response.status === 404 ? 'MEDIA_NOT_FOUND' : 'INVIDIOUS_HTTP_ERROR',
       );
     }
