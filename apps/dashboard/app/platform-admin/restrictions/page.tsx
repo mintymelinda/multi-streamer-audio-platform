@@ -72,6 +72,24 @@ export default function PlatformRestrictionsPage() {
     setWorkspaces(await request<Workspace[]>(`/platform-admin/workspaces${query}`));
   }, [access, workspaceSearch]);
 
+  async function searchAccounts() {
+    setError("");
+    try {
+      await loadAccounts();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not search platform accounts.");
+    }
+  }
+
+  async function searchWorkspaces() {
+    setError("");
+    try {
+      await loadWorkspaces();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not search workspaces.");
+    }
+  }
+
   const load = useCallback(async () => {
     setError("");
     try {
@@ -126,7 +144,7 @@ export default function PlatformRestrictionsPage() {
         <nav className="page-nav"><a href="/platform-admin">Administration</a><a href="/platform-admin/support">Diagnostics & support</a><a href="/">Workspace dashboard</a></nav>
       </header>
       <section className="welcome">
-        <div><p className="eyebrow">PLATFORM OPERATIONS</p><h1>Account & workspace controls</h1><p className="subheading">Apply temporary or ongoing access restrictions with a required reason and an immutable audit record. These controls never delete data.</p></div>
+        <div><p className="eyebrow">PLATFORM OPERATIONS</p><h1>Account & workspace controls</h1><p className="subheading">Apply access restrictions with a required reason and an immutable audit record. These controls never delete data.</p></div>
         {access?.role && <span className="status status--good">{access.role}</span>}
       </section>
       {error && <div className="error-banner">{error}</div>}
@@ -138,7 +156,7 @@ export default function PlatformRestrictionsPage() {
           {access.permissions.includes("accounts.read") && (
             <section className="panel">
               <div className="panel-heading"><div><p className="eyebrow">ACCOUNT MODERATION</p><h2>Platform accounts</h2></div></div>
-              <form className="settings-form" onSubmit={(event) => { event.preventDefault(); void loadAccounts(); }}>
+              <form className="settings-form" onSubmit={(event) => { event.preventDefault(); void searchAccounts(); }}>
                 <label>Search by Twitch numeric ID or account ID<input value={accountSearch} onChange={(event) => setAccountSearch(event.target.value)} maxLength={120} /></label>
                 <button className="secondary-button" type="submit" disabled={busy}>Search accounts</button>
               </form>
@@ -166,7 +184,7 @@ export default function PlatformRestrictionsPage() {
           {access.permissions.includes("workspaces.read") && (
             <section className="panel">
               <div className="panel-heading"><div><p className="eyebrow">WORKSPACE MODERATION</p><h2>Workspaces</h2></div></div>
-              <form className="settings-form" onSubmit={(event) => { event.preventDefault(); void loadWorkspaces(); }}>
+              <form className="settings-form" onSubmit={(event) => { event.preventDefault(); void searchWorkspaces(); }}>
                 <label>Search by workspace name, workspace ID, or Twitch ID<input value={workspaceSearch} onChange={(event) => setWorkspaceSearch(event.target.value)} maxLength={120} /></label>
                 <button className="secondary-button" type="submit" disabled={busy}>Search workspaces</button>
               </form>
