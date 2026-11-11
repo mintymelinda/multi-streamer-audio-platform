@@ -58,6 +58,14 @@ INSERT INTO workspace_memberships (id, workspace_id, user_id, role) VALUES
   ('75000000-0000-4000-8000-000000000002', '74000000-0000-4000-8000-000000000002', '73000000-0000-4000-8000-000000000002', 'owner'),
   ('75000000-0000-4000-8000-000000000003', '74000000-0000-4000-8000-000000000002', '73000000-0000-4000-8000-000000000003', 'moderator');
 
+INSERT INTO user_sessions (user_id, session_token_hash, csrf_token_hash, expires_at)
+VALUES (
+  '73000000-0000-4000-8000-000000000002',
+  repeat('a',64),
+  repeat('b',64),
+  now() + interval '1 day'
+);
+
 SELECT set_config('app.user_id','73000000-0000-4000-8000-000000000003',true);
 SELECT set_config('app.platform_status_reason','ledger test restriction',true);
 UPDATE workspaces
@@ -76,14 +84,6 @@ UPDATE platform_users
  WHERE id='73000000-0000-4000-8000-000000000002';
 SELECT set_config('app.platform_status_reason','',true);
 SELECT set_config('app.user_id','',true);
-
-INSERT INTO user_sessions (user_id, session_token_hash, csrf_token_hash, expires_at)
-VALUES (
-  '73000000-0000-4000-8000-000000000002',
-  repeat('a',64),
-  repeat('b',64),
-  now() + interval '1 day'
-);
 
 INSERT INTO workspace_support_access (
   id, workspace_id, support_user_id, support_twitch_user_id, granted_by_user_id,
