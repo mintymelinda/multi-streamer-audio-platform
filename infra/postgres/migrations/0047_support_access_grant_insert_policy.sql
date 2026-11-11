@@ -7,7 +7,7 @@ CREATE POLICY workspace_support_access_trusted_insert
   TO platform_migrator
   WITH CHECK (
     workspace_id IS NOT NULL
-    AND support_user_id IS NOT NULL
+    AND support_user_id = nullif(current_setting('app.user_id', true), '')::uuid
     AND granted_by_user_id = support_user_id
     AND support_twitch_user_id ~ '^[0-9]{1,32}$'
     AND length(btrim(reason)) BETWEEN 1 AND 1000
