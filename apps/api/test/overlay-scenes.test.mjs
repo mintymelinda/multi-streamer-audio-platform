@@ -296,6 +296,10 @@ test('creates exactly one starter scene per workspace and returns its token only
   const starterState = JSON.parse(insert.values[4]);
   assert.equal(starterState.elements.length, 1);
   assert.equal(starterState.elements[0].type, 'now-playing');
+  assert.equal(starterState.elements[0].x, 5);
+  assert.equal(starterState.elements[0].y, 5);
+  assert.equal(starterState.elements[0].width, 58);
+  assert.equal(starterState.elements[0].height, 18);
   assert.equal(second.created, false);
   assert.equal(second.accessToken, null);
   assert.equal(second.scene.id, first.scene.id);
