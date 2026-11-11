@@ -1,4 +1,15 @@
 -- Phase 5 item 52: centrally configurable platform-wide overlay scene safety ceiling.
+-- Preserve the one-time starter provisioning decision even if the starter scene
+-- is later deleted; returning to the editor must not silently recreate it.
+ALTER TABLE workspaces
+  ADD COLUMN overlay_starter_provisioned_at timestamptz;
+
+UPDATE workspaces AS workspace
+   SET overlay_starter_provisioned_at = scene.created_at
+  FROM overlay_scenes AS scene
+ WHERE scene.workspace_id = workspace.id
+   AND scene.is_starter = true;
+
 -- The runtime role can read the setting but cannot change it; operators update it
 -- through the privileged database administration path until platform administration
 -- is implemented in Phase 6.
