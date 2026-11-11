@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { parseProviderExecutionJob, validateProviderExecutionJob } from '../src/provider-execution-consumer.service.ts';
+import { parseProviderExecutionJob, validateProviderExecutionJob } from '../dist/provider-execution-consumer.service.js';
 const job={executionStateId:'10000000-0000-4000-8000-000000000001',workspaceId:'20000000-0000-4000-8000-000000000002',requestId:'30000000-0000-4000-8000-000000000003',providerInstanceId:'40000000-0000-4000-8000-000000000004',dispatchGeneration:7};
 test('parses complete UUID-bound jobs with a positive generation',()=>{
  assert.deepEqual(parseProviderExecutionJob(job),job);
