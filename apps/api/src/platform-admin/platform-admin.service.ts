@@ -16,11 +16,24 @@ export const PLATFORM_PERMISSIONS = [
   'administrators.read',
   'administrators.manage',
   'rights_reports.manage',
+  'status.manage',
 ] as const;
 
 export type PlatformPermission = (typeof PLATFORM_PERMISSIONS)[number];
 export type PlatformAdminRole = 'owner' | 'admin';
 
+
+export interface ServiceIncidentRecord {
+  id: string;
+  title: string;
+  summary: string;
+  status: 'investigating' | 'identified' | 'monitoring' | 'resolved';
+  impact: 'degraded' | 'partial_outage' | 'major_outage';
+  affected_services: string[];
+  created_at: Date;
+  updated_at: Date;
+  resolved_at: Date | null;
+}
 
 export interface PlatformAccountRecord {
   user_id: string;
@@ -156,6 +169,71 @@ export class PlatformAdminService {
       throw new BadRequestException('A reason between 1 and 1,000 characters is required.');
     }
     return reason;
+  }
+
+
+  async listServiceIncidents(actorUserId: string): Promise<ServiceIncidentRecord[]> {
+    return this.database.transaction({ userId: actorUserId }, async (client) => {
+      const result = await client.query<ServiceIncidentRecord>(
+        'SELECT * FROM list_platform_service_incidents()',
+      );
+      return result.rows;
+    });
+  }
+
+  async saveServiceIncident(
+    actorUserId: string,
+    input: {
+      id?: unknown;
+      title?: unknown;
+      summary?: unknown;
+      status?: unknown;
+      impact?: unknown;
+      affectedServices?: unknown;
+    },
+  ): Promise<{ id: string }> {
+    const id = input.id === undefined || input.id === null ? null : input.id;
+    if (id !== null && (
+      typeof id !== 'string'
+      || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)
+    )) {
+      throw new BadRequestException('A valid incident ID is required.');
+    }
+    const title = typeof input.title === 'string' ? input.title.trim() : '';
+    const summary = typeof input.summary === 'string' ? input.summary.trim() : '';
+    if (title.length < 5 || title.length > 160) {
+      throw new BadRequestException('Incident title must be between 5 and 160 characters.');
+    }
+    if (summary.length < 10 || summary.length > 2000) {
+      throw new BadRequestException('Incident summary must be between 10 and 2,000 characters.');
+    }
+    const statuses = ['investigating', 'identified', 'monitoring', 'resolved'];
+    const impacts = ['degraded', 'partial_outage', 'major_outage'];
+    const services = ['all', 'api', 'dashboard', 'overlay', 'playback', 'authentication', 'twitch', 'spotify', 'lyrion'];
+    if (typeof input.status !== 'string' || !statuses.includes(input.status)) {
+      throw new BadRequestException('Incident status is invalid.');
+    }
+    if (typeof input.impact !== 'string' || !impacts.includes(input.impact)) {
+      throw new BadRequestException('Incident impact is invalid.');
+    }
+    if (
+      !Array.isArray(input.affectedServices)
+      || input.affectedServices.length < 1
+      || input.affectedServices.length > 9
+      || input.affectedServices.some((service) => typeof service !== 'string' || !services.includes(service))
+      || new Set(input.affectedServices).size !== input.affectedServices.length
+    ) {
+      throw new BadRequestException('Select one or more valid affected services.');
+    }
+    return this.database.transaction({ userId: actorUserId }, async (client) => {
+      const result = await client.query<{ id: string }>(
+        'SELECT set_platform_service_incident($1::uuid, $2, $3, $4::service_incident_status, $5::service_incident_impact, $6::text[]) AS id',
+        [id, title, summary, input.status, input.impact, input.affectedServices],
+      );
+      const saved = result.rows[0];
+      if (!saved) throw new Error('Incident save returned no record.');
+      return { id: saved.id };
+    });
   }
 
   async appoint(

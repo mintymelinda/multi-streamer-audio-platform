@@ -24,6 +24,7 @@ const PERMISSIONS = [
   ["administrators.read", "View administrators"],
   ["administrators.manage", "Manage administrators"],
   ["rights_reports.manage", "Manage rights-holder reports"],
+  ["status.manage", "Manage public service incidents"],
 ] as const;
 
 function csrfToken() {
@@ -134,7 +135,7 @@ export default function PlatformAdministrationPage() {
     <main className="shell">
       <header className="topbar">
         <div className="brand"><span>♫</span> Streamer Audio</div>
-        <nav className="page-nav"><a href="/platform-admin/restrictions">Account & workspace controls</a><a href="/platform-admin/support">Diagnostics & support</a><a href="/">Workspace dashboard</a></nav>
+        <nav className="page-nav"><a href="/platform-admin/incidents">Service incidents</a><a href="/status">Public status</a><a href="/platform-admin/restrictions">Account & workspace controls</a><a href="/platform-admin/support">Diagnostics & support</a><a href="/">Workspace dashboard</a></nav>
       </header>
       <section className="welcome">
         <div><p className="eyebrow">PLATFORM OPERATIONS</p><h1>Administration</h1><p className="subheading">Manage platform-level access independently of workspace roles.</p></div>

@@ -17,6 +17,8 @@ type RequestItem = {
   requester_display_name?: string | null;
 };
 type Snapshot = { requests: RequestItem[]; queue: RequestItem[] };
+type PublicIncident = { id: string; title: string; summary: string; status: string; impact: string; affected_services: string[]; updated_at: string };
+type ServiceStatus = { status: string; incidents: PublicIncident[] };
 type Onboarding = { dismissed: boolean; completed: boolean; progress: { completed: number; skipped: number; total: number }; steps: { key: string; title: string; description: string; status: "pending" | "completed" | "skipped" }[] };
 type TwitchStatus = {
   status: "connected" | "reauth_required" | "disconnected" | "error";
@@ -49,6 +51,7 @@ export default function HomePage() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [twitch, setTwitch] = useState<TwitchStatus | null>(null);
   const [onboarding, setOnboarding] = useState<Onboarding | null>(null);
+  const [serviceStatus, setServiceStatus] = useState<ServiceStatus | null>(null);
   const [account, setAccount] = useState(false);
   const [platformAdmin, setPlatformAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -64,8 +67,12 @@ export default function HomePage() {
     try {
       const me = await api<{ user: { id: string } }>("/auth/me");
       setAccount(Boolean(me.user.id));
-      const adminAccess = await api<{ isPlatformAdministrator: boolean }>("/platform-admin/me").catch(() => ({ isPlatformAdministrator: false }));
+      const [adminAccess, publicStatus] = await Promise.all([
+        api<{ isPlatformAdministrator: boolean }>("/platform-admin/me").catch(() => ({ isPlatformAdministrator: false })),
+        api<ServiceStatus>("/status").catch(() => null),
+      ]);
       setPlatformAdmin(adminAccess.isPlatformAdministrator);
+      setServiceStatus(publicStatus);
       const available = await api<Workspace[]>("/workspaces");
       setWorkspaces(available);
       const activeId = selectedId && available.some((workspace) => workspace.id === selectedId)
@@ -122,7 +129,7 @@ export default function HomePage() {
 
   if (!workspaces.length) return (
     <main className="shell">
-      <header className="topbar"><div className="brand"><span>♫</span> Streamer Audio</div><nav className="page-nav">{platformAdmin && <a href="/platform-admin">Platform administration</a>}<a href={`${API}/auth/twitch/start?returnTo=%2F`}>Reconnect</a></nav></header>
+      <header className="topbar"><div className="brand"><span>♫</span> Streamer Audio</div><nav className="page-nav"><a href="/status">Service status</a>{platformAdmin && <a href="/platform-admin">Platform administration</a>}<a href={`${API}/auth/twitch/start?returnTo=%2F`}>Reconnect</a></nav></header>
       <section className="empty-state">
         <p className="eyebrow">WELCOME</p><h1>Create your workspace</h1>
         <p>Your Twitch account is already linked as the channel identity. Choose a workspace name to complete the essential setup; you can configure providers, rewards, moderation, and overlays afterward.</p>
@@ -137,7 +144,7 @@ export default function HomePage() {
         <div className="brand"><span>♫</span> Streamer Audio</div>
         <div className="top-actions">
           <label className="workspace-picker"><span>WORKSPACE</span><select value={selectedId} onChange={(event) => setSelectedId(event.target.value)}>{workspaces.map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}</select></label>
-          <nav className="page-nav">{platformAdmin && <a href="/platform-admin">Platform administration</a>}{selected?.role === "owner" && <a href={`/support-access?workspaceId=${encodeURIComponent(selectedId)}`}>Support access</a>}<a href="/team">Team</a><a href="/invitations">Invitations</a><a href="/notifications">Notifications</a><a href="/scenes">Scenes</a><a href="/settings">Settings</a></nav><button className="icon-button" onClick={() => void load(true)} disabled={refreshing} aria-label="Refresh dashboard">↻</button>
+          <nav className="page-nav"><a href="/status">Service status</a>{platformAdmin && <a href="/platform-admin">Platform administration</a>}{selected?.role === "owner" && <a href={`/support-access?workspaceId=${encodeURIComponent(selectedId)}`}>Support access</a>}<a href="/team">Team</a><a href="/invitations">Invitations</a><a href="/notifications">Notifications</a><a href="/scenes">Scenes</a><a href="/settings">Settings</a></nav><button className="icon-button" onClick={() => void load(true)} disabled={refreshing} aria-label="Refresh dashboard">↻</button>
         </div>
       </header>
       <section className="welcome">
@@ -145,6 +152,14 @@ export default function HomePage() {
         <div className="workspace-meta"><Status value={selected?.status ?? "unknown"} /> <span>{selected?.role}</span></div>
       </section>
       {error && <div className="error-banner">{error}</div>}
+      {serviceStatus?.incidents.filter((incident) => incident.status !== "resolved").map((incident) => (
+        <section className="incident-notice" key={incident.id}>
+          <div className="incident-notice-heading"><strong>{incident.title}</strong><span>{incident.status.replaceAll("_", " ")}</span></div>
+          <p>{incident.summary}</p>
+          <a href="/status">View service status and updates</a>
+        </section>
+      ))}
+      {!serviceStatus && <p className="panel-note"><a href="/status">Service status is currently unavailable.</a></p>}
       {selected && ["owner", "admin"].includes(selected.role) && onboarding && !onboarding.completed && (
         <section className="onboarding-panel">
           <div className="onboarding-head">

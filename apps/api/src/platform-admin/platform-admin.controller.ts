@@ -6,6 +6,7 @@ import {
   Inject,
   Post,
   Param,
+  Patch,
   Query,
   Req,
   UnauthorizedException,
@@ -70,6 +71,48 @@ export class PlatformAdminController {
     return this.platformAdmin.setWorkspaceStatus(
       authenticatedUser(request).id, workspaceId, input.status, input.reason,
     ).then(() => ({ success: true }));
+  }
+
+  @Get('incidents')
+  listServiceIncidents(@Req() request: HttpRequest) {
+    return this.platformAdmin.listServiceIncidents(authenticatedUser(request).id);
+  }
+
+  @Post('incidents')
+  @UseGuards(CsrfGuard)
+  createServiceIncident(@Req() request: HttpRequest, @Body() body: unknown) {
+    const input = typeof body === 'object' && body !== null
+      ? body as {
+        title?: unknown;
+        summary?: unknown;
+        status?: unknown;
+        impact?: unknown;
+        affectedServices?: unknown;
+      }
+      : {};
+    return this.platformAdmin.saveServiceIncident(authenticatedUser(request).id, input);
+  }
+
+  @Patch('incidents/:incidentId')
+  @UseGuards(CsrfGuard)
+  updateServiceIncident(
+    @Req() request: HttpRequest,
+    @Param('incidentId') incidentId: string,
+    @Body() body: unknown,
+  ) {
+    const input = typeof body === 'object' && body !== null
+      ? body as {
+        title?: unknown;
+        summary?: unknown;
+        status?: unknown;
+        impact?: unknown;
+        affectedServices?: unknown;
+      }
+      : {};
+    return this.platformAdmin.saveServiceIncident(authenticatedUser(request).id, {
+      ...input,
+      id: incidentId,
+    });
   }
 
   @Get('administrators')
