@@ -5,7 +5,7 @@ CREATE TABLE workspace_support_access (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
   support_user_id uuid NOT NULL,
-  support_twitch_user_id text NOT NULL CHECK (length(support_twitch_user_id) BETWEEN 1 AND 32 AND support_twitch_user_id !~ '[^0-9]'
+  support_twitch_user_id text NOT NULL CHECK (length(support_twitch_user_id) BETWEEN 1 AND 32 AND support_twitch_user_id !~ '[^0-9]')
   reason text NOT NULL CHECK (length(btrim(reason)) BETWEEN 1 AND 1000),
   scopes text[] NOT NULL CHECK (
     cardinality(scopes) BETWEEN 1 AND 3
