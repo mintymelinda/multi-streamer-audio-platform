@@ -43,8 +43,12 @@ DECLARE
 BEGIN
   IF has_table_privilege(current_user, 'public.platform_administrators', 'SELECT')
      OR has_table_privilege(current_user, 'public.platform_administrators', 'INSERT')
+     OR has_table_privilege(current_user, 'public.platform_administrators', 'UPDATE')
+     OR has_table_privilege(current_user, 'public.platform_administrators', 'DELETE')
      OR has_table_privilege(current_user, 'public.platform_administration_audit', 'SELECT')
-     OR has_table_privilege(current_user, 'public.platform_administration_audit', 'INSERT') THEN
+     OR has_table_privilege(current_user, 'public.platform_administration_audit', 'INSERT')
+     OR has_table_privilege(current_user, 'public.platform_administration_audit', 'UPDATE')
+     OR has_table_privilege(current_user, 'public.platform_administration_audit', 'DELETE') THEN
     RAISE EXCEPTION 'runtime role can directly access protected platform administration tables';
   END IF;
 
