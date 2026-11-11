@@ -134,6 +134,8 @@ export class InvidiousResolverService {
 
     const formats = (video.adaptiveFormats as InvidiousFormat[])
       .filter((format) =>
+        Boolean(format) &&
+        typeof format === 'object' &&
         typeof format.type === 'string' &&
         /^audio\//i.test(format.type) &&
         typeof format.url === 'string' &&
@@ -141,13 +143,17 @@ export class InvidiousResolverService {
         Number(format.bitrate) > 0,
       )
       .map((format) => {
-        const streamUrl = new URL(format.url as string);
-        if (streamUrl.protocol !== 'https:' || streamUrl.username || streamUrl.password) return null;
-        return {
-          mimeType: (format.type as string).split(';', 1)[0]!.trim().toLowerCase(),
-          bitrate: Number(format.bitrate),
-          streamUrl: streamUrl.toString(),
-        };
+        try {
+          const streamUrl = new URL(format.url as string);
+          if (streamUrl.protocol !== 'https:' || streamUrl.username || streamUrl.password) return null;
+          return {
+            mimeType: (format.type as string).split(';', 1)[0]!.trim().toLowerCase(),
+            bitrate: Number(format.bitrate),
+            streamUrl: streamUrl.toString(),
+          };
+        } catch {
+          return null;
+        }
       })
       .filter((format): format is NonNullable<typeof format> => format !== null)
       .sort((left, right) => right.bitrate - left.bitrate);
