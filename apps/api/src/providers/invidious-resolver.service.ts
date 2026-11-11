@@ -46,13 +46,13 @@ export function extractYouTubeVideoId(value: string): string {
     throw new InvidiousResolutionError('Media URL is invalid.', 'INVALID_MEDIA_URL');
   }
 
-  const host = url.hostname.toLowerCase().replace(/^www\\./, '');
+  const host = url.hostname.toLowerCase().replace(/^www\./, '');
   let id: string | null = null;
   if (host === 'youtu.be') {
     id = url.pathname.split('/').filter(Boolean)[0] ?? null;
   } else if (host === 'youtube.com' || host === 'm.youtube.com' || host === 'music.youtube.com') {
     if (url.pathname === '/watch') id = url.searchParams.get('v');
-    else if (/^\\/(shorts|embed|live)\\//.test(url.pathname)) {
+    else if (/^\/(shorts|embed|live)\//.test(url.pathname)) {
       id = url.pathname.split('/')[2] ?? null;
     }
   }
@@ -81,7 +81,7 @@ export class InvidiousResolverService {
     )) {
       throw new Error('Invidious instance URL must be a credential-free HTTPS URL.');
     }
-    if (this.instanceUrl) this.instanceUrl.pathname = this.instanceUrl.pathname.replace(/\\/$/, '');
+    if (this.instanceUrl) this.instanceUrl.pathname = this.instanceUrl.pathname.replace(/\/$/, '');
     this.request = options.request ?? fetch;
     this.timeoutMs = options.timeoutMs ?? 10_000;
     if (!Number.isSafeInteger(this.timeoutMs) || this.timeoutMs < 1_000 || this.timeoutMs > 30_000) {
@@ -98,7 +98,7 @@ export class InvidiousResolverService {
     // Clone the configured URL and extend its pathname. This preserves both
     // the configured origin and any reverse-proxy path prefix.
     const endpoint = new URL(this.instanceUrl);
-    endpoint.pathname = `${endpoint.pathname}/api/v1/videos/${encodeURIComponent(mediaId)}`;
+    endpoint.pathname = \`\${endpoint.pathname}/api/v1/videos/\${encodeURIComponent(mediaId)}\`;
 
     let response: Response;
     try {
@@ -112,7 +112,7 @@ export class InvidiousResolverService {
     }
     if (!response.ok) {
       throw new InvidiousResolutionError(
-        `The Invidious instance returned HTTP ${response.status}.`,
+        \`The Invidious instance returned HTTP \${response.status}.\`,
         response.status === 404 ? 'MEDIA_NOT_FOUND' : 'INVIDIOUS_HTTP_ERROR',
       );
     }
@@ -138,7 +138,7 @@ export class InvidiousResolverService {
         Boolean(format) &&
         typeof format === 'object' &&
         typeof format.type === 'string' &&
-        /^audio\\//i.test(format.type) &&
+        /^audio\//i.test(format.type) &&
         typeof format.url === 'string' &&
         Number.isFinite(Number(format.bitrate)) &&
         Number(format.bitrate) > 0,
