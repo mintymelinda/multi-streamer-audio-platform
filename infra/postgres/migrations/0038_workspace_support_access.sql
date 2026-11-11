@@ -443,6 +443,7 @@ DECLARE
   actor_id uuid := nullif(current_setting('app.user_id', true), '')::uuid;
   actor_role platform_administrator_role;
   actor_permissions text[];
+  diagnostics jsonb;
 BEGIN
   SELECT role, permissions INTO actor_role, actor_permissions
     FROM public.platform_administrators
@@ -462,7 +463,7 @@ BEGIN
       USING ERRCODE = 'P0002';
   END IF;
 
-  RETURN jsonb_build_object(
+  diagnostics := jsonb_build_object(
     'workspaceId', target_workspace_id,
     'status', (SELECT status FROM public.workspaces WHERE id = target_workspace_id),
     'createdAt', (SELECT created_at FROM public.workspaces WHERE id = target_workspace_id),
@@ -495,8 +496,10 @@ BEGIN
     'Content-free technical diagnostics',
     jsonb_build_object('content_accessed', false)
   );
+
+  RETURN diagnostics;
 END;
-$$;
+$;
 
 REVOKE ALL ON workspace_support_access FROM platform_runtime;
 REVOKE ALL ON workspace_support_access_audit FROM platform_runtime;
