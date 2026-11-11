@@ -8,12 +8,15 @@ ALTER TABLE platform_users
 
 CREATE TABLE platform_administrators (
   user_id uuid PRIMARY KEY,
-  twitch_user_id text NOT NULL CHECK (twitch_user_id ~ '^[0-9]{1,32} platform_administrator_role NOT NULL,
+  twitch_user_id text NOT NULL CHECK (twitch_user_id ~ '^[0-9]{1,32}$'),
+  role platform_administrator_role NOT NULL,
   permissions text[] NOT NULL DEFAULT '{}',
   appointed_by_user_id uuid REFERENCES platform_users(id) ON DELETE SET NULL,
   appointed_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   revoked_at timestamptz,
+  FOREIGN KEY (user_id, twitch_user_id)
+    REFERENCES platform_users(id, twitch_user_id) ON DELETE RESTRICT,
   CHECK (permissions <@ ARRAY[
     'accounts.read',
     'accounts.suspend',
@@ -107,12 +110,12 @@ RETURNS TABLE (role platform_administrator_role, permissions text[])
 LANGUAGE sql
 SECURITY DEFINER
 SET search_path = pg_catalog, public
-AS $
+AS $platform_read$
   SELECT administrators.role, administrators.permissions
     FROM public.platform_administrators administrators
    WHERE administrators.user_id = nullif(current_setting('app.user_id', true), '')::uuid
      AND administrators.revoked_at IS NULL
-$;
+$platform_read$;
 
 CREATE FUNCTION list_platform_administrators()
 RETURNS TABLE (
@@ -126,7 +129,7 @@ RETURNS TABLE (
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = pg_catalog, public
-AS $
+AS $platform_read$
 DECLARE
   actor_id uuid := nullif(current_setting('app.user_id', true), '')::uuid;
   actor_role platform_administrator_role;
@@ -154,7 +157,7 @@ BEGIN
      ORDER BY (administrators.revoked_at IS NULL) DESC,
               administrators.role ASC, administrators.appointed_at ASC;
 END;
-$;
+$platform_read$;
 
 -- SECURITY DEFINER functions are the only runtime write path. They derive the
 -- actor from the authenticated transaction context and prevent permission escalation.
