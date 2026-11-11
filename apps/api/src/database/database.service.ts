@@ -82,7 +82,7 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
     try {
       await client.query('BEGIN');
       await client.query(
-        "SELECT set_config('app.user_id', '', true), set_config('app.workspace_id', '', true), set_config('app.twitch_lookup_id', '', true)",
+        "SELECT set_config('app.user_id', '', true), set_config('app.workspace_id', '', true), set_config('app.twitch_lookup_id', '', true), set_config('app.support_grant_id', '', true)",
       );
       if (context.userId) {
         await client.query("SELECT set_config('app.user_id', $1, true)", [context.userId]);
