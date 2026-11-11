@@ -15,9 +15,9 @@ export class AccountDeletionController {
   @Delete()
   async deleteAccount(@Req() request: HttpRequest, @Res() reply: HttpReply) {
     if (!request.user) throw new UnauthorizedException('Sign-in is required.');
-    const result = await this.deletion.delete(request.user.id);
+    await this.deletion.delete(request.user.id);
     reply.header('Set-Cookie', clearSessionCookies());
     reply.header('Cache-Control', 'no-store');
-    return reply.code(200).send(result);
+    return reply.code(204);
   }
 }
