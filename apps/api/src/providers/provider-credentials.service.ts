@@ -9,6 +9,7 @@ import {
   loadIntegrationKeyRing,
 } from '../security/integration-credential-crypto.js';
 import { ProviderScopePolicyService } from './provider-scope-policy.service.js';
+import { DeletionLedgerService } from '../deletion-ledger/deletion-ledger.service.js';
 
 export interface ProviderCredentialCrypto {
   encrypt(
@@ -92,6 +93,7 @@ export class ProviderCredentialsService {
     },
     private readonly audit: ProviderCredentialAudit = { append: async () => undefined },
     private readonly scopes = new ProviderScopePolicyService(),
+    private readonly ledger?: DeletionLedgerService,
   ) {}
 
   setIntegrationDataStore(store: ProviderIntegrationDataStore): void {
@@ -225,15 +227,22 @@ export class ProviderCredentialsService {
         const knownId = this.credentialIds.get(
           this.instanceKey(input.workspaceId, input.providerInstanceId),
         );
-        if (knownId) {
-          await client.query(
-            'DELETE FROM provider_credentials WHERE id = $1 AND workspace_id = $2',
-            [knownId, input.workspaceId],
-          );
-        } else {
-          await client.query(
-            'DELETE FROM provider_credentials WHERE workspace_id = $1 AND provider_instance_id = $2',
-            [input.workspaceId, input.providerInstanceId],
+        const removed = knownId
+          ? await client.query<{ id: string }>(
+              'DELETE FROM provider_credentials WHERE id = $1 AND workspace_id = $2 RETURNING id',
+              [knownId, input.workspaceId],
+            )
+          : await client.query<{ id: string }>(
+              'DELETE FROM provider_credentials WHERE workspace_id = $1 AND provider_instance_id = $2 RETURNING id',
+              [input.workspaceId, input.providerInstanceId],
+            );
+        const removedCredential = removed.rows[0];
+        if (removedCredential) {
+          if (!this.ledger) throw new Error('Deletion ledger is required to revoke provider credentials safely.');
+          await this.ledger.appendCredential(
+            removedCredential.id,
+            input.workspaceId,
+            input.providerInstanceId,
           );
         }
         await this.audit.append(client, {
