@@ -753,7 +753,16 @@ export default function ScenesPage() {
                     <small>{typeof element.type === "string" ? element.type.replaceAll("-", " ") : "Component"}{element.locked === true ? " · locked" : ""}</small>
                     {typeof element.type === "string" && element.type === "custom-image" && typeof element.assetId === "string" && assets.some((asset) => asset.id === element.assetId)
                       ? <Image src={assets.find((asset) => asset.id === element.assetId)?.url ?? ""} alt="" width={640} height={360} unoptimized style={{ width: "100%", height: "calc(100% - 18px)", objectFit: "contain" }} />
-                      : <span>{label}</span>}
+                      : element.type === "now-playing"
+                        ? <div className="scene-preview-now-playing-layout">
+                            <div className="scene-preview-now-playing-artwork">♫</div>
+                            <div className="scene-preview-now-playing-copy">
+                              <strong>{label}</strong>
+                              <div className="scene-preview-now-playing-metadata"><span>Artist</span><span>Album</span></div>
+                              <div className="scene-preview-now-playing-progress"><i /><div><span>0:00</span><span>-0:00</span></div></div>
+                            </div>
+                          </div>
+                        : <span>{label}</span>}
                     {element.locked !== true && <i
                       className="scene-preview-resize"
                       role="presentation"

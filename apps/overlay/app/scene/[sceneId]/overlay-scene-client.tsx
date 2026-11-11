@@ -370,8 +370,25 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
               } as CSSProperties}
             >
               {type === "now-playing" && <div className="overlay-now-playing">
-                <div className="overlay-artwork">♫</div>
-                <div className="overlay-track-copy"><OverflowMarquee text={text || "Now Playing"} className="overlay-track-title" /><span>Artist · Album</span><div className="overlay-progress"><span /></div></div>
+                <div className="overlay-artwork" aria-label="Album artwork unavailable">
+                  <span aria-hidden="true">♫</span>
+                </div>
+                <div className="overlay-track-copy">
+                  <OverflowMarquee text={text || "Now Playing"} className="overlay-track-title" />
+                  <div className="overlay-track-metadata">
+                    <OverflowMarquee text="Artist" className="overlay-track-artist" />
+                    <OverflowMarquee text="Album" className="overlay-track-album" />
+                  </div>
+                  <div className="overlay-playback-progress">
+                    <div className="overlay-progress" role="progressbar" aria-label="Track progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={0}>
+                      <span />
+                    </div>
+                    <div className="overlay-track-times">
+                      <span>0:00</span>
+                      <span>-0:00</span>
+                    </div>
+                  </div>
+                </div>
               </div>}
               {(type === "request-queue" || type === "recent-tracks") && <div className="overlay-list-component">
                 <strong>{text || (type === "request-queue" ? "Request Queue" : "Recently Played")}</strong>

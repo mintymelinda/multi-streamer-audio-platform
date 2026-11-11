@@ -45,6 +45,7 @@ Start the local services with `pnpm dev:infra`, then apply the role bootstrap an
 - `0033_workspace_asset_library.sql` adds workspace-isolated image asset metadata, forced RLS, and a token-scoped runtime lookup for assets referenced by published scenes.
 - `0034_starter_scene_default_layout.sql` backfills existing empty, unpublished starter scenes with the standard Now Playing component layout.
 - `0035_overlay_scene_management.sql` adds audited scene rename/reorder/deletion, a one-time starter provisioning marker, and a centrally configurable platform-wide scene ceiling with a trigger-maintained global usage counter protected from runtime-role mutation.
+- `0036_now_playing_starter_layout.sql` updates only untouched starter scenes to the agreed artwork-left, information-right layout geometry; customized scene drafts and published layouts are preserved.
 
 The initial overlay scene safety ceiling is 1,000 across the entire platform. The platform runtime can read the configured value but cannot change it or mutate the usage counter. Until the Phase 6 platform-administration UI is implemented, an operator changes it through the privileged database administration path, for example: `UPDATE platform_settings SET setting_value = '1500'::jsonb, updated_at = now() WHERE setting_key = 'overlay_scene_safety_ceiling';`.
 
