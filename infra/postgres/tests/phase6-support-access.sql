@@ -45,6 +45,7 @@ DECLARE
   diagnostics jsonb;
   content jsonb;
   visible_grants integer;
+  visible_audit integer;
 BEGIN
   IF has_table_privilege(current_user, 'public.workspace_support_access', 'SELECT')
      OR has_table_privilege(current_user, 'public.workspace_support_access', 'INSERT')
@@ -83,6 +84,13 @@ BEGIN
     RAISE EXCEPTION 'workspace owner cannot see the active support grant';
   END IF;
 
+  SELECT count(*) INTO visible_audit
+    FROM list_workspace_support_access_audit(workspace_id)
+   WHERE action IN ('workspace.diagnostics.read', 'support_access.granted', 'support_access.content_read');
+  IF visible_audit <> 3 THEN
+    RAISE EXCEPTION 'workspace owner cannot see the support access audit trail';
+  END IF;
+
   PERFORM revoke_workspace_support_access(workspace_id, grant_id, 'Workspace owner ended support access');
 
   PERFORM set_config('app.user_id', support_id::text, true);
@@ -105,9 +113,9 @@ BEGIN
   SELECT count(*) INTO audit_count
     FROM workspace_support_access_audit audit
    WHERE audit.workspace_id = target_workspace_id
-     AND action IN ('workspace.diagnostics.read', 'support_access.granted', 'support_access.content_read', 'support_access.revoked');
-  IF audit_count <> 4 THEN
-    RAISE EXCEPTION 'diagnostics, support grant, content read, and revocation were not all audited';
+     AND action IN ('workspace.diagnostics.read', 'support_access.granted', 'support_access.content_read', 'support_access.audit_viewed', 'support_access.revoked');
+  IF audit_count <> 5 THEN
+    RAISE EXCEPTION 'diagnostics, grant, content read, audit review, and revocation were not all audited';
   END IF;
 END;
 $$;
