@@ -61,33 +61,18 @@ export class DeletionLedgerService {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(entityId)) {
       throw new TypeError('Deletion ledger entity ID must be a UUID.');
     }
-
-    const key = 'v1/' + (entityType === 'workspace' ? 'workspaces' : 'accounts') + '/' + entityId.toLowerCase() + '.json';
-    const existing = await this.request(this.presign('HEAD', key), { method: 'HEAD' });
-    if (existing.ok) return;
-    if (existing.status !== 404) {
-      throw new Error('Deletion ledger lookup failed (' + existing.status + ').');
-    }
-
+    const normalizedId = entityId.toLowerCase();
+    const eventId = randomUUID();
+    const key = 'v1/' + (entityType === 'workspace' ? 'workspaces' : 'accounts') + '/' + normalizedId + '/' + eventId + '.json';
     const record = {
       format: 'multi-streamer-audio-platform.deletion-tombstone',
       version: 1,
       entityType,
-      entityId: entityId.toLowerCase(),
+      entityId: normalizedId,
+      eventId,
       deletedAt: new Date().toISOString(),
     };
-    const response = await this.request(this.presign('PUT', key, true), {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'If-None-Match': '*' },
-      body: JSON.stringify(record),
-    });
-    // Conditional creation makes concurrent/retried deletes idempotent.
-    if (response.ok || response.status === 412) return;
-    if (response.status === 409) {
-      const retry = await this.request(this.presign('HEAD', key), { method: 'HEAD' });
-      if (retry.ok) return;
-    }
-    throw new Error('Deletion ledger append failed (' + response.status + ').');
+    await this.putRecord(key, record, 'deletion ledger append');
   }
 
   async appendCredential(credentialId: string, workspaceId: string, providerInstanceId: string): Promise<void> {
@@ -99,12 +84,8 @@ export class DeletionLedgerService {
       throw new TypeError('Credential tombstones require valid credential, workspace, and provider instance UUIDs.');
     }
     const normalizedId = credentialId.toLowerCase();
-    const key = 'v1/credentials/' + normalizedId + '.json';
-    const existing = await this.request(this.presign('HEAD', key), { method: 'HEAD' });
-    if (existing.ok) return;
-    if (existing.status !== 404) {
-      throw new Error('Deletion ledger lookup failed (' + existing.status + ').');
-    }
+    const eventId = randomUUID();
+    const key = 'v1/credentials/' + normalizedId + '/' + eventId + '.json';
     const record = {
       format: 'multi-streamer-audio-platform.deletion-tombstone',
       version: 1,
@@ -112,19 +93,10 @@ export class DeletionLedgerService {
       entityId: normalizedId,
       workspaceId: workspaceId.toLowerCase(),
       providerInstanceId: providerInstanceId.toLowerCase(),
+      eventId,
       deletedAt: new Date().toISOString(),
     };
-    const response = await this.request(this.presign('PUT', key, true), {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'If-None-Match': '*' },
-      body: JSON.stringify(record),
-    });
-    if (response.ok || response.status === 412) return;
-    if (response.status === 409) {
-      const retry = await this.request(this.presign('HEAD', key), { method: 'HEAD' });
-      if (retry.ok) return;
-    }
-    throw new Error('Deletion ledger credential append failed (' + response.status + ').');
+    await this.putRecord(key, record, 'deletion ledger credential append');
   }
 
   async appendMembershipRevocation(workspaceId: string, userId: string, revokedAt: Date | string): Promise<void> {
@@ -141,9 +113,6 @@ export class DeletionLedgerService {
     const normalizedWorkspace = workspaceId.toLowerCase();
     const normalizedUser = userId.toLowerCase();
     const key = 'v1/membership-revocations/' + normalizedWorkspace + '/' + normalizedUser + '/' + eventId + '.json';
-    const existing = await this.request(this.presign('HEAD', key), { method: 'HEAD' });
-    if (existing.ok) return;
-    if (existing.status !== 404) throw new Error('Deletion ledger lookup failed (' + existing.status + ').');
     const record = {
       format: 'multi-streamer-audio-platform.deletion-tombstone',
       version: 1,
@@ -154,42 +123,31 @@ export class DeletionLedgerService {
       revokedAt: timestamp.toISOString(),
       deletedAt: timestamp.toISOString(),
     };
-    const response = await this.request(this.presign('PUT', key, true), {
+    await this.putRecord(key, record, 'deletion ledger membership append');
+  }
+
+  private async putRecord(key: string, record: Record<string, unknown>, description: string): Promise<void> {
+    const response = await this.request(this.presign('PUT', key), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', 'If-None-Match': '*' },
       body: JSON.stringify(record),
     });
+    // A conditional conflict means this exact immutable event key already exists.
     if (response.ok || response.status === 412) return;
-    if (response.status === 409) {
-      const retry = await this.request(this.presign('HEAD', key), { method: 'HEAD' });
-      if (retry.ok) return;
-    }
-    throw new Error('Deletion ledger membership append failed (' + response.status + ').');
+    throw new Error(description + ' failed (' + response.status + ').');
   }
 
-  private presign(method: 'PUT' | 'HEAD', key: string, conditional = false): string {
-    const config = this.config;
-    if (!config) throw new Error('Deletion ledger storage is not configured.');
-    const endpoint = new URL(config.endpoint);
-    const now = new Date();
-    const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, '');
-    const date = amzDate.slice(0, 8);
-    const scope = date + '/' + config.region + '/s3/aws4_request';
-    const path = '/' + encode(config.bucket) + '/' + key.split('/').map(encode).join('/');
-    const query: Record<string, string> = {
-      'X-Amz-Algorithm': 'AWS4-HMAC-SHA256',
+256',
       'X-Amz-Credential': config.accessKey + '/' + scope,
       'X-Amz-Date': amzDate,
       'X-Amz-Expires': '60',
-      'X-Amz-SignedHeaders': conditional ? 'content-type;host;if-none-match' : 'host',
+      'X-Amz-SignedHeaders': 'content-type;host;if-none-match',
     };
     const canonicalQuery = Object.entries(query)
       .sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
       .map(([name, value]) => encode(name) + '=' + encode(value))
       .join('&');
-    const canonicalHeaders = conditional
-      ? 'content-type:application/json\nhost:' + endpoint.host + '\nif-none-match:*\n'
-      : 'host:' + endpoint.host + '\n';
+    const canonicalHeaders = 'content-type:application/json\nhost:' + endpoint.host + '\nif-none-match:*\n';
     const canonicalRequest = [
       method, path, canonicalQuery, canonicalHeaders, query['X-Amz-SignedHeaders'], 'UNSIGNED-PAYLOAD',
     ].join('\n');
