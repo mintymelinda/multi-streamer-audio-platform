@@ -126,3 +126,12 @@ test('workspace owner grant listing and revocation carry verified workspace cont
     /reason between 1 and 1,000/,
   );
 });
+
+test('workspace owner audit history uses the owner-checked database function', async () => {
+  const event = { id: 'audit-id', action: 'support_access.granted' };
+  const { service, calls } = harness({ audit: [event] });
+  assert.deepEqual(await service.listAuditForWorkspace('owner-user', workspaceId), [event]);
+  assert.deepEqual(calls[0].context, { userId: 'owner-user' });
+  assert.deepEqual(calls[1].values, [workspaceId]);
+  assert.match(calls[1].sql, /list_workspace_support_access_audit/);
+});
