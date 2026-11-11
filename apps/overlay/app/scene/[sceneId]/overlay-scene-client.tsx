@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 
 type SceneSnapshot = {
   sceneId: string;
@@ -40,7 +41,7 @@ function OverflowMarquee({ text, className }: { text: string; className?: string
     ? {
         "--marquee-distance": `${overflow}px`,
         "--marquee-duration": `${Math.max(6, overflow / 18)}s`,
-      } as React.CSSProperties
+      } as CSSProperties
     : undefined;
 
   return (
