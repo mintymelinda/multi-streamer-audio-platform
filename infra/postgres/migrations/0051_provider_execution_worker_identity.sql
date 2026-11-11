@@ -10,7 +10,7 @@ BEGIN
 END;
 $$;
 GRANT USAGE ON SCHEMA public TO platform_provider_execution_owner;
-GRANT SELECT ON workspaces, workspace_memberships, media_requests, logical_queue_entries,
+GRANT SELECT ON platform_users, workspaces, workspace_memberships, media_requests, logical_queue_entries,
   provider_instances, provider_execution_states, provider_output_assignments,
   twitch_eventsub_intake, workspace_playback_policies,
   workspace_provider_path_restrictions, rights_content_blocks, provider_credentials
@@ -29,17 +29,17 @@ RETURNS TABLE (
 )
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public
 AS $function$
-DECLARE v_source request_source; v_submitted_by uuid; v_owner_id uuid; v_actor_id uuid;
+DECLARE v_source request_source; v_submitted_by uuid; v_owner_id uuid; v_actor_id uuid; v_workspace_status workspace_status;
 BEGIN
   IF session_user <> 'platform_provider_worker' THEN
     RAISE EXCEPTION 'provider execution validation is restricted to its worker identity' USING ERRCODE = '42501';
   END IF;
   IF p_dispatch_generation IS NULL OR p_dispatch_generation < 1 THEN RETURN; END IF;
-  SELECT r.source, r.submitted_by_user_id, w.owner_user_id
-    INTO v_source, v_submitted_by, v_owner_id
+  SELECT r.source, r.submitted_by_user_id, w.owner_user_id, w.status
+    INTO v_source, v_submitted_by, v_owner_id, v_workspace_status
     FROM public.media_requests r JOIN public.workspaces w ON w.id = r.workspace_id
    WHERE r.id = p_request_id AND r.workspace_id = p_workspace_id;
-  IF NOT FOUND THEN RETURN; END IF;
+  IF NOT FOUND OR v_workspace_status <> 'active' THEN RETURN; END IF;
   IF v_source = 'twitch_reward' THEN
     v_actor_id := v_owner_id;
     IF NOT EXISTS (
@@ -54,7 +54,9 @@ BEGIN
     IF v_actor_id IS NULL OR v_source NOT IN ('dashboard', 'moderator', 'api') THEN RETURN; END IF;
   END IF;
   IF NOT EXISTS (SELECT 1 FROM public.workspace_memberships m
-                  WHERE m.workspace_id = p_workspace_id AND m.user_id = v_actor_id AND m.status = 'active')
+                  JOIN public.platform_users u ON u.id = m.user_id
+                 WHERE m.workspace_id = p_workspace_id AND m.user_id = v_actor_id
+                   AND m.status = 'active' AND u.status = 'active')
   THEN RETURN; END IF;
   RETURN QUERY
   SELECT s.id, s.workspace_id, s.request_id, s.provider_instance_id,
