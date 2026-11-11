@@ -1,5 +1,5 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
-import { createHash, createHmac } from 'node:crypto';
+import { createHash, createHmac, randomUUID } from 'node:crypto';
 
 export type DeletionEntityType = 'account' | 'workspace';
 
@@ -125,6 +125,46 @@ export class DeletionLedgerService {
       if (retry.ok) return;
     }
     throw new Error('Deletion ledger credential append failed (' + response.status + ').');
+  }
+
+  async appendMembershipRevocation(workspaceId: string, userId: string, revokedAt: Date | string): Promise<void> {
+    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!this.config) {
+      throw new Error('Access revocation is disabled because the independent deletion ledger is not configured.');
+    }
+    if (!uuid.test(workspaceId) || !uuid.test(userId)) {
+      throw new TypeError('Membership tombstones require valid workspace and user UUIDs.');
+    }
+    const timestamp = new Date(revokedAt);
+    if (Number.isNaN(timestamp.getTime())) throw new TypeError('Membership revocation timestamp is invalid.');
+    const eventId = randomUUID();
+    const normalizedWorkspace = workspaceId.toLowerCase();
+    const normalizedUser = userId.toLowerCase();
+    const key = 'v1/membership-revocations/' + normalizedWorkspace + '/' + normalizedUser + '/' + eventId + '.json';
+    const existing = await this.request(this.presign('HEAD', key), { method: 'HEAD' });
+    if (existing.ok) return;
+    if (existing.status !== 404) throw new Error('Deletion ledger lookup failed (' + existing.status + ').');
+    const record = {
+      format: 'multi-streamer-audio-platform.deletion-tombstone',
+      version: 1,
+      entityType: 'membership_revocation',
+      entityId: normalizedUser,
+      workspaceId: normalizedWorkspace,
+      eventId,
+      revokedAt: timestamp.toISOString(),
+      deletedAt: timestamp.toISOString(),
+    };
+    const response = await this.request(this.presign('PUT', key, true), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'If-None-Match': '*' },
+      body: JSON.stringify(record),
+    });
+    if (response.ok || response.status === 412) return;
+    if (response.status === 409) {
+      const retry = await this.request(this.presign('HEAD', key), { method: 'HEAD' });
+      if (retry.ok) return;
+    }
+    throw new Error('Deletion ledger membership append failed (' + response.status + ').');
   }
 
   private presign(method: 'PUT' | 'HEAD', key: string, conditional = false): string {
