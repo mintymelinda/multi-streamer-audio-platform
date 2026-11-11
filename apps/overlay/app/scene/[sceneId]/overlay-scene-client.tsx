@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 
@@ -206,7 +207,7 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
               {type === "announcement" && <div className="overlay-announcement">{text}</div>}
               {type === "custom-text" && <div className="overlay-custom-text">{text}</div>}
               {type === "custom-image" && (imageUrl
-                ? <img className="overlay-custom-image" src={imageUrl} alt={text || "Custom scene image"} />
+                ? <Image className="overlay-custom-image" src={imageUrl} alt={text || "Custom scene image"} width={640} height={360} unoptimized />
                 : <div className="overlay-image-placeholder">Choose an image asset in the editor</div>)}
               {type === "background" && <div className="overlay-background-label">{text}</div>}
               {type === "decoration" && <div className="overlay-decoration" aria-hidden="true" />}
