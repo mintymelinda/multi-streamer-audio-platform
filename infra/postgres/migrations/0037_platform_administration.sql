@@ -25,22 +25,33 @@ CREATE TABLE platform_administrators (
   ]::text[])
 );
 
--- Platform administrators with administrator-directory permission may resolve
--- other account identities for appointments and audit display.
+-- Platform administrators with directory permission may resolve account
+-- identities. The SECURITY DEFINER predicate avoids granting table access
+-- merely to evaluate the RLS policy.
+CREATE FUNCTION current_platform_admin_can_read_directory()
+RETURNS boolean
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $
+  SELECT EXISTS (
+    SELECT 1 FROM public.platform_administrators administrators
+     WHERE administrators.user_id = nullif(current_setting('app.user_id', true), '')::uuid
+       AND administrators.revoked_at IS NULL
+       AND (
+         administrators.role = 'owner'
+         OR 'administrators.read' = ANY(administrators.permissions)
+         OR 'administrators.manage' = ANY(administrators.permissions)
+       )
+  )
+$;
+
+REVOKE ALL ON FUNCTION current_platform_admin_can_read_directory() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION current_platform_admin_can_read_directory() TO platform_runtime;
+
 CREATE POLICY platform_users_platform_admin_directory
   ON platform_users FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM platform_administrators administrators
-       WHERE administrators.user_id = nullif(current_setting('app.user_id', true), '')::uuid
-         AND administrators.revoked_at IS NULL
-         AND (
-           administrators.role = 'owner'
-           OR 'administrators.read' = ANY(administrators.permissions)
-           OR 'administrators.manage' = ANY(administrators.permissions)
-         )
-    )
-  );
+  USING (public.current_platform_admin_can_read_directory());
 
 CREATE INDEX platform_administrators_active_role
   ON platform_administrators (role, user_id)
