@@ -56,6 +56,27 @@ test('deletion ledger writes a scoped provider credential tombstone', async () =
   assert.match(calls[1].url, /v1%2Fcredentials|v1\/credentials/);
 });
 
+test('deletion ledger writes a timestamped workspace membership revocation', async () => {
+  configureLedger();
+  const calls = [];
+  const service = new DeletionLedgerService(async (url, init) => {
+    calls.push({ url: String(url), init });
+    if (init.method === 'HEAD') return new Response(null, { status: 404 });
+    return new Response(null, { status: 200 });
+  });
+  await service.appendMembershipRevocation(
+    '75000000-0000-4000-8000-000000000002',
+    '74000000-0000-4000-8000-000000000001',
+    '2026-11-11T08:00:00.000Z',
+  );
+  const record = JSON.parse(calls[1].init.body);
+  assert.equal(record.entityType, 'membership_revocation');
+  assert.equal(record.workspaceId, '75000000-0000-4000-8000-000000000002');
+  assert.equal(record.entityId, '74000000-0000-4000-8000-000000000001');
+  assert.equal(record.revokedAt, '2026-11-11T08:00:00.000Z');
+  assert.match(calls[1].url, /membership-revocations/);
+});
+
 test('deletion ledger treats an existing tombstone as an idempotent success', async () => {
   configureLedger();
   let calls = 0;
