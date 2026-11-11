@@ -198,14 +198,23 @@ export class AssetsService {
     const name = input.name === undefined ? undefined : assetName(input.name);
     const folder = input.folder === undefined ? undefined : folderPath(input.folder);
     if (name === undefined && folder === undefined) throw new BadRequestException('Provide an asset name or folder.');
-    const result = await this.database.transaction({ userId, verifiedWorkspaceId: workspaceId }, (client) =>
-      client.query(
+    const result = await this.database.transaction({ userId, verifiedWorkspaceId: workspaceId }, async (client) => {
+      const updated = await client.query(
         `UPDATE workspace_assets SET name = COALESCE($3, name), folder_path = COALESCE($4, folder_path), updated_at = now()
           WHERE id = $1 AND workspace_id = $2 AND status = 'ready'
           RETURNING id, name, folder_path`,
         [assetId, workspaceId, name ?? null, folder ?? null],
-      ),
-    );
+      );
+      if (updated.rowCount) {
+        await client.query(
+          `INSERT INTO audit_events (workspace_id, actor_user_id, event_type, target_type, target_id, details)
+           VALUES ($1, $2, 'asset.updated', 'workspace_asset', $3,
+                   jsonb_build_object('name', $4::text, 'folder', $5::text))`,
+          [workspaceId, userId, assetId, updated.rows[0].name, updated.rows[0].folder_path],
+        );
+      }
+      return updated;
+    });
     if (!result.rowCount) throw new NotFoundException('Asset not found.');
     return result.rows[0];
   }
@@ -235,6 +244,13 @@ export class AssetsService {
         'DELETE FROM workspace_assets WHERE id = $1 AND workspace_id = $2 RETURNING object_key, pending_object_key',
         [assetId, workspaceId],
       );
+      if (deleted.rows[0]) {
+        await client.query(
+          `INSERT INTO audit_events (workspace_id, actor_user_id, event_type, target_type, target_id, details)
+           VALUES ($1, $2, 'asset.deleted', 'workspace_asset', $3, '{}'::jsonb)`,
+          [workspaceId, userId, assetId],
+        );
+      }
       return deleted.rows[0];
     });
     if (!result) throw new NotFoundException('Asset not found.');
