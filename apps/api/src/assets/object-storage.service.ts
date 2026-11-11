@@ -20,6 +20,7 @@ function signingKey(secret: string, date: string, region: string): Buffer {
 
 export interface ObjectStorageConfig {
   endpoint: string;
+  internalEndpoint: string;
   bucket: string;
   accessKey: string;
   secretKey: string;
@@ -32,6 +33,7 @@ export class ObjectStorageService {
 
   constructor() {
     const endpoint = process.env.OBJECT_STORAGE_ENDPOINT;
+    const internalEndpoint = process.env.OBJECT_STORAGE_INTERNAL_ENDPOINT ?? endpoint;
     const bucket = process.env.OBJECT_STORAGE_BUCKET;
     const accessKey = process.env.OBJECT_STORAGE_ACCESS_KEY;
     const secretKey = process.env.OBJECT_STORAGE_SECRET_KEY;
@@ -39,18 +41,19 @@ export class ObjectStorageService {
       throw new Error('Object storage is not configured. Set OBJECT_STORAGE_ENDPOINT, OBJECT_STORAGE_BUCKET, OBJECT_STORAGE_ACCESS_KEY, and OBJECT_STORAGE_SECRET_KEY.');
     }
     const parsed = new URL(endpoint);
+    const internalParsed = new URL(internalEndpoint);
     if (parsed.protocol !== 'https:' && parsed.hostname !== 'localhost' && parsed.hostname !== '127.0.0.1') {
       throw new Error('Object storage must use HTTPS outside local development.');
     }
-    this.config = { endpoint: parsed.origin, bucket, accessKey, secretKey, region: process.env.OBJECT_STORAGE_REGION ?? 'us-east-1' };
+    this.config = { endpoint: parsed.origin, internalEndpoint: internalParsed.origin, bucket, accessKey, secretKey, region: process.env.OBJECT_STORAGE_REGION ?? 'us-east-1' };
   }
 
-  presign(method: 'PUT' | 'GET' | 'HEAD' | 'DELETE', key: string, contentType?: string, expiresSeconds = 600): string {
+  presign(method: 'PUT' | 'GET' | 'HEAD' | 'DELETE', key: string, contentType?: string, expiresSeconds = 600, internal = false): string {
     const now = new Date();
     const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, '');
     const date = amzDate.slice(0, 8);
     const scope = `${date}/${this.config.region}/s3/aws4_request`;
-    const endpoint = new URL(this.config.endpoint);
+    const endpoint = new URL(internal ? this.config.internalEndpoint : this.config.endpoint);
     const path = `/${awsEncode(this.config.bucket)}/${key.split('/').map(awsEncode).join('/')}`;
     const query: Record<string, string> = {
       'X-Amz-Algorithm': 'AWS4-HMAC-SHA256',
@@ -74,7 +77,7 @@ export class ObjectStorageService {
   }
 
   async delete(key: string): Promise<void> {
-    const response = await fetch(this.presign('DELETE', key, undefined, 60), { method: 'DELETE' });
+    const response = await fetch(this.presign('DELETE', key, undefined, 60, true), { method: 'DELETE' });
     if (!response.ok && response.status !== 404) throw new Error(`Object storage delete failed (${response.status}).`);
   }
 }
