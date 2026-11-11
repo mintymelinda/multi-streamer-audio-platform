@@ -3,11 +3,12 @@ import { AssetsModule } from '../assets/assets.module.js';
 import { DatabaseModule } from '../database/database.module.js';
 import { IdentityModule } from '../identity/identity.module.js';
 import { WorkspacesModule } from './workspaces.module.js';
+import { DeletionLedgerModule } from '../deletion-ledger/deletion-ledger.module.js';
 import { WorkspaceLifecycleController } from './workspace-lifecycle.controller.js';
 import { WorkspaceLifecycleService } from './workspace-lifecycle.service.js';
 
 @Module({
-  imports: [DatabaseModule, IdentityModule, WorkspacesModule, AssetsModule],
+  imports: [DatabaseModule, IdentityModule, WorkspacesModule, AssetsModule, DeletionLedgerModule],
   controllers: [WorkspaceLifecycleController],
   providers: [WorkspaceLifecycleService],
 })
