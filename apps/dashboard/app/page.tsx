@@ -64,6 +64,8 @@ export default function HomePage() {
     try {
       const me = await api<{ user: { id: string } }>("/auth/me");
       setAccount(Boolean(me.user.id));
+      const adminAccess = await api<{ isPlatformAdministrator: boolean }>("/platform-admin/me").catch(() => ({ isPlatformAdministrator: false }));
+      setPlatformAdmin(adminAccess.isPlatformAdministrator);
       const available = await api<Workspace[]>("/workspaces");
       setWorkspaces(available);
       const activeId = selectedId && available.some((workspace) => workspace.id === selectedId)
