@@ -75,11 +75,34 @@ BEGIN
     RAISE EXCEPTION 'administrator with directory permission cannot list assignments';
   END IF;
 
+  PERFORM set_config('app.user_id', current_setting('test.platform_owner_id'), true);
+  PERFORM set_config('app.user_id', (SELECT id::text FROM platform_users WHERE twitch_user_id = '980000012'), true);
+  IF EXISTS (SELECT 1 FROM get_current_platform_administrator()) THEN
+    RAISE EXCEPTION 'ordinary platform account received administrator access';
+  END IF;
+  BEGIN
+    PERFORM * FROM list_platform_administrators();
+    RAISE EXCEPTION 'ordinary platform account read the administrator directory';
+  EXCEPTION WHEN insufficient_privilege THEN
+    NULL;
+  END;
+
+  PERFORM set_config('app.user_id', admin_id::text, true);
+
   BEGIN
     PERFORM appoint_platform_administrator(
       '980000012', 'owner', ARRAY['administrators.read'], 'must not escalate to owner'
     );
     RAISE EXCEPTION 'administrator appointed a platform owner';
+  EXCEPTION WHEN insufficient_privilege THEN
+    NULL;
+  END;
+
+  BEGIN
+    PERFORM appoint_platform_administrator(
+      '980000010', 'admin', ARRAY['administrators.read'], 'must not demote an owner'
+    );
+    RAISE EXCEPTION 'administrator changed an owner assignment';
   EXCEPTION WHEN insufficient_privilege THEN
     NULL;
   END;
