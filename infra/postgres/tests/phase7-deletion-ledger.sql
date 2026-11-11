@@ -153,7 +153,13 @@ DELETE FROM platform_users WHERE id='73000000-0000-4000-8000-000000000001';
 
 -- Simulate restoring a database snapshot taken before those operations. The
 -- replay guard permits only this recovery simulation to reintroduce stale rows.
-SELECT set_config('app.deletion_ledger_replay',(SELECT replay_token::text FROM platform_deletion_ledger_control WHERE singleton),true);
+DO $
+DECLARE replay_token_value text;
+BEGIN
+  SELECT replay_token::text INTO replay_token_value
+    FROM platform_deletion_ledger_control WHERE singleton;
+  PERFORM set_config('app.deletion_ledger_replay', replay_token_value, true);
+END $;
 INSERT INTO platform_users (id, twitch_user_id)
 VALUES ('73000000-0000-4000-8000-000000000001', '730001');
 INSERT INTO platform_users (id, twitch_user_id)

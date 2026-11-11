@@ -440,7 +440,13 @@ CREATE POLICY deletion_ledger_replay_context ON workspace_invitations
 
 -- The baseline spans global identity/workspace tables as well as forced-RLS
 -- workspace tables. Use the same transaction-local policy gate as recovery replay.
-SELECT set_config('app.deletion_ledger_replay', (SELECT replay_token::text FROM platform_deletion_ledger_control WHERE singleton), true);
+DO $
+DECLARE replay_token_value text;
+BEGIN
+  SELECT replay_token::text INTO replay_token_value
+    FROM platform_deletion_ledger_control WHERE singleton;
+  PERFORM set_config('app.deletion_ledger_replay', replay_token_value, true);
+END $;
 
 -- Seed the journal with the current access/revocation state. This gives a
 -- restore from a pre-0050 snapshot a stable baseline before later events replay.
@@ -854,10 +860,10 @@ BEGIN
   -- Account deletion follows workspace deletion and access revocation so that
   -- RESTRICT foreign keys cannot retain a deleted identity from an old backup.
   FOR event_row IN
-    SELECT DISTINCT subject_id, identity_key
+    SELECT DISTINCT ON (subject_id) subject_id, identity_key, occurred_at
       FROM public.platform_deletion_ledger
      WHERE event_type = 'user.deleted'
-     ORDER BY subject_id
+     ORDER BY subject_id, occurred_at DESC, entry_id DESC
   LOOP
     DELETE FROM public.workspace_memberships
      WHERE user_id = event_row.subject_id;
