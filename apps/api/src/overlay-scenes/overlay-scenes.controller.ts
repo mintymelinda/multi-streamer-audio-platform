@@ -81,7 +81,7 @@ export class OverlayScenesController {
         : undefined;
     if (typeof name !== 'string') throw new BadRequestException('A scene name is required.');
     protectTokenResponse(reply);
-    return this.scenes.create(workspace(request).id, user(request).id, { name });
+    return this.scenes.create(workspace(request).id, user(request).id, name);
   }
 
   @Put('order')
