@@ -83,7 +83,7 @@ BEGIN
     RAISE EXCEPTION 'workspace owner cannot see the active support grant';
   END IF;
 
-  PERFORM revoke_workspace_support_access(grant_id, 'Workspace owner ended support access');
+  PERFORM revoke_workspace_support_access(workspace_id, grant_id, 'Workspace owner ended support access');
 
   PERFORM set_config('app.user_id', support_id::text, true);
   BEGIN
