@@ -64,7 +64,7 @@ export default function SettingsPage() {
   return <main className="shell">
     <header className="topbar">
       <a className="brand" href="/">♫ Streamer Audio</a>
-      <nav className="page-nav"><a href="/">Dashboard</a><a href="/team">Team</a><a href="/notifications">Notifications</a><a href="/account/data-exports">Account data</a></nav>
+      <nav className="page-nav"><a href="/">Dashboard</a><a href="/team">Team</a><a href="/notifications">Notifications</a><a href="/account/data-exports">Account data</a><a href="/workspace/data">Workspace data</a></nav>
     </header>
     <section className="welcome">
       <div><p className="eyebrow">YOUR ACCOUNT</p><h1>Appearance</h1><p className="subheading">Choose how the dashboard looks across all of your workspaces and devices.</p></div>

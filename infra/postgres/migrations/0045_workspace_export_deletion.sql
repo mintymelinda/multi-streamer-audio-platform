@@ -56,7 +56,7 @@ BEGIN
      ORDER BY c.relname
   LOOP
     EXECUTE format(
-      'SELECT COALESCE(jsonb_agg(to_jsonb(row_data) - ARRAY[''credential_ciphertext'',''credential_nonce'',''credential_auth_tag'',''wrapped_dek'',''dek_nonce'',''dek_auth_tag'',''kek_version'',''credential_format_version'',''ciphertext'',''nonce'',''auth_tag'',''access_token_hash'',''token_hash'',''pending_object_key'',''object_key'']), ''[]''::jsonb) FROM public.%I row_data WHERE workspace_id=$1',
+      'SELECT COALESCE(jsonb_agg((SELECT COALESCE(jsonb_object_agg(entry.key,entry.value), ''{}''::jsonb) FROM jsonb_each(to_jsonb(row_data)) entry WHERE entry.key !~* ''(token|secret|cipher|nonce|auth_tag|wrapped_dek|dek_|credential|object_key)'')), ''[]''::jsonb) FROM public.%I row_data WHERE workspace_id=$1',
       table_name
     ) INTO table_data USING p_workspace_id;
     exported_tables := exported_tables || jsonb_build_object(table_name,table_data);
