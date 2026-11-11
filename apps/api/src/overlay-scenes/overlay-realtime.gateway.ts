@@ -69,7 +69,7 @@ export class OverlayRealtimeGateway
 
   private async broadcastInvalidation(raw: string | undefined): Promise<void> {
     if (!raw || raw.length > 8_192) return;
-    let event: { workspaceId?: unknown };
+    let event: { workspaceId?: unknown; type?: unknown };
     try {
       event = JSON.parse(raw) as typeof event;
     } catch {
@@ -90,7 +90,7 @@ export class OverlayRealtimeGateway
           await socket.disconnect(true);
           continue;
         }
-        socket.emit('overlay:invalidate', { sceneId });
+        socket.emit('overlay:invalidate', { sceneId, eventType: typeof event.type === 'string' ? event.type : null });
       }
     }
   }
