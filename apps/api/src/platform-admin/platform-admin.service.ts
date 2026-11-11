@@ -21,6 +21,28 @@ export const PLATFORM_PERMISSIONS = [
 export type PlatformPermission = (typeof PLATFORM_PERMISSIONS)[number];
 export type PlatformAdminRole = 'owner' | 'admin';
 
+
+export interface PlatformAccountRecord {
+  user_id: string;
+  twitch_user_id: string;
+  status: 'active' | 'suspended';
+  created_at: Date;
+  suspended_at: Date | null;
+  suspension_reason: string | null;
+}
+
+export interface PlatformWorkspaceRecord {
+  workspace_id: string;
+  name: string;
+  owner_user_id: string;
+  owner_twitch_user_id: string;
+  broadcaster_twitch_user_id: string;
+  status: 'active' | 'restricted' | 'suspended';
+  restriction_reason: string | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
 export interface PlatformAdminAssignment {
   user_id: string;
   twitch_user_id: string;
@@ -55,6 +77,87 @@ export class PlatformAdminService {
       );
       return result.rows;
     });
+  }
+
+
+  async listAccounts(actorUserId: string, searchInput?: unknown): Promise<PlatformAccountRecord[]> {
+    const search = this.validateSearch(searchInput);
+    return this.database.transaction({ userId: actorUserId }, async (client) => {
+      const result = await client.query<PlatformAccountRecord>(
+        'SELECT * FROM list_platform_accounts($1)',
+        [search],
+      );
+      return result.rows;
+    });
+  }
+
+  async listWorkspaces(actorUserId: string, searchInput?: unknown): Promise<PlatformWorkspaceRecord[]> {
+    const search = this.validateSearch(searchInput);
+    return this.database.transaction({ userId: actorUserId }, async (client) => {
+      const result = await client.query<PlatformWorkspaceRecord>(
+        'SELECT * FROM list_platform_workspaces($1)',
+        [search],
+      );
+      return result.rows;
+    });
+  }
+
+  async setAccountStatus(
+    actorUserId: string,
+    targetUserId: string,
+    statusInput: unknown,
+    reasonInput: unknown,
+  ): Promise<void> {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(targetUserId)) {
+      throw new BadRequestException('A valid target account ID is required.');
+    }
+    if (statusInput !== 'active' && statusInput !== 'suspended') {
+      throw new BadRequestException('Account status must be active or suspended.');
+    }
+    const reason = this.validateReason(reasonInput);
+    await this.database.transaction({ userId: actorUserId }, async (client) => {
+      await client.query(
+        'SELECT set_platform_account_status($1, $2::account_status, $3)',
+        [targetUserId, statusInput, reason],
+      );
+    });
+  }
+
+  async setWorkspaceStatus(
+    actorUserId: string,
+    workspaceId: string,
+    statusInput: unknown,
+    reasonInput: unknown,
+  ): Promise<void> {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(workspaceId)) {
+      throw new BadRequestException('A valid workspace ID is required.');
+    }
+    if (statusInput !== 'active' && statusInput !== 'restricted' && statusInput !== 'suspended') {
+      throw new BadRequestException('Workspace status must be active, restricted, or suspended.');
+    }
+    const reason = this.validateReason(reasonInput);
+    await this.database.transaction({ userId: actorUserId }, async (client) => {
+      await client.query(
+        'SELECT set_platform_workspace_status($1, $2::workspace_status, $3)',
+        [workspaceId, statusInput, reason],
+      );
+    });
+  }
+
+  private validateSearch(searchInput: unknown): string | null {
+    if (searchInput === undefined || searchInput === null || searchInput === '') return null;
+    if (typeof searchInput !== 'string' || searchInput.trim().length > 120) {
+      throw new BadRequestException('Search must be 120 characters or fewer.');
+    }
+    return searchInput.trim() || null;
+  }
+
+  private validateReason(reasonInput: unknown): string {
+    const reason = typeof reasonInput === 'string' ? reasonInput.trim() : '';
+    if (reason.length < 1 || reason.length > 1000) {
+      throw new BadRequestException('A reason between 1 and 1,000 characters is required.');
+    }
+    return reason;
   }
 
   async appoint(
