@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ForbiddenException,
   Inject,
   Injectable,
 } from '@nestjs/common';
@@ -83,7 +82,7 @@ export class PlatformAdminService {
         'SELECT appoint_platform_administrator($1, $2::platform_administrator_role, $3::text[], $4)',
         [input.twitchUserId, input.role, input.permissions, input.reason.trim()],
       );
-    });;
+    });
   }
 
   async revoke(actorUserId: string, targetUserId: string, reasonInput: unknown): Promise<void> {
@@ -100,5 +99,4 @@ export class PlatformAdminService {
       ]);
     });
   }
-
 }
