@@ -2,12 +2,14 @@ import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundEx
 import type { VerifiedWorkspaceId } from '@platform/contracts';
 import { DatabaseService } from '../database/database.service.js';
 import { ObjectStorageService } from '../assets/object-storage.service.js';
+import { DeletionLedgerService } from '../deletion-ledger/deletion-ledger.service.js';
 
 @Injectable()
 export class WorkspaceLifecycleService {
   constructor(
     @Inject(DatabaseService) private readonly database: DatabaseService,
     @Inject(ObjectStorageService) private readonly storage: ObjectStorageService,
+    @Inject(DeletionLedgerService) private readonly ledger: DeletionLedgerService,
   ) {}
 
   async export(workspaceId: VerifiedWorkspaceId, userId: string) {
@@ -87,6 +89,7 @@ export class WorkspaceLifecycleService {
           [workspaceId, userId],
         );
         if (!deleted.rowCount) throw new NotFoundException('Workspace not found.');
+        await this.ledger.append('workspace', workspaceId);
         return {
           deleted: true,
           workspaceId,
