@@ -46,13 +46,13 @@ export function extractYouTubeVideoId(value: string): string {
     throw new InvidiousResolutionError('Media URL is invalid.', 'INVALID_MEDIA_URL');
   }
 
-  const host = url.hostname.toLowerCase().replace(/^www\\./, '');
+  const host = url.hostname.toLowerCase().replace(/^www\./, '');
   let id: string | null = null;
   if (host === 'youtu.be') {
     id = url.pathname.split('/').filter(Boolean)[0] ?? null;
   } else if (host === 'youtube.com' || host === 'm.youtube.com' || host === 'music.youtube.com') {
     if (url.pathname === '/watch') id = url.searchParams.get('v');
-    else if (/^\\/(shorts|embed|live)\\//.test(url.pathname)) {
+    else if (/^\/(shorts|embed|live)\//.test(url.pathname)) {
       id = url.pathname.split('/')[2] ?? null;
     }
   }
@@ -66,23 +66,22 @@ export function extractYouTubeVideoId(value: string): string {
 @Injectable()
 export class InvidiousResolverService {
   private readonly request: typeof fetch;
-  private readonly instanceUrl: URL;
+  private readonly instanceUrl: URL | null;
   private readonly timeoutMs: number;
 
   constructor(options: InvidiousResolverOptions = {}) {
     const configured = options.instanceUrl ?? process.env.INVIDIOUS_INSTANCE_URL;
-    if (!configured) throw new Error('INVIDIOUS_INSTANCE_URL must identify the configured Invidious instance.');
-    this.instanceUrl = new URL(configured);
-    if (
+    this.instanceUrl = configured ? new URL(configured) : null;
+    if (this.instanceUrl && (
       !['https:', ...(process.env.NODE_ENV === 'production' ? [] : ['http:'])].includes(this.instanceUrl.protocol) ||
       this.instanceUrl.username ||
       this.instanceUrl.password ||
       this.instanceUrl.search ||
       this.instanceUrl.hash
-    ) {
+    )) {
       throw new Error('Invidious instance URL must be a credential-free HTTPS URL.');
     }
-    this.instanceUrl.pathname = this.instanceUrl.pathname.replace(/\\/$/, '');
+    if (this.instanceUrl) this.instanceUrl.pathname = this.instanceUrl.pathname.replace(/\/$/, '');
     this.request = options.request ?? fetch;
     this.timeoutMs = options.timeoutMs ?? 10_000;
     if (!Number.isSafeInteger(this.timeoutMs) || this.timeoutMs < 1_000 || this.timeoutMs > 30_000) {
@@ -92,6 +91,9 @@ export class InvidiousResolverService {
 
   async resolve(mediaUrl: string): Promise<InvidiousResolvedMedia> {
     const mediaId = extractYouTubeVideoId(mediaUrl);
+    if (!this.instanceUrl) {
+      throw new InvidiousResolutionError('No Invidious instance is configured.', 'INVIDIOUS_NOT_CONFIGURED');
+    }
     const endpoint = new URL(
       `${this.instanceUrl.pathname}/api/v1/videos/${encodeURIComponent(mediaId)}`,
       this.instanceUrl.origin,
@@ -133,7 +135,7 @@ export class InvidiousResolverService {
     const formats = (video.adaptiveFormats as InvidiousFormat[])
       .filter((format) =>
         typeof format.type === 'string' &&
-        /^audio\\//i.test(format.type) &&
+        /^audio\//i.test(format.type) &&
         typeof format.url === 'string' &&
         Number.isFinite(Number(format.bitrate)) &&
         Number(format.bitrate) > 0,
