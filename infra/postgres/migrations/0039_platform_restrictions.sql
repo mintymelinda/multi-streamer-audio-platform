@@ -122,7 +122,6 @@ BEGIN
      WHERE normalized_search IS NULL
         OR workspace.name ILIKE '%' || normalized_search || '%'
         OR workspace.broadcaster_twitch_user_id = normalized_search
-        OR owner.twitch_user_id = normalized_search
         OR workspace.id::text = normalized_search
      ORDER BY workspace.created_at DESC
      LIMIT 100;
