@@ -8,9 +8,10 @@ import { OverlayScenesService } from './overlay-scenes.service.js';
 import { OverlayRuntimeController } from './overlay-runtime.controller.js';
 import { OverlayRuntimeService } from './overlay-runtime.service.js';
 import { OverlayRealtimeGateway } from './overlay-realtime.gateway.js';
+import { AssetsModule } from '../assets/assets.module.js';
 
 @Module({
-  imports: [DatabaseModule, IdentityModule, OutboxModule, WorkspacesModule],
+  imports: [DatabaseModule, IdentityModule, OutboxModule, WorkspacesModule, AssetsModule],
   controllers: [OverlayScenesController, OverlayRuntimeController],
   providers: [OverlayScenesService, OverlayRuntimeService, OverlayRealtimeGateway],
 })
