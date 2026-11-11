@@ -25,6 +25,8 @@ function signingKey(secret: string, date: string, region: string): Buffer {
   return hmac(hmac(hmac(hmac('AWS4' + secret, date), region), 's3'), 'aws4_request');
 }
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 @Injectable()
 export class DeletionLedgerService {
   private readonly config: LedgerConfig | null;
@@ -55,15 +57,12 @@ export class DeletionLedgerService {
   }
 
   async append(entityType: DeletionEntityType, entityId: string): Promise<void> {
-    if (!this.config) {
-      throw new Error('Permanent deletion is disabled because the independent deletion ledger is not configured.');
-    }
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(entityId)) {
-      throw new TypeError('Deletion ledger entity ID must be a UUID.');
-    }
+    this.assertConfigured();
+    this.assertUuid(entityId, 'Deletion ledger entity ID');
     const normalizedId = entityId.toLowerCase();
     const eventId = randomUUID();
-    const key = 'v1/' + (entityType === 'workspace' ? 'workspaces' : 'accounts') + '/' + normalizedId + '/' + eventId + '.json';
+    const prefix = entityType === 'workspace' ? 'workspaces' : 'accounts';
+    const key = 'v1/' + prefix + '/' + normalizedId + '/' + eventId + '.json';
     const record = {
       format: 'multi-streamer-audio-platform.deletion-tombstone',
       version: 1,
@@ -76,13 +75,10 @@ export class DeletionLedgerService {
   }
 
   async appendCredential(credentialId: string, workspaceId: string, providerInstanceId: string): Promise<void> {
-    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-    if (!this.config) {
-      throw new Error('Permanent credential revocation is disabled because the independent deletion ledger is not configured.');
-    }
-    if (!uuid.test(credentialId) || !uuid.test(workspaceId) || !uuid.test(providerInstanceId)) {
-      throw new TypeError('Credential tombstones require valid credential, workspace, and provider instance UUIDs.');
-    }
+    this.assertConfigured();
+    this.assertUuid(credentialId, 'Credential ID');
+    this.assertUuid(workspaceId, 'Workspace ID');
+    this.assertUuid(providerInstanceId, 'Provider instance ID');
     const normalizedId = credentialId.toLowerCase();
     const eventId = randomUUID();
     const key = 'v1/credentials/' + normalizedId + '/' + eventId + '.json';
@@ -100,13 +96,9 @@ export class DeletionLedgerService {
   }
 
   async appendMembershipRevocation(workspaceId: string, userId: string, revokedAt: Date | string): Promise<void> {
-    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-    if (!this.config) {
-      throw new Error('Access revocation is disabled because the independent deletion ledger is not configured.');
-    }
-    if (!uuid.test(workspaceId) || !uuid.test(userId)) {
-      throw new TypeError('Membership tombstones require valid workspace and user UUIDs.');
-    }
+    this.assertConfigured();
+    this.assertUuid(workspaceId, 'Workspace ID');
+    this.assertUuid(userId, 'User ID');
     const timestamp = new Date(revokedAt);
     if (Number.isNaN(timestamp.getTime())) throw new TypeError('Membership revocation timestamp is invalid.');
     const eventId = randomUUID();
@@ -126,8 +118,18 @@ export class DeletionLedgerService {
     await this.putRecord(key, record, 'deletion ledger membership append');
   }
 
+  private assertConfigured(): asserts this is this & { config: LedgerConfig } {
+    if (!this.config) {
+      throw new Error('Permanent deletion and access revocation require the independent deletion ledger to be configured.');
+    }
+  }
+
+  private assertUuid(value: string, label: string): void {
+    if (!UUID_PATTERN.test(value)) throw new TypeError(label + ' must be a UUID.');
+  }
+
   private async putRecord(key: string, record: Record<string, unknown>, description: string): Promise<void> {
-    const response = await this.request(this.presign('PUT', key), {
+    const response = await this.request(this.presign(key), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', 'If-None-Match': '*' },
       body: JSON.stringify(record),
@@ -137,7 +139,17 @@ export class DeletionLedgerService {
     throw new Error(description + ' failed (' + response.status + ').');
   }
 
-256',
+  private presign(key: string): string {
+    const config = this.config;
+    if (!config) throw new Error('Deletion ledger storage is not configured.');
+    const endpoint = new URL(config.endpoint);
+    const now = new Date();
+    const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, '');
+    const date = amzDate.slice(0, 8);
+    const scope = date + '/' + config.region + '/s3/aws4_request';
+    const path = '/' + encode(config.bucket) + '/' + key.split('/').map(encode).join('/');
+    const query: Record<string, string> = {
+      'X-Amz-Algorithm': 'AWS4-HMAC-SHA256',
       'X-Amz-Credential': config.accessKey + '/' + scope,
       'X-Amz-Date': amzDate,
       'X-Amz-Expires': '60',
@@ -149,7 +161,7 @@ export class DeletionLedgerService {
       .join('&');
     const canonicalHeaders = 'content-type:application/json\nhost:' + endpoint.host + '\nif-none-match:*\n';
     const canonicalRequest = [
-      method, path, canonicalQuery, canonicalHeaders, query['X-Amz-SignedHeaders'], 'UNSIGNED-PAYLOAD',
+      'PUT', path, canonicalQuery, canonicalHeaders, query['X-Amz-SignedHeaders'], 'UNSIGNED-PAYLOAD',
     ].join('\n');
     const stringToSign = [
       'AWS4-HMAC-SHA256', amzDate, scope,
