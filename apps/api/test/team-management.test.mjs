@@ -5,11 +5,16 @@ import { TeamService } from '../dist/workspaces/team.service.js';
 
 function makeService() {
   const statements = [];
+  const ledgerWrites = [];
   const database = {
     transaction: async (_context, operation) => operation({
       query: async (sql, values = []) => {
         statements.push({ sql, values });
         if (sql.includes('SELECT 1 FROM workspace_memberships')) return { rows: [], rowCount: 0 };
+        if (sql.includes("UPDATE workspace_memberships SET status = 'revoked'")) return {
+          rows: [{ user_id: values[1], revoked_at: new Date('2026-11-11T08:00:00.000Z') }],
+          rowCount: 1,
+        };
         if (sql.includes('INSERT INTO workspace_invitations')) return {
           rows: [{ id: values[0], workspace_id: values[1], assigned_role: values[3], status: 'pending' }],
           rowCount: 1,
@@ -19,7 +24,8 @@ function makeService() {
     }),
   };
   const directory = { resolveUsername: async (username) => username.trim().toLowerCase() === 'streamfriend' ? '987654' : '123456' };
-  return { service: new TeamService(database, directory), statements };
+  const ledger = { appendMembershipRevocation: async (...args) => ledgerWrites.push(args) };
+  return { service: new TeamService(database, directory, ledger), statements, ledgerWrites };
 }
 
 const actor = { id: 'owner-id', twitchUserId: '123456' };
@@ -49,4 +55,12 @@ test('rejects self-invitations before writing invitation data', async () => {
     service.createInvitation(actor, workspaceId, 'self', 'moderator', 'owner'),
   );
   assert.equal(statements.some((entry) => entry.sql.includes('INSERT INTO workspace_invitations')), false);
+});
+
+test('revokes workspace membership only after recording an independent revocation tombstone', async () => {
+  const { service, ledgerWrites, statements } = makeService();
+  const result = await service.revokeMember(actor, workspaceId, 'member-id');
+  assert.deepEqual(result, { revoked: true });
+  assert.deepEqual(ledgerWrites, [[workspaceId, 'member-id', new Date('2026-11-11T08:00:00.000Z')]]);
+  assert.ok(statements.some((entry) => entry.sql.includes("status = 'revoked'")));
 });
