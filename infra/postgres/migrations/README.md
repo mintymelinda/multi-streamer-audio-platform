@@ -72,3 +72,7 @@ The optional notification email dispatcher uses the Resend email API. Configure 
 ## Personal account data exports
 
 Account exports are generated asynchronously by the worker and stored as JSON in PostgreSQL. The export contains only the signed-in user's account identity, own workspace membership records, invitations addressed to that Twitch identity, personal notification history, notification preferences, and account-wide appearance preferences. Workspace-owned content is reserved for the separate workspace export workflow. Session records, OAuth state, provider credentials, token hashes, email outbox contents, and other users' personal information are never included. Export status and payload access are protected by recipient RLS; downloads require the same authenticated account, are served with private no-store headers, and expire after seven days. The API limits requests to one per account per 24 hours, reuses active jobs, and the worker retries transient generation failures up to three attempts. Expired payloads are purged and terminal history is retained for 30 days.
+
+## Account deletion
+
+The self-service account deletion endpoint is documented in [Account deletion](../../../docs/operations/account-deletion.md). The database function deletes only the authenticated account, blocks workspace owners until their workspace is deleted, blocks active platform administrators until their assignment is revoked, and clears historical workspace actor references without deleting the workspace records.
