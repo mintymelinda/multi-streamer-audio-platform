@@ -25,8 +25,12 @@ function createService() {
             return { rows: value ? [value] : [], rowCount: value ? 1 : 0 };
           }
           if (sql.includes('DELETE FROM provider_credentials')) {
-            state.delete(values[0]);
-            return { rows: [{ id: values[0] }], rowCount: 1 };
+            const id = values.length === 2 && state.has(values[0])
+              ? values[0]
+              : [...state.entries()].find(([, row]) => row.workspaceId === values[0] && row.providerInstanceId === values[1])?.[0];
+            if (!id) return { rows: [], rowCount: 0 };
+            state.delete(id);
+            return { rows: [{ id }], rowCount: 1 };
           }
           return { rows: [], rowCount: 1 };
         },
