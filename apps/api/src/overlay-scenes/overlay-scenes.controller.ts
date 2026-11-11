@@ -6,6 +6,7 @@ import {
   Get,
   Inject,
   Param,
+  Patch,
   Post,
   Put,
   Req,
@@ -81,6 +82,33 @@ export class OverlayScenesController {
     if (typeof name !== 'string') throw new BadRequestException('A scene name is required.');
     protectTokenResponse(reply);
     return this.scenes.create(workspace(request).id, user(request).id, { name });
+  }
+
+  @Put('order')
+  @UseGuards(CsrfGuard)
+  @RequireWorkspacePermission('workspace:manage')
+  reorder(@Req() request: HttpRequest, @Body() body: unknown) {
+    const sceneIds = typeof body === 'object' && body !== null && 'sceneIds' in body
+      ? (body as { sceneIds?: unknown }).sceneIds
+      : undefined;
+    return this.scenes.reorder(workspace(request).id, user(request).id, sceneIds);
+  }
+
+  @Patch(':sceneId')
+  @UseGuards(CsrfGuard)
+  @RequireWorkspacePermission('workspace:manage')
+  rename(@Req() request: HttpRequest, @Param('sceneId') sceneId: string, @Body() body: unknown) {
+    const name = typeof body === 'object' && body !== null && 'name' in body
+      ? (body as { name?: unknown }).name
+      : undefined;
+    return this.scenes.rename(workspace(request).id, user(request).id, sceneId, name);
+  }
+
+  @Delete(':sceneId')
+  @UseGuards(CsrfGuard)
+  @RequireWorkspacePermission('workspace:manage')
+  delete(@Req() request: HttpRequest, @Param('sceneId') sceneId: string) {
+    return this.scenes.delete(workspace(request).id, user(request).id, sceneId);
   }
 
   @Get(':sceneId/editor')
