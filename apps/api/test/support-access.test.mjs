@@ -19,6 +19,9 @@ function harness(responses = {}) {
           if (sql.includes('read_support_workspace_content')) {
             return { rows: [{ content: responses.content ?? { workspace: { name: 'Test' } } }] };
           }
+          if (sql.includes('list_workspace_support_access_audit')) {
+            return { rows: responses.audit ?? [] };
+          }
           if (sql.includes('list_workspace_support_access')) {
             return { rows: responses.grants ?? [] };
           }
@@ -114,7 +117,7 @@ test('support content reads require a valid grant identifier and use the scoped 
   assert.deepEqual(calls[1].values, [grantId]);
 });
 
-test('workspace owner grant listing and revocation carry verified workspace context', async () => {
+test('workspace owner grant listing and revocation use owner-checked database functions', async () => {
   const { service, calls } = harness({ grants: [{ id: grantId, active: true }] });
   assert.deepEqual(await service.listForWorkspace('owner-user', workspaceId), [{ id: grantId, active: true }]);
   await service.revokeForWorkspace('owner-user', workspaceId, grantId, 'Support session no longer needed');
