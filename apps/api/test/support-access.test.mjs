@@ -119,8 +119,8 @@ test('workspace owner grant listing and revocation carry verified workspace cont
   assert.deepEqual(await service.listForWorkspace('owner-user', workspaceId), [{ id: grantId, active: true }]);
   await service.revokeForWorkspace('owner-user', workspaceId, grantId, 'Support session no longer needed');
   assert.deepEqual(calls[0].context, { userId: 'owner-user', verifiedWorkspaceId: workspaceId });
-  assert.deepEqual(calls[2].context, { userId: 'owner-user', verifiedWorkspaceId: workspaceId });
-  assert.deepEqual(calls[3].values, [grantId, 'Support session no longer needed']);
+  assert.deepEqual(calls[2].context, { userId: 'owner-user' });
+  assert.deepEqual(calls[3].values, [workspaceId, grantId, 'Support session no longer needed']);
   await assert.rejects(
     service.revokeForWorkspace('owner-user', workspaceId, grantId, ''),
     /reason between 1 and 1,000/,
