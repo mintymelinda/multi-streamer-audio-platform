@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 
@@ -81,7 +82,7 @@ function OverflowMarquee({ text, className }: { text: string; className?: string
     observer.observe(viewport);
     observer.observe(content);
     return () => observer.disconnect();
-  }, [text]);
+  }, []);
 
   const scrolling = overflow > 1;
   const style = scrolling
@@ -92,12 +93,11 @@ function OverflowMarquee({ text, className }: { text: string; className?: string
     : undefined;
 
   return (
-    <span ref={viewportRef} className={`overlay-marquee ${className ?? ""}`} aria-label={text}>
+    <span ref={viewportRef} className={`overlay-marquee ${className ?? ""}`}>
       <span
         ref={contentRef}
         className={`overlay-marquee__content ${scrolling ? "is-scrolling" : ""}`}
         style={style}
-        aria-hidden="true"
       >
         {text}
       </span>
@@ -318,6 +318,12 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
   const fixedCanvas = canvas.mode === "fixed";
   const canvasWidth = typeof canvas.width === "number" && Number.isFinite(canvas.width) ? Math.min(7680, Math.max(320, canvas.width)) : 1920;
   const canvasHeight = typeof canvas.height === "number" && Number.isFinite(canvas.height) ? Math.min(4320, Math.max(180, canvas.height)) : 1080;
+  const transition = publishedState?.transition && typeof publishedState.transition === "object"
+    ? publishedState.transition as Record<string, unknown>
+    : {};
+  const transitionDuration = typeof transition.durationMs === "number"
+    ? Math.min(5000, Math.max(0, transition.durationMs))
+    : 320;
 
   return (
     <main
@@ -328,7 +334,7 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
       data-scene-id={snapshot.sceneId}
       style={{
         ...(fixedCanvas ? { width: `${canvasWidth}px`, height: `${canvasHeight}px`, minHeight: 0 } : {}),
-        "--scene-transition-duration": `${typeof (publishedState?.transition as Record<string, unknown> | undefined)?.durationMs === "number" ? Math.min(5000, Math.max(0, (publishedState?.transition as Record<string, unknown>).durationMs as number)) : 320}ms`,
+        "--scene-transition-duration": `${transitionDuration}ms`,
       } as CSSProperties}
     >
       {snapshot.publishedState === null
@@ -374,7 +380,7 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
               {type === "announcement" && <div className="overlay-announcement">{text}</div>}
               {type === "custom-text" && <div className="overlay-custom-text">{text}</div>}
               {type === "custom-image" && (imageUrl
-                ? <img className="overlay-custom-image" src={imageUrl} alt={text || "Custom scene image"} />
+                ? <Image className="overlay-custom-image" src={imageUrl} alt={text || "Custom scene image"} width={640} height={360} unoptimized />
                 : <div className="overlay-image-placeholder">Choose an image asset in the editor</div>)}
               {type === "background" && <div className="overlay-background-label">{text}</div>}
               {type === "decoration" && <div className="overlay-decoration" aria-hidden="true" />}
