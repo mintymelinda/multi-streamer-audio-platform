@@ -32,8 +32,14 @@ CREATE TABLE platform_scene_usage (
   scene_count bigint NOT NULL CHECK (scene_count >= 0)
 );
 
+-- The migrator intentionally has no BYPASSRLS privilege. Temporarily disable
+-- RLS inside this transactional migration to seed the true global count, then
+-- immediately restore ENABLE + FORCE before the migration can commit.
+ALTER TABLE overlay_scenes DISABLE ROW LEVEL SECURITY;
 INSERT INTO platform_scene_usage (usage_key, scene_count)
 SELECT 'overlay_scenes', count(*) FROM overlay_scenes;
+ALTER TABLE overlay_scenes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE overlay_scenes FORCE ROW LEVEL SECURITY;
 
 CREATE FUNCTION enforce_overlay_scene_safety_ceiling()
 RETURNS trigger
