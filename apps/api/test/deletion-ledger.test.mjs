@@ -36,6 +36,26 @@ test('deletion ledger writes one immutable workspace tombstone', async () => {
   assert.match(calls[1].url, /X-Amz-Signature=/);
 });
 
+test('deletion ledger writes a scoped provider credential tombstone', async () => {
+  configureLedger();
+  const calls = [];
+  const service = new DeletionLedgerService(async (url, init) => {
+    calls.push({ url: String(url), init });
+    if (init.method === 'HEAD') return new Response(null, { status: 404 });
+    return new Response(null, { status: 200 });
+  });
+  await service.appendCredential(
+    '77000000-0000-4000-8000-000000000001',
+    '75000000-0000-4000-8000-000000000002',
+    '76000000-0000-4000-8000-000000000001',
+  );
+  const record = JSON.parse(calls[1].init.body);
+  assert.equal(record.entityType, 'credential');
+  assert.equal(record.workspaceId, '75000000-0000-4000-8000-000000000002');
+  assert.equal(record.providerInstanceId, '76000000-0000-4000-8000-000000000001');
+  assert.match(calls[1].url, /v1%2Fcredentials|v1\/credentials/);
+});
+
 test('deletion ledger treats an existing tombstone as an idempotent success', async () => {
   configureLedger();
   let calls = 0;
