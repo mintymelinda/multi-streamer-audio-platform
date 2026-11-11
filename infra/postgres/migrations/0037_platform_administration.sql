@@ -314,6 +314,7 @@ REVOKE ALL ON FUNCTION protect_final_platform_owner() FROM PUBLIC;
 REVOKE ALL ON FUNCTION prevent_platform_administration_audit_mutation() FROM PUBLIC;
 REVOKE ALL ON FUNCTION appoint_platform_administrator(text, platform_administrator_role, text[], text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION revoke_platform_administrator(uuid, text) FROM PUBLIC;
+GRANT USAGE ON TYPE platform_administrator_role TO platform_runtime;
 GRANT EXECUTE ON FUNCTION get_current_platform_administrator() TO platform_runtime;
 GRANT EXECUTE ON FUNCTION list_platform_administrators() TO platform_runtime;
 GRANT EXECUTE ON FUNCTION appoint_platform_administrator(text, platform_administrator_role, text[], text) TO platform_runtime;
