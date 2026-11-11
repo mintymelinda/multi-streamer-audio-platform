@@ -48,11 +48,17 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     cache: "no-store",
   });
   if (!response.ok) {
+    const payload = await response.json().catch(() => null) as { message?: unknown } | null;
+    const apiMessage = typeof payload?.message === "string"
+      ? payload.message
+      : Array.isArray(payload?.message)
+        ? payload.message.filter((item): item is string => typeof item === "string").join(" ")
+        : null;
     const message = response.status === 401
       ? "Sign in to manage overlay scenes."
       : response.status === 403
         ? "You need workspace administrator permissions to manage scenes."
-        : `Request failed (${response.status}).`;
+        : apiMessage ?? `Request failed (${response.status}).`;
     throw new Error(message);
   }
   if (response.status === 204) return undefined as T;
@@ -172,6 +178,76 @@ export default function ScenesPage() {
       await loadScenes();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not create the scene.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function renameScene(scene: Scene) {
+    if (!workspaceId) return;
+    const nextName = window.prompt("Rename scene", scene.name);
+    if (nextName === null || !nextName.trim() || nextName.trim() === scene.name) return;
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      await request(`/workspaces/${workspaceId}/scenes/${scene.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: nextName }),
+      });
+      if (editor?.sceneId === scene.id) setEditor((current) => current ? { ...current, name: nextName.trim() } : current);
+      setMessage(`Scene renamed to ${nextName.trim()}.`);
+      await loadScenes();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not rename the scene.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function moveScene(scene: Scene, direction: -1 | 1) {
+    if (!workspaceId) return;
+    const currentIndex = scenes.findIndex((item) => item.id === scene.id);
+    const nextIndex = currentIndex + direction;
+    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= scenes.length) return;
+    const nextOrder = [...scenes];
+    [nextOrder[currentIndex], nextOrder[nextIndex]] = [nextOrder[nextIndex], nextOrder[currentIndex]];
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      await request(`/workspaces/${workspaceId}/scenes/order`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sceneIds: nextOrder.map((item) => item.id) }),
+      });
+      setMessage(`${scene.name} moved ${direction < 0 ? "up" : "down"}.`);
+      await loadScenes();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not reorder scenes.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteScene(scene: Scene) {
+    if (!workspaceId) return;
+    const confirmed = window.confirm(
+      `Permanently delete "${scene.name}"? This deletes its draft and published layout and immediately revokes its OBS URL. This cannot be undone.`,
+    );
+    if (!confirmed) return;
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      await request(`/workspaces/${workspaceId}/scenes/${scene.id}`, { method: "DELETE" });
+      setSecrets((current) => current.filter((secret) => secret.sceneId !== scene.id));
+      if (editor?.sceneId === scene.id) setEditor(null);
+      setMessage(`Scene "${scene.name}" was deleted and its OBS access was permanently revoked.`);
+      await loadScenes();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not delete the scene.");
     } finally {
       setBusy(false);
     }
@@ -477,7 +553,7 @@ export default function ScenesPage() {
       </section>}
       <section className="panel team-panel">
         <div className="panel-heading"><div><p className="eyebrow">WORKSPACE SCENES</p><h2>Overlay access</h2></div><button type="button" className="secondary-button" disabled={busy} onClick={() => void loadScenes()}>Refresh</button></div>
-        {scenes.length ? <div className="scene-list">{scenes.map((scene) => {
+        {scenes.length ? <div className="scene-list">{scenes.map((scene, index) => {
           const secret = secrets.find((item) => item.sceneId === scene.id);
           return <article className="scene-row" key={scene.id}>
             <div className="scene-row-main">
@@ -493,8 +569,12 @@ export default function ScenesPage() {
             </div>
             {canManage && <div className="scene-row-actions">
               <button type="button" className="secondary-button" disabled={busy || editorBusy} onClick={() => void openEditor(scene)}>Edit scene</button>
+              <button type="button" className="secondary-button" disabled={busy} onClick={() => void renameScene(scene)}>Rename</button>
+              <button type="button" className="secondary-button" aria-label={`Move ${scene.name} up`} disabled={busy || index === 0} onClick={() => void moveScene(scene, -1)}>Move up</button>
+              <button type="button" className="secondary-button" aria-label={`Move ${scene.name} down`} disabled={busy || index === scenes.length - 1} onClick={() => void moveScene(scene, 1)}>Move down</button>
               <button type="button" className="secondary-button" disabled={busy} onClick={() => void rotateToken(scene)}>Issue new token</button>
               {scene.has_active_access && <button type="button" className="text-button danger-text" disabled={busy} onClick={() => void revokeToken(scene)}>Revoke access</button>}
+              <button type="button" className="text-button danger-text" disabled={busy} onClick={() => void deleteScene(scene)}>Delete scene</button>
             </div>}
           </article>;
         })}</div> : <div className="quiet-empty"><span>♫</span><p>No scenes have been created for this workspace.</p><small>Create a scene to issue its first OBS access URL.</small></div>}
