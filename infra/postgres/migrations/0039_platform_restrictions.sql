@@ -62,13 +62,13 @@ AS $platform_access$
 $platform_access$;
 
 CREATE POLICY platform_users_admin_read ON platform_users
-  FOR SELECT USING (platform_has_permission('accounts.read'));
+  FOR SELECT TO platform_runtime, platform_migrator USING (platform_has_permission('accounts.read'));
 
 CREATE POLICY workspaces_platform_admin_read ON workspaces
-  FOR SELECT USING (platform_has_permission('workspaces.read'));
+  FOR SELECT TO platform_runtime, platform_migrator USING (platform_has_permission('workspaces.read'));
 
 CREATE POLICY platform_users_admin_status_update ON platform_users
-  FOR UPDATE
+  FOR UPDATE TO platform_runtime, platform_migrator
   USING (
     platform_has_permission('accounts.suspend')
     AND nullif(btrim(current_setting('app.platform_status_reason', true)), '') IS NOT NULL
@@ -79,7 +79,7 @@ CREATE POLICY platform_users_admin_status_update ON platform_users
   );
 
 CREATE POLICY workspaces_platform_admin_status_update ON workspaces
-  FOR UPDATE
+  FOR UPDATE TO platform_runtime, platform_migrator
   USING (
     platform_has_permission('workspaces.restrict')
     AND nullif(btrim(current_setting('app.platform_status_reason', true)), '') IS NOT NULL
