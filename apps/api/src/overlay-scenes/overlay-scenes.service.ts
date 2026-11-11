@@ -20,6 +20,27 @@ export interface OverlaySceneRecord {
 
 const MAX_SCENE_DOCUMENT_BYTES = 256 * 1024;
 
+function defaultSceneDocument(): Record<string, unknown> {
+  return {
+    version: 1,
+    canvas: { mode: 'responsive', width: 1920, height: 1080, snap: true, snapSize: 2 },
+    transition: { type: 'none', durationMs: 320 },
+    reducedMotion: false,
+    elements: [{
+      id: randomUUID(),
+      type: 'now-playing',
+      name: 'Now Playing',
+      text: 'Now Playing',
+      x: 5,
+      y: 5,
+      width: 42,
+      height: 24,
+      locked: false,
+      animation: { enter: 'fade', exit: 'fade', durationMs: 240, delayMs: 0, trigger: 'always' },
+    }],
+  };
+}
+
 function sceneDocument(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new BadRequestException('Scene state must be a JSON object.');
@@ -95,14 +116,16 @@ export class OverlayScenesService {
 
         const sceneId = randomUUID();
         const accessToken = newOpaqueToken();
+        const starterState = JSON.stringify(defaultSceneDocument());
         const created = await client.query<OverlaySceneRecord>(
           `INSERT INTO overlay_scenes
-             (id, workspace_id, name, is_starter, access_token_hash, token_created_at, created_by_user_id)
-           VALUES ($1, $2, 'Now Playing', true, $3, now(), $4)
+             (id, workspace_id, name, is_starter, access_token_hash, token_created_at, created_by_user_id,
+              draft_state, published_state, published_at)
+           VALUES ($1, $2, 'Now Playing', true, $3, now(), $4, $5::jsonb, $5::jsonb, now())
            RETURNING id, name, sort_order, created_at, updated_at, token_created_at,
                      token_revoked_at,
                      (access_token_hash IS NOT NULL AND token_revoked_at IS NULL) AS has_active_access`,
-          [sceneId, workspaceId, sha256(accessToken), userId],
+          [sceneId, workspaceId, sha256(accessToken), userId, starterState],
         );
         const scene = created.rows[0];
         if (!scene) throw new Error('Starter scene creation did not return a record.');
