@@ -230,7 +230,7 @@ export class RequestsService {
           [workspace.id],
         );
         const result = await client.query(
-          'SELECT moderation_mode, queue_limit, per_user_limit, per_source_limit, hold_terms, reject_terms, updated_at FROM workspace_request_settings WHERE workspace_id = $1',
+          'SELECT moderation_mode, queue_limit, per_user_limit, per_source_limit, hold_terms, reject_terms, history_retention_days, updated_at FROM workspace_request_settings WHERE workspace_id = $1',
           [workspace.id],
         );
         return result.rows[0];
@@ -248,6 +248,7 @@ export class RequestsService {
       perSourceLimit: number;
       holdTerms: string[];
       rejectTerms: string[];
+      historyRetentionDays?: number;
     },
   ) {
     return this.database.transaction(
@@ -261,10 +262,10 @@ export class RequestsService {
           `UPDATE workspace_request_settings
               SET moderation_mode = $2, queue_limit = $3, per_user_limit = $4,
                   per_source_limit = $5, hold_terms = $6::text[], reject_terms = $7::text[],
-                  updated_at = now()
+                  history_retention_days = COALESCE($8, history_retention_days), updated_at = now()
             WHERE workspace_id = $1
             RETURNING moderation_mode, queue_limit, per_user_limit, per_source_limit,
-                      hold_terms, reject_terms, updated_at`,
+                      hold_terms, reject_terms, history_retention_days, updated_at`,
           [
             workspace.id,
             settings.moderationMode,
@@ -273,6 +274,7 @@ export class RequestsService {
             settings.perSourceLimit,
             settings.holdTerms,
             settings.rejectTerms,
+            settings.historyRetentionDays ?? null,
           ],
         );
         const updated = result.rows[0];

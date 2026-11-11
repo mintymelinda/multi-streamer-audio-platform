@@ -149,6 +149,12 @@ jobs:
           docker cp infra/postgres/tests/phase4-account-export-worker-isolation.sql "$container_id:/tmp/phase4-account-export-worker-isolation.sql"
           docker exec -e PGPASSWORD=ci-bootstrap-only "$container_id" psql -h 127.0.0.1 -U platform_bootstrap -d platform -v ON_ERROR_STOP=1 -f /tmp/phase4-account-export-worker-isolation.sql
 
+      - name: Verify data retention policy and worker boundary
+        run: |
+          container_id="$(docker ps --filter 'ancestor=postgres:18.6' --format '{{.ID}}' | head -n 1)"
+          docker cp infra/postgres/tests/phase7-data-retention.sql "$container_id:/tmp/phase7-data-retention.sql"
+          docker exec -e PGPASSWORD=ci-bootstrap-only "$container_id" psql -h 127.0.0.1 -U platform_bootstrap -d platform -v ON_ERROR_STOP=1 -f /tmp/phase7-data-retention.sql
+
       - name: Type check
         run: pnpm typecheck
 

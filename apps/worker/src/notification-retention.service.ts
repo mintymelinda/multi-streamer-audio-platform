@@ -22,16 +22,18 @@ export class NotificationRetentionService implements OnModuleInit, OnModuleDestr
     connectionString: setting('DATABASE_URL_FILE', 'DATABASE_URL'),
     max: 2,
     connectionTimeoutMillis: 5_000,
-    application_name: 'multi-streamer-audio-platform-notification-retention',
+    application_name: 'multi-streamer-audio-platform-retention',
   });
   private timer: NodeJS.Timeout | undefined;
   private running = false;
 
   async onModuleInit(): Promise<void> {
     await this.pool.query('SELECT 1');
-    void this.prune().catch((error: unknown) => this.logger.error('Notification retention failed', error instanceof Error ? error.stack : undefined));
+    void this.prune().catch((error: unknown) =>
+      this.logger.error('Data retention failed', error instanceof Error ? error.stack : undefined));
     this.timer = setInterval(() => {
-      void this.prune().catch((error: unknown) => this.logger.error('Notification retention failed', error instanceof Error ? error.stack : undefined));
+      void this.prune().catch((error: unknown) =>
+        this.logger.error('Data retention failed', error instanceof Error ? error.stack : undefined));
     }, 24 * 60 * 60 * 1_000);
   }
 
@@ -43,33 +45,14 @@ export class NotificationRetentionService implements OnModuleInit, OnModuleDestr
   private async prune(): Promise<void> {
     if (this.running) return;
     this.running = true;
-    let deleted = 0;
     try {
-      const users = await this.pool.query<{ id: string }>('SELECT id FROM platform_users');
-      for (const user of users.rows) {
-        const client = await this.pool.connect();
-        try {
-          await client.query('BEGIN');
-          await client.query("SELECT set_config('app.user_id', $1, true)", [user.id]);
-          const result = await client.query(
-            `DELETE FROM user_notifications
-              WHERE recipient_user_id = $1
-                AND category NOT IN ('account', 'security')
-                AND created_at < now() - make_interval(days => COALESCE(
-                  (SELECT retention_days FROM user_notification_preferences WHERE user_id = $1), 90
-                ))`,
-            [user.id],
-          );
-          deleted += result.rowCount ?? 0;
-          await client.query('COMMIT');
-        } catch (error) {
-          await client.query('ROLLBACK').catch(() => undefined);
-          throw error;
-        } finally {
-          client.release();
-        }
+      const result = await this.pool.query<{ run_platform_retention: Record<string, number> }>(
+        'SELECT run_platform_retention() AS run_platform_retention',
+      );
+      const counts = result.rows[0]?.run_platform_retention;
+      if (counts && Object.values(counts).some((count) => count > 0)) {
+        this.logger.log(`Applied data retention cleanup: ${JSON.stringify(counts)}`);
       }
-      if (deleted) this.logger.log(`Pruned ${deleted} expired non-mandatory notifications`);
     } finally {
       this.running = false;
     }
