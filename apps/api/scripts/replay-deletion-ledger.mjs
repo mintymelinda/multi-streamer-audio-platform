@@ -35,6 +35,7 @@ for (const file of await walk(root)) {
       || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(record.entityId)
       || ((record.entityType === 'credential' || record.entityType === 'membership_revocation') && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(record.workspaceId))
       || (record.entityType === 'credential' && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(record.providerInstanceId))
+      || (record.entityType !== 'membership_revocation' && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(record.eventId))
       || (record.entityType === 'membership_revocation' && (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(record.eventId) || typeof record.revokedAt !== 'string' || Number.isNaN(Date.parse(record.revokedAt))))
       || typeof record.deletedAt !== 'string'
       || Number.isNaN(Date.parse(record.deletedAt))) {
@@ -43,7 +44,7 @@ for (const file of await walk(root)) {
   const prefix = record.entityType === 'workspace' ? 'workspaces' : record.entityType === 'account' ? 'accounts' : record.entityType === 'credential' ? 'credentials' : 'membership-revocations';
   const expected = record.entityType === 'membership_revocation'
     ? join('v1', prefix, record.workspaceId.toLowerCase(), record.entityId.toLowerCase(), `${record.eventId}.json`)
-    : join('v1', prefix, `${record.entityId.toLowerCase()}.json`);
+    : join('v1', prefix, record.entityId.toLowerCase(), `${record.eventId}.json`);
   if (relative(root, file).split(sep).join('/') !== expected.split(sep).join('/')) {
     throw new Error(`Tombstone path does not match its entity identity: ${relative(root, file)}`);
   }
