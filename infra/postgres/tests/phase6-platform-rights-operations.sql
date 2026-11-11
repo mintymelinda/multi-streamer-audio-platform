@@ -72,7 +72,7 @@ BEGIN
 
   PERFORM set_config('app.user_id', admin_id::text, true);
   SELECT count(*) INTO listed FROM list_platform_rights_reports(NULL, NULL) reports
-   WHERE reports.workspace_id = workspace_id;
+   WHERE reports.workspace_id = current_setting('test.rights_workspace_id')::uuid;
   IF listed <> 3 THEN RAISE EXCEPTION 'operator cannot list all workspace rights reports'; END IF;
 
   PERFORM assign_platform_rights_report(report_one, reviewer_id, 'Assign to qualified rights reviewer');
