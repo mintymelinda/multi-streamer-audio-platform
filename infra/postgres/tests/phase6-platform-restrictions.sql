@@ -55,6 +55,14 @@ BEGIN
     RAISE EXCEPTION 'runtime role can directly access platform administration audit records';
   END IF;
 
+  PERFORM set_config('app.user_id', account_id::text, true);
+  BEGIN
+    PERFORM * FROM list_platform_accounts(NULL);
+    RAISE EXCEPTION 'ordinary account received platform account directory access';
+  EXCEPTION WHEN insufficient_privilege THEN
+    NULL;
+  END;
+
   PERFORM set_config('app.user_id', admin_id::text, true);
 
   SELECT count(*) INTO account_count FROM list_platform_accounts('980000031')
@@ -63,8 +71,8 @@ BEGIN
     RAISE EXCEPTION 'account directory did not return the matching active account';
   END IF;
 
-  SELECT count(*) INTO workspace_count FROM list_platform_workspaces('Restriction test')
-   WHERE workspace_id = current_setting('test.restrictions_workspace_id')::uuid
+  SELECT count(*) INTO workspace_count FROM list_platform_workspaces('Restriction test') directory
+   WHERE directory.workspace_id = current_setting('test.restrictions_workspace_id')::uuid
      AND status = 'active';
   IF workspace_count <> 1 THEN
     RAISE EXCEPTION 'workspace directory did not return the matching active workspace';
@@ -89,8 +97,8 @@ BEGIN
 
   PERFORM set_platform_workspace_status(workspace_id, 'restricted', 'Policy investigation');
   SELECT count(*) INTO workspace_count
-    FROM list_platform_workspaces(workspace_id::text)
-   WHERE workspace_id = current_setting('test.restrictions_workspace_id')::uuid
+    FROM list_platform_workspaces(workspace_id::text) directory
+   WHERE directory.workspace_id = current_setting('test.restrictions_workspace_id')::uuid
      AND status = 'restricted'
      AND restriction_reason = 'Policy investigation';
   IF workspace_count <> 1 THEN
@@ -101,8 +109,8 @@ BEGIN
   PERFORM set_platform_workspace_status(workspace_id, 'active', 'Investigation closed');
 
   SELECT count(*) INTO workspace_count
-    FROM list_platform_workspaces(workspace_id::text)
-   WHERE workspace_id = current_setting('test.restrictions_workspace_id')::uuid
+    FROM list_platform_workspaces(workspace_id::text) directory
+   WHERE directory.workspace_id = current_setting('test.restrictions_workspace_id')::uuid
      AND status = 'active'
      AND restriction_reason IS NULL;
   IF workspace_count <> 1 THEN
