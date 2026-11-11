@@ -86,19 +86,11 @@ export class PlatformAdminService {
     }
 
     await this.database.transaction({ userId: actorUserId }, async (client) => {
-      const target = await client.query<{ id: string }>(
-        "SELECT id FROM platform_users WHERE twitch_user_id = $1 AND status = 'active'",
-        [input.twitchUserId],
-      );
-      const targetUserId = target.rows[0]?.id;
-      if (!targetUserId) {
-        throw new BadRequestException('The Twitch account must sign in to the platform before it can be appointed.');
-      }
       await client.query(
         'SELECT appoint_platform_administrator($1, $2::platform_administrator_role, $3::text[], $4)',
-        [targetUserId, input.role, input.permissions, input.reason.trim()],
+        [input.twitchUserId, input.role, input.permissions, input.reason.trim()],
       );
-    });
+    });;
   }
 
   async revoke(actorUserId: string, targetUserId: string, reasonInput: unknown): Promise<void> {
