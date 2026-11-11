@@ -92,7 +92,7 @@ BEGIN
   RAISE EXCEPTION 'account deletion unexpectedly allowed for an active platform administrator';
 EXCEPTION WHEN insufficient_privilege THEN
   IF SQLERRM NOT LIKE '%platform administrator access must be revoked%' THEN RAISE; END IF;
-END $;
+END $$;
 
 -- Simulate the platform owner revoking the assignment, then delete the account.
 RESET ROLE;
