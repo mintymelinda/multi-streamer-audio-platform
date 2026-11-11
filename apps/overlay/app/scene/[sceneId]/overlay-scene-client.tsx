@@ -40,7 +40,7 @@ function withoutAssetUrl(element: Record<string, unknown>) {
 }
 
 function sceneStateKey(value: unknown): string {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return JSON.stringify(value);
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return JSON.stringify(value) ?? String(value);
   const state = value as Record<string, unknown>;
   return JSON.stringify({
     ...state,
