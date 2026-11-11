@@ -80,10 +80,14 @@ jobs:
           runtime_flags="$(docker exec "$container_id" psql -U platform_bootstrap -d platform -Atqc "SELECT rolsuper::text || ':' || rolbypassrls::text FROM pg_roles WHERE rolname='platform_runtime'")"
           migrator_flags="$(docker exec "$container_id" psql -U platform_bootstrap -d platform -Atqc "SELECT rolsuper::text || ':' || rolbypassrls::text FROM pg_roles WHERE rolname='platform_migrator'")"
           worker_flags="$(docker exec "$container_id" psql -U platform_bootstrap -d platform -Atqc "SELECT rolsuper::text || ':' || rolbypassrls::text FROM pg_roles WHERE rolname='platform_worker'")"
+          provider_worker_flags="$(docker exec "$container_id" psql -U platform_bootstrap -d platform -Atqc "SELECT rolsuper::text || ':' || rolbypassrls::text FROM pg_roles WHERE rolname='platform_provider_worker'")"
+          provider_definer_flags="$(docker exec "$container_id" psql -U platform_bootstrap -d platform -Atqc "SELECT rolcanlogin::text || ':' || rolsuper::text || ':' || rolbypassrls::text FROM pg_roles WHERE rolname='platform_provider_execution_owner'")"
           schema_owner="$(docker exec "$container_id" psql -U platform_bootstrap -d platform -Atqc "SELECT pg_get_userbyid(nspowner) FROM pg_namespace WHERE nspname='public'")"
           test "$runtime_flags" = "false:false"
           test "$migrator_flags" = "false:false"
           test "$worker_flags" = "false:false"
+          test "$provider_worker_flags" = "false:false"
+          test "$provider_definer_flags" = "false:false:true"
           test "$schema_owner" = "platform_migrator"
 
       - name: Apply schema migrations as the dedicated migrator
@@ -97,7 +101,7 @@ jobs:
         run: |
           container_id="$(docker ps --filter 'ancestor=postgres:18.6' --format '{{.ID}}' | head -n 1)"
           docker cp infra/postgres/tests/. "$container_id:/tmp/db-tests/"
-          docker exec -e PGPASSWORD=local-runtime-only "$container_id" sh -c 'set -eu; for test_file in /tmp/db-tests/*.sql; do if [ "$test_file" != /tmp/db-tests/phase2-worker-outbox-isolation.sql ] && [ "$test_file" != /tmp/db-tests/phase2-worker-eventsub-intake-isolation.sql ] && [ "$test_file" != /tmp/db-tests/phase4-account-export-worker-isolation.sql ] && [ "$test_file" != /tmp/db-tests/phase6-platform-administration.sql ] && [ "$test_file" != /tmp/db-tests/phase6-support-access.sql ] && [ "$test_file" != /tmp/db-tests/phase6-platform-restrictions.sql ] && [ "$test_file" != /tmp/db-tests/phase6-service-status.sql ] && [ "$test_file" != /tmp/db-tests/phase6-planned-maintenance.sql ] && [ "$test_file" != /tmp/db-tests/phase6-platform-rights-operations.sql ] && [ "$test_file" != /tmp/db-tests/phase7-data-retention.sql ] && [ "$test_file" != /tmp/db-tests/phase7-account-deletion.sql ] && [ "$test_file" != /tmp/db-tests/phase7-deletion-ledger.sql ]; then psql -h 127.0.0.1 -U platform_runtime -d platform -v ON_ERROR_STOP=1 -f "$test_file"; fi; done'
+          docker exec -e PGPASSWORD=local-runtime-only "$container_id" sh -c 'set -eu; for test_file in /tmp/db-tests/*.sql; do if [ "$test_file" != /tmp/db-tests/phase2-worker-outbox-isolation.sql ] && [ "$test_file" != /tmp/db-tests/phase2-worker-eventsub-intake-isolation.sql ] && [ "$test_file" != /tmp/db-tests/phase4-account-export-worker-isolation.sql ] && [ "$test_file" != /tmp/db-tests/phase6-platform-administration.sql ] && [ "$test_file" != /tmp/db-tests/phase6-support-access.sql ] && [ "$test_file" != /tmp/db-tests/phase6-platform-restrictions.sql ] && [ "$test_file" != /tmp/db-tests/phase6-service-status.sql ] && [ "$test_file" != /tmp/db-tests/phase6-planned-maintenance.sql ] && [ "$test_file" != /tmp/db-tests/phase6-platform-rights-operations.sql ] && [ "$test_file" != /tmp/db-tests/phase7-data-retention.sql ] && [ "$test_file" != /tmp/db-tests/phase7-account-deletion.sql ] && [ "$test_file" != /tmp/db-tests/phase7-deletion-ledger.sql ] && [ "$test_file" != /tmp/db-tests/phase7-provider-execution-worker-isolation.sql ]; then psql -h 127.0.0.1 -U platform_runtime -d platform -v ON_ERROR_STOP=1 -f "$test_file"; fi; done'
 
       - name: Verify platform administration authorization
         run: |
@@ -147,6 +151,12 @@ jobs:
           container_id="$(docker ps --filter 'ancestor=postgres:18.6' --format '{{.ID}}' | head -n 1)"
           docker cp infra/postgres/tests/phase2-worker-eventsub-intake-isolation.sql "$container_id:/tmp/phase2-worker-eventsub-intake-isolation.sql"
           docker exec -e PGPASSWORD=ci-bootstrap-only "$container_id" psql -h 127.0.0.1 -U platform_bootstrap -d platform -v ON_ERROR_STOP=1 -f /tmp/phase2-worker-eventsub-intake-isolation.sql
+
+      - name: Verify provider execution worker authorization and isolation
+        run: |
+          container_id="$(docker ps --filter 'ancestor=postgres:18.6' --format '{{.ID}}' | head -n 1)"
+          docker cp infra/postgres/tests/phase7-provider-execution-worker-isolation.sql "$container_id:/tmp/phase7-provider-execution-worker-isolation.sql"
+          docker exec -e PGPASSWORD=ci-bootstrap-only "$container_id" psql -h 127.0.0.1 -U platform_bootstrap -d platform -v ON_ERROR_STOP=1 -f /tmp/phase7-provider-execution-worker-isolation.sql
 
       - name: Verify account export worker isolation
         run: |
