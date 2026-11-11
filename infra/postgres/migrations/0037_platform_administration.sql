@@ -33,7 +33,7 @@ RETURNS boolean
 LANGUAGE sql
 SECURITY DEFINER
 SET search_path = pg_catalog, public
-AS $
+AS $platform_admin$
   SELECT EXISTS (
     SELECT 1 FROM public.platform_administrators administrators
      WHERE administrators.user_id = nullif(current_setting('app.user_id', true), '')::uuid
@@ -44,7 +44,7 @@ AS $
          OR 'administrators.manage' = ANY(administrators.permissions)
        )
   )
-$;
+$platform_admin$;
 
 REVOKE ALL ON FUNCTION current_platform_admin_can_read_directory() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION current_platform_admin_can_read_directory() TO platform_runtime;
