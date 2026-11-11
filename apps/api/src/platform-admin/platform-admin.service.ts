@@ -67,10 +67,10 @@ export class PlatformAdminService {
 
   async appoint(
     actorUserId: string,
-    input: { userId: unknown; role: unknown; permissions: unknown; reason: unknown },
+    input: { twitchUserId: unknown; role: unknown; permissions: unknown; reason: unknown },
   ): Promise<void> {
-    if (typeof input.userId !== 'string' || !/^[0-9a-f-]{36}$/i.test(input.userId)) {
-      throw new BadRequestException('A valid target account ID is required.');
+    if (typeof input.twitchUserId !== 'string' || !/^[0-9]{1,32}$/.test(input.twitchUserId)) {
+      throw new BadRequestException('A valid numeric Twitch user ID is required.');
     }
     if (input.role !== 'owner' && input.role !== 'admin') {
       throw new BadRequestException('Role must be owner or admin.');
@@ -86,9 +86,17 @@ export class PlatformAdminService {
     }
 
     await this.database.transaction({ userId: actorUserId }, async (client) => {
+      const target = await client.query<{ id: string }>(
+        "SELECT id FROM platform_users WHERE twitch_user_id = $1 AND status = 'active'",
+        [input.twitchUserId],
+      );
+      const targetUserId = target.rows[0]?.id;
+      if (!targetUserId) {
+        throw new BadRequestException('The Twitch account must sign in to the platform before it can be appointed.');
+      }
       await client.query(
         'SELECT appoint_platform_administrator($1, $2::platform_administrator_role, $3::text[], $4)',
-        [input.userId, input.role, input.permissions, input.reason.trim()],
+        [targetUserId, input.role, input.permissions, input.reason.trim()],
       );
     });
   }
