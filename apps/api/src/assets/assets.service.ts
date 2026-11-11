@@ -36,7 +36,7 @@ function folderPath(value: unknown): string {
     throw new BadRequestException('Folder path is invalid.');
   }
   const parts = value.split('/').filter(Boolean);
-  if (parts.some((part) => part === '.' || part === '..' || part.length > 80 || /[\u0000-\u001f]/.test(part))) {
+  if (parts.some((part) => part === '.' || part === '..' || part.length > 80 || part.split('').some((character) => character.charCodeAt(0) < 32))) {
     throw new BadRequestException('Folder path is invalid.');
   }
   return parts.join('/');
