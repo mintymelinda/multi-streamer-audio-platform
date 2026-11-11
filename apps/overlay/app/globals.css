@@ -79,6 +79,10 @@ body {
 /* Hosted overlay component and scene transitions. */
 .overlay-component {
   transform-origin: center;
+}
+
+.overlay-component.is-entering,
+.overlay-component.is-exiting {
   will-change: opacity, transform;
 }
 
@@ -143,16 +147,17 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .overlay-component,
-  .overlay-component.is-entering,
-  .overlay-component.is-exiting,
+  .overlay-scene .overlay-component,
+  .overlay-scene .overlay-component.is-entering,
+  .overlay-scene .overlay-component.is-exiting,
   .overlay-scene.is-transitioning[data-transition] {
-    animation: none !important;
-    transition: none !important;
-    scroll-behavior: auto !important;
+    animation: none;
+    transition: none;
+    scroll-behavior: auto;
   }
-  .overlay-marquee__content.is-scrolling {
-    animation: none !important;
+
+  .overlay-scene .overlay-marquee__content.is-scrolling {
+    animation: none;
   }
 }
 
@@ -160,7 +165,7 @@ body {
 .overlay-scene[data-reduced-motion="true"] .overlay-component.is-entering,
 .overlay-scene[data-reduced-motion="true"] .overlay-component.is-exiting,
 .overlay-scene[data-reduced-motion="true"] .overlay-marquee__content.is-scrolling,
-.overlay-scene[data-reduced-motion="true"] {
-  animation: none !important;
-  transition: none !important;
+.overlay-scene.is-transitioning[data-reduced-motion="true"] {
+  animation: none;
+  transition: none;
 }

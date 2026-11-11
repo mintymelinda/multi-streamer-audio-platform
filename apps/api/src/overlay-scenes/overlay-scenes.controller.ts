@@ -89,6 +89,25 @@ export class OverlayScenesController {
     return this.scenes.editorState(workspace(request).id, user(request).id, sceneId);
   }
 
+  @Post(':sceneId/restore-defaults')
+  @UseGuards(CsrfGuard)
+  @RequireWorkspacePermission('workspace:manage')
+  restoreDefaults(
+    @Req() request: HttpRequest,
+    @Param('sceneId') sceneId: string,
+    @Body() body: unknown,
+  ) {
+    if (!body || typeof body !== 'object' || !('expectedRevision' in body)) {
+      throw new BadRequestException('expectedRevision is required.');
+    }
+    return this.scenes.restoreDefaults(
+      workspace(request).id,
+      user(request).id,
+      sceneId,
+      (body as { expectedRevision: unknown }).expectedRevision,
+    );
+  }
+
   @Put(':sceneId/draft')
   @UseGuards(CsrfGuard)
   @RequireWorkspacePermission('workspace:manage')

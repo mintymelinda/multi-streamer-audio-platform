@@ -20,6 +20,27 @@ export interface OverlaySceneRecord {
 
 const MAX_SCENE_DOCUMENT_BYTES = 256 * 1024;
 
+function defaultSceneDocument(): Record<string, unknown> {
+  return {
+    version: 1,
+    canvas: { mode: 'responsive', width: 1920, height: 1080, snap: true, snapSize: 2 },
+    transition: { type: 'none', durationMs: 320 },
+    reducedMotion: false,
+    elements: [{
+      id: randomUUID(),
+      type: 'now-playing',
+      name: 'Now Playing',
+      text: 'Now Playing',
+      x: 5,
+      y: 5,
+      width: 42,
+      height: 24,
+      locked: false,
+      animation: { enter: 'fade', exit: 'fade', durationMs: 240, delayMs: 0, trigger: 'always' },
+    }],
+  };
+}
+
 function sceneDocument(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new BadRequestException('Scene state must be a JSON object.');
@@ -95,14 +116,16 @@ export class OverlayScenesService {
 
         const sceneId = randomUUID();
         const accessToken = newOpaqueToken();
+        const starterState = JSON.stringify(defaultSceneDocument());
         const created = await client.query<OverlaySceneRecord>(
           `INSERT INTO overlay_scenes
-             (id, workspace_id, name, is_starter, access_token_hash, token_created_at, created_by_user_id)
-           VALUES ($1, $2, 'Now Playing', true, $3, now(), $4)
+             (id, workspace_id, name, is_starter, access_token_hash, token_created_at, created_by_user_id,
+              draft_state, published_state, published_at)
+           VALUES ($1, $2, 'Now Playing', true, $3, now(), $4, $5::jsonb, $5::jsonb, now())
            RETURNING id, name, sort_order, created_at, updated_at, token_created_at,
                      token_revoked_at,
                      (access_token_hash IS NOT NULL AND token_revoked_at IS NULL) AS has_active_access`,
-          [sceneId, workspaceId, sha256(accessToken), userId],
+          [sceneId, workspaceId, sha256(accessToken), userId, starterState],
         );
         const scene = created.rows[0];
         if (!scene) throw new Error('Starter scene creation did not return a record.');
@@ -257,6 +280,59 @@ export class OverlayScenesService {
       const exists = await client.query('SELECT 1 FROM overlay_scenes WHERE id = $1 AND workspace_id = $2', [sceneId, workspaceId]);
       if (exists.rowCount === 0) throw new NotFoundException('Scene not found.');
       throw new ConflictException('This scene draft changed elsewhere. Reload it before saving again.');
+    });
+  }
+
+  async restoreDefaults(
+    workspaceId: VerifiedWorkspaceId,
+    userId: string,
+    sceneId: string,
+    expectedRevisionInput: unknown,
+  ) {
+    if (!Number.isSafeInteger(expectedRevisionInput) || (expectedRevisionInput as number) < 0) {
+      throw new BadRequestException('A valid draft revision is required to restore defaults.');
+    }
+    const expectedRevision = expectedRevisionInput as number;
+    const restoredState = sceneDocument(defaultSceneDocument());
+    return this.database.transaction({ userId, verifiedWorkspaceId: workspaceId }, async (client) => {
+      const updated = await client.query<{
+        id: string;
+        name: string;
+        draft_state: Record<string, unknown>;
+        draft_revision: string;
+        updated_at: Date;
+      }>(
+        `UPDATE overlay_scenes
+            SET draft_state = $4::jsonb,
+                draft_revision = draft_revision + 1,
+                updated_at = now()
+          WHERE id = $1 AND workspace_id = $2 AND draft_revision = $3
+          RETURNING id, name, draft_state, draft_revision, updated_at`,
+        [sceneId, workspaceId, expectedRevision, JSON.stringify(restoredState)],
+      );
+      const scene = updated.rows[0];
+      if (!scene) {
+        const exists = await client.query(
+          'SELECT 1 FROM overlay_scenes WHERE id = $1 AND workspace_id = $2',
+          [sceneId, workspaceId],
+        );
+        if (exists.rowCount === 0) throw new NotFoundException('Scene not found.');
+        throw new ConflictException('This scene draft changed elsewhere. Reload it before restoring defaults.');
+      }
+      await client.query(
+        `INSERT INTO audit_events
+           (workspace_id, actor_user_id, event_type, target_type, target_id, details)
+         VALUES ($1, $2, 'overlay.scene.defaults_restored', 'overlay_scene', $3,
+                 jsonb_build_object('draftRevision', $4::bigint))`,
+        [workspaceId, userId, sceneId, scene.draft_revision],
+      );
+      return {
+        sceneId: scene.id,
+        name: scene.name,
+        draftState: scene.draft_state,
+        draftRevision: Number(scene.draft_revision),
+        updatedAt: scene.updated_at,
+      };
     });
   }
 
