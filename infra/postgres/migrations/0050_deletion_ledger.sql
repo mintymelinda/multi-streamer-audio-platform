@@ -13,7 +13,13 @@ CREATE TABLE platform_deletion_ledger (
     'membership.revoked',
     'invitation.revoked',
     'platform_admin.revoked',
-    'platform_admin.granted'
+    'platform_admin.granted',
+    'workspace.access.granted',
+    'workspace.access.revoked',
+    'user.access.granted',
+    'user.access.revoked',
+    'support_access.granted',
+    'support_access.revoked'
   )),
   subject_id uuid NOT NULL,
   affected_workspace_id uuid,
@@ -75,6 +81,32 @@ BEGIN
     subject_id_value := OLD.id;
     user_id_value := OLD.id;
     identity_key_value := OLD.twitch_user_id;
+  ELSIF TG_TABLE_NAME = 'platform_users' AND TG_OP = 'UPDATE'
+    AND (OLD.status IS DISTINCT FROM NEW.status
+      OR OLD.suspension_reason IS DISTINCT FROM NEW.suspension_reason) THEN
+    event_type_value := CASE WHEN NEW.status = 'active'
+      THEN 'user.access.granted' ELSE 'user.access.revoked' END;
+    subject_id_value := NEW.id;
+    user_id_value := NEW.id;
+    identity_key_value := NEW.twitch_user_id;
+    metadata_value := jsonb_build_object(
+      'status', NEW.status,
+      'suspendedAt', NEW.suspended_at,
+      'suspensionReason', NEW.suspension_reason
+    );
+  ELSIF TG_TABLE_NAME = 'workspaces' AND TG_OP = 'UPDATE'
+    AND (OLD.status IS DISTINCT FROM NEW.status
+      OR OLD.restriction_reason IS DISTINCT FROM NEW.restriction_reason) THEN
+    event_type_value := CASE WHEN NEW.status = 'active'
+      THEN 'workspace.access.granted' ELSE 'workspace.access.revoked' END;
+    subject_id_value := NEW.id;
+    workspace_id_value := NEW.id;
+    user_id_value := NEW.owner_user_id;
+    identity_key_value := NEW.broadcaster_twitch_user_id;
+    metadata_value := jsonb_build_object(
+      'status', NEW.status,
+      'restrictionReason', NEW.restriction_reason
+    );
   ELSIF TG_TABLE_NAME = 'provider_credentials' THEN
     IF TG_OP = 'DELETE'
        OR (TG_OP = 'UPDATE' AND (
@@ -144,6 +176,60 @@ BEGIN
     workspace_id_value := OLD.workspace_id;
     identity_key_value := OLD.invited_twitch_user_id;
     metadata_value := jsonb_build_object('status', NEW.status, 'respondedAt', NEW.responded_at);
+  ELSIF TG_TABLE_NAME = 'workspace_support_access' THEN
+    IF TG_OP = 'INSERT' THEN
+      event_type_value := 'support_access.granted';
+      subject_id_value := NEW.id;
+      workspace_id_value := NEW.workspace_id;
+      user_id_value := NEW.support_user_id;
+      identity_key_value := NEW.support_twitch_user_id;
+      metadata_value := jsonb_build_object(
+        'supportTwitchUserId', NEW.support_twitch_user_id,
+        'grantedByUserId', NEW.granted_by_user_id,
+        'reason', NEW.reason,
+        'scopes', NEW.scopes,
+        'createdAt', NEW.created_at,
+        'expiresAt', NEW.expires_at
+      );
+    ELSIF TG_OP = 'DELETE' THEN
+      event_type_value := 'support_access.revoked';
+      subject_id_value := OLD.id;
+      workspace_id_value := OLD.workspace_id;
+      user_id_value := OLD.support_user_id;
+      identity_key_value := OLD.support_twitch_user_id;
+      metadata_value := jsonb_build_object(
+        'supportTwitchUserId', OLD.support_twitch_user_id,
+        'grantedByUserId', OLD.granted_by_user_id,
+        'revokedByUserId', OLD.revoked_by_user_id,
+        'reason', OLD.reason,
+        'scopes', OLD.scopes,
+        'createdAt', OLD.created_at,
+        'expiresAt', OLD.expires_at,
+        'revokedAt', COALESCE(OLD.revoked_at, clock_timestamp())
+      );
+    ELSIF TG_OP = 'UPDATE' AND (
+      OLD.revoked_at IS DISTINCT FROM NEW.revoked_at
+      OR OLD.scopes IS DISTINCT FROM NEW.scopes
+      OR OLD.expires_at IS DISTINCT FROM NEW.expires_at
+      OR OLD.reason IS DISTINCT FROM NEW.reason
+    ) THEN
+      event_type_value := CASE WHEN NEW.revoked_at IS NULL
+        THEN 'support_access.granted' ELSE 'support_access.revoked' END;
+      subject_id_value := NEW.id;
+      workspace_id_value := NEW.workspace_id;
+      user_id_value := NEW.support_user_id;
+      identity_key_value := NEW.support_twitch_user_id;
+      metadata_value := jsonb_build_object(
+        'supportTwitchUserId', NEW.support_twitch_user_id,
+        'grantedByUserId', NEW.granted_by_user_id,
+        'revokedByUserId', NEW.revoked_by_user_id,
+        'reason', NEW.reason,
+        'scopes', NEW.scopes,
+        'createdAt', NEW.created_at,
+        'expiresAt', NEW.expires_at,
+        'revokedAt', NEW.revoked_at
+      );
+    END IF;
   ELSIF TG_TABLE_NAME = 'platform_administrators' THEN
     IF TG_OP = 'INSERT' THEN
       event_type_value := 'platform_admin.granted';
@@ -192,11 +278,20 @@ CREATE TRIGGER workspaces_deletion_ledger
 CREATE TRIGGER platform_users_deletion_ledger
   BEFORE DELETE ON platform_users
   FOR EACH ROW EXECUTE FUNCTION record_platform_deletion_ledger_event();
+CREATE TRIGGER platform_users_access_ledger
+  AFTER UPDATE OF status, suspension_reason ON platform_users
+  FOR EACH ROW EXECUTE FUNCTION record_platform_deletion_ledger_event();
+CREATE TRIGGER workspaces_access_ledger
+  AFTER UPDATE OF status, restriction_reason ON workspaces
+  FOR EACH ROW EXECUTE FUNCTION record_platform_deletion_ledger_event();
 CREATE TRIGGER provider_credentials_deletion_ledger
   AFTER DELETE OR UPDATE ON provider_credentials
   FOR EACH ROW EXECUTE FUNCTION record_platform_deletion_ledger_event();
 CREATE TRIGGER workspace_integrations_deletion_ledger
   AFTER DELETE OR UPDATE ON workspace_integrations
+  FOR EACH ROW EXECUTE FUNCTION record_platform_deletion_ledger_event();
+CREATE TRIGGER workspace_support_access_deletion_ledger
+  AFTER INSERT OR UPDATE OR DELETE ON workspace_support_access
   FOR EACH ROW EXECUTE FUNCTION record_platform_deletion_ledger_event();
 CREATE TRIGGER workspace_memberships_deletion_ledger
   AFTER INSERT OR UPDATE OR DELETE ON workspace_memberships
@@ -278,13 +373,38 @@ CREATE POLICY deletion_ledger_replay_context ON provider_credentials
 CREATE POLICY deletion_ledger_replay_context ON workspace_integrations
   TO platform_migrator USING (current_setting('app.deletion_ledger_replay', true) = 'on')
   WITH CHECK (current_setting('app.deletion_ledger_replay', true) = 'on');
+CREATE POLICY deletion_ledger_replay_context ON workspace_support_access
+  TO platform_migrator USING (current_setting('app.deletion_ledger_replay', true) = 'on')
+  WITH CHECK (current_setting('app.deletion_ledger_replay', true) = 'on');
 CREATE POLICY deletion_ledger_replay_context ON workspace_invitations
   TO platform_migrator USING (current_setting('app.deletion_ledger_replay', true) = 'on')
   WITH CHECK (current_setting('app.deletion_ledger_replay', true) = 'on');
 
 
+-- The baseline spans global identity/workspace tables as well as forced-RLS
+-- workspace tables. Use the same transaction-local policy gate as recovery replay.
+SELECT set_config('app.deletion_ledger_replay', 'on', true);
+
 -- Seed the journal with the current access/revocation state. This gives a
 -- restore from a pre-0050 snapshot a stable baseline before later events replay.
+INSERT INTO platform_deletion_ledger (
+  event_type, subject_id, affected_workspace_id, user_id, identity_key, metadata, occurred_at
+)
+SELECT CASE WHEN status = 'active' THEN 'workspace.access.granted' ELSE 'workspace.access.revoked' END,
+       id, id, owner_user_id, broadcaster_twitch_user_id,
+       jsonb_build_object('status', status, 'restrictionReason', restriction_reason),
+       updated_at
+  FROM workspaces;
+
+INSERT INTO platform_deletion_ledger (
+  event_type, subject_id, user_id, identity_key, metadata, occurred_at
+)
+SELECT CASE WHEN status = 'active' THEN 'user.access.granted' ELSE 'user.access.revoked' END,
+       id, id, twitch_user_id,
+       jsonb_build_object('status', status, 'suspendedAt', suspended_at, 'suspensionReason', suspension_reason),
+       updated_at
+  FROM platform_users;
+
 INSERT INTO platform_deletion_ledger (
   event_type, subject_id, affected_workspace_id, user_id, metadata, occurred_at
 )
@@ -337,6 +457,26 @@ SELECT 'credential.revoked', id, workspace_id,
   FROM workspace_integrations
  WHERE credential_ciphertext IS NOT NULL
    AND status <> 'connected';
+
+INSERT INTO platform_deletion_ledger (
+  event_type, subject_id, affected_workspace_id, user_id, identity_key, metadata, occurred_at
+)
+SELECT CASE WHEN revoked_at IS NULL THEN 'support_access.granted' ELSE 'support_access.revoked' END,
+       id, workspace_id, support_user_id, support_twitch_user_id,
+       jsonb_build_object(
+         'supportTwitchUserId', support_twitch_user_id,
+         'grantedByUserId', granted_by_user_id,
+         'revokedByUserId', revoked_by_user_id,
+         'reason', reason,
+         'scopes', scopes,
+         'createdAt', created_at,
+         'expiresAt', expires_at,
+         'revokedAt', revoked_at
+       ),
+       COALESCE(revoked_at, created_at)
+  FROM workspace_support_access;
+
+SELECT set_config('app.deletion_ledger_replay', '', true);
 
 CREATE FUNCTION export_platform_deletion_ledger()
 RETURNS jsonb
@@ -428,6 +568,33 @@ BEGIN
   END LOOP;
 
   FOR event_row IN
+    SELECT DISTINCT ON (subject_id) subject_id, metadata, occurred_at
+      FROM public.platform_deletion_ledger
+     WHERE event_type IN ('workspace.access.granted', 'workspace.access.revoked')
+     ORDER BY subject_id, occurred_at DESC, entry_id DESC
+  LOOP
+    UPDATE public.workspaces
+       SET status = (event_row.metadata->>'status')::workspace_status,
+           restriction_reason = event_row.metadata->>'restrictionReason',
+           updated_at = event_row.occurred_at
+     WHERE id = event_row.subject_id;
+  END LOOP;
+
+  FOR event_row IN
+    SELECT DISTINCT ON (subject_id) subject_id, metadata, occurred_at
+      FROM public.platform_deletion_ledger
+     WHERE event_type IN ('user.access.granted', 'user.access.revoked')
+     ORDER BY subject_id, occurred_at DESC, entry_id DESC
+  LOOP
+    UPDATE public.platform_users
+       SET status = (event_row.metadata->>'status')::account_status,
+           suspended_at = (event_row.metadata->>'suspendedAt')::timestamptz,
+           suspension_reason = event_row.metadata->>'suspensionReason',
+           updated_at = event_row.occurred_at
+     WHERE id = event_row.subject_id;
+  END LOOP;
+
+  FOR event_row IN
     SELECT subject_id, metadata, occurred_at
       FROM public.platform_deletion_ledger
      WHERE event_type = 'credential.revoked'
@@ -504,6 +671,50 @@ BEGIN
         WHERE workspace_memberships.role <> 'owner'
            OR workspace_memberships.user_id = EXCLUDED.user_id;
       END IF;
+    END IF;
+  END LOOP;
+
+  FOR event_row IN
+    SELECT DISTINCT ON (subject_id)
+           subject_id, affected_workspace_id, user_id, identity_key, event_type, metadata, occurred_at
+      FROM public.platform_deletion_ledger
+     WHERE event_type IN ('support_access.granted', 'support_access.revoked')
+     ORDER BY subject_id, occurred_at DESC, entry_id DESC
+  LOOP
+    IF event_row.event_type = 'support_access.revoked' THEN
+      DELETE FROM public.workspace_support_access WHERE id = event_row.subject_id;
+    ELSIF EXISTS (
+      SELECT 1 FROM public.workspaces WHERE id = event_row.affected_workspace_id
+    ) AND EXISTS (
+      SELECT 1 FROM public.platform_users WHERE id = event_row.user_id
+    ) AND NOT EXISTS (
+      SELECT 1 FROM public.platform_deletion_ledger
+       WHERE event_type = 'user.deleted'
+         AND (subject_id = event_row.user_id OR identity_key = event_row.identity_key)
+    ) THEN
+      INSERT INTO public.workspace_support_access (
+        id, workspace_id, support_user_id, support_twitch_user_id,
+        granted_by_user_id, reason, scopes, created_at, expires_at
+      )
+      SELECT event_row.subject_id,
+             event_row.affected_workspace_id,
+             event_row.user_id,
+             event_row.identity_key,
+             CASE WHEN EXISTS (
+               SELECT 1 FROM public.platform_users
+                WHERE id = (event_row.metadata->>'grantedByUserId')::uuid
+             ) THEN (event_row.metadata->>'grantedByUserId')::uuid ELSE NULL END,
+             event_row.metadata->>'reason',
+             ARRAY(SELECT jsonb_array_elements_text(event_row.metadata->'scopes')),
+             (event_row.metadata->>'createdAt')::timestamptz,
+             (event_row.metadata->>'expiresAt')::timestamptz
+      ON CONFLICT (id) DO UPDATE
+        SET granted_by_user_id = EXCLUDED.granted_by_user_id,
+            reason = EXCLUDED.reason,
+            scopes = EXCLUDED.scopes,
+            expires_at = EXCLUDED.expires_at,
+            revoked_at = NULL,
+            revoked_by_user_id = NULL;
     END IF;
   END LOOP;
 

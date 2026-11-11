@@ -1,6 +1,6 @@
 # Deletion ledger and deletion-safe recovery
 
-Phase 7, item 64 adds a database event journal plus a signed, portable ledger artifact. The database journal records permanent workspace/account deletion and revocation of provider credentials, workspace memberships, invitations, and platform-administrator access.
+Phase 7, item 64 adds a database event journal plus a signed, portable ledger artifact. The database journal records permanent workspace/account deletion and revocation of provider credentials, workspace memberships, invitations, support grants, platform-administrator access, and account/workspace access restrictions.
 
 ## Why the external artifact is required
 

@@ -34,7 +34,10 @@ BEGIN
      OR NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='workspace_integrations_deletion_ledger')
      OR NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='workspace_memberships_deletion_ledger')
      OR NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='workspace_invitations_deletion_ledger')
-     OR NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='platform_administrators_deletion_ledger') THEN
+     OR NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='platform_administrators_deletion_ledger')
+     OR NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='platform_users_access_ledger')
+     OR NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='workspaces_access_ledger')
+     OR NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='workspace_support_access_deletion_ledger') THEN
     RAISE EXCEPTION 'one or more deletion/revocation ledger triggers are missing';
   END IF;
 END $$;
@@ -52,6 +55,28 @@ INSERT INTO workspace_memberships (id, workspace_id, user_id, role) VALUES
   ('75000000-0000-4000-8000-000000000001', '74000000-0000-4000-8000-000000000001', '73000000-0000-4000-8000-000000000001', 'owner'),
   ('75000000-0000-4000-8000-000000000002', '74000000-0000-4000-8000-000000000002', '73000000-0000-4000-8000-000000000002', 'owner'),
   ('75000000-0000-4000-8000-000000000003', '74000000-0000-4000-8000-000000000002', '73000000-0000-4000-8000-000000000003', 'moderator');
+
+UPDATE workspaces
+   SET status='restricted', restriction_reason='ledger test restriction', updated_at=now()
+ WHERE id='74000000-0000-4000-8000-000000000002';
+UPDATE platform_users
+   SET status='suspended', suspended_at=now(), suspension_reason='ledger test suspension', updated_at=now()
+ WHERE id='73000000-0000-4000-8000-000000000002';
+
+INSERT INTO workspace_support_access (
+  id, workspace_id, support_user_id, support_twitch_user_id, granted_by_user_id,
+  reason, scopes, created_at, expires_at
+) VALUES (
+  '79000000-0000-4000-8000-000000000001',
+  '74000000-0000-4000-8000-000000000002',
+  '73000000-0000-4000-8000-000000000003',
+  '730003',
+  '73000000-0000-4000-8000-000000000002',
+  'ledger test support grant',
+  ARRAY['workspace.read']::text[],
+  now(),
+  now() + interval '1 hour'
+);
 
 INSERT INTO provider_instances (
   id, workspace_id, provider_id, instance_key, contract_version
@@ -95,6 +120,9 @@ DELETE FROM provider_credentials
 UPDATE workspace_integrations
    SET status='disconnected', disconnected_at=now(), updated_at=now()
  WHERE id='78000000-0000-4000-8000-000000000001';
+UPDATE workspace_support_access
+   SET revoked_at=now(), revoked_by_user_id='73000000-0000-4000-8000-000000000002'
+ WHERE id='79000000-0000-4000-8000-000000000001';
 DELETE FROM workspaces WHERE id='74000000-0000-4000-8000-000000000001';
 DELETE FROM platform_users WHERE id='73000000-0000-4000-8000-000000000001';
 
@@ -134,6 +162,15 @@ INSERT INTO provider_credentials (
 UPDATE workspace_integrations
    SET status='connected', disconnected_at=NULL, updated_at=now()
  WHERE id='78000000-0000-4000-8000-000000000001';
+UPDATE workspace_support_access
+   SET revoked_at=NULL, revoked_by_user_id=NULL
+ WHERE id='79000000-0000-4000-8000-000000000001';
+UPDATE workspaces
+   SET status='active', restriction_reason=NULL, updated_at=now()
+ WHERE id='74000000-0000-4000-8000-000000000002';
+UPDATE platform_users
+   SET status='active', suspended_at=NULL, suspension_reason=NULL, updated_at=now()
+ WHERE id='73000000-0000-4000-8000-000000000002';
 SELECT set_config('app.deletion_ledger_replay','',true);
 
 SET LOCAL ROLE platform_migrator;
@@ -177,6 +214,23 @@ BEGIN
     RAISE EXCEPTION 'revoked Twitch integration credential was resurrected by restore replay';
   END IF;
   IF NOT EXISTS (
+    SELECT 1 FROM workspaces
+     WHERE id='74000000-0000-4000-8000-000000000002'
+       AND status='restricted' AND restriction_reason='ledger test restriction'
+  ) THEN
+    RAISE EXCEPTION 'workspace restriction was resurrected by restore replay';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM platform_users
+     WHERE id='73000000-0000-4000-8000-000000000002'
+       AND status='suspended' AND suspension_reason='ledger test suspension'
+  ) THEN
+    RAISE EXCEPTION 'account suspension was resurrected by restore replay';
+  END IF;
+  IF EXISTS (SELECT 1 FROM workspace_support_access WHERE id='79000000-0000-4000-8000-000000000001') THEN
+    RAISE EXCEPTION 'revoked support access was resurrected by restore replay';
+  END IF;
+  IF NOT EXISTS (
     SELECT 1 FROM workspace_memberships
      WHERE workspace_id='74000000-0000-4000-8000-000000000002'
        AND user_id='73000000-0000-4000-8000-000000000003'
@@ -187,7 +241,10 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM platform_deletion_ledger WHERE event_type='workspace.deleted')
      OR NOT EXISTS (SELECT 1 FROM platform_deletion_ledger WHERE event_type='user.deleted')
      OR NOT EXISTS (SELECT 1 FROM platform_deletion_ledger WHERE event_type='credential.revoked')
-     OR NOT EXISTS (SELECT 1 FROM platform_deletion_ledger WHERE event_type='membership.revoked') THEN
+     OR NOT EXISTS (SELECT 1 FROM platform_deletion_ledger WHERE event_type='membership.revoked')
+     OR NOT EXISTS (SELECT 1 FROM platform_deletion_ledger WHERE event_type='support_access.revoked')
+     OR NOT EXISTS (SELECT 1 FROM platform_deletion_ledger WHERE event_type='workspace.access.revoked')
+     OR NOT EXISTS (SELECT 1 FROM platform_deletion_ledger WHERE event_type='user.access.revoked') THEN
     RAISE EXCEPTION 'expected deletion and revocation events were not persisted';
   END IF;
 END $$;
