@@ -44,8 +44,10 @@ export class DeletionLedgerService {
       return;
     }
     const parsed = new URL(endpoint);
+    const allowInsecureHttp = process.env.NODE_ENV !== 'production'
+      && process.env.DELETION_LEDGER_ALLOW_INSECURE_HTTP === 'true';
     if (parsed.protocol !== 'https:' && parsed.hostname !== 'localhost' && parsed.hostname !== '127.0.0.1'
-      && process.env.DELETION_LEDGER_ALLOW_INSECURE_HTTP !== 'true') {
+      && !allowInsecureHttp) {
       throw new Error('Deletion ledger storage must use HTTPS outside local development.');
     }
     this.config = {
