@@ -43,6 +43,7 @@ CREATE TABLE platform_deletion_ledger_control (
   replay_token uuid NOT NULL DEFAULT gen_random_uuid()
 );
 INSERT INTO platform_deletion_ledger_control DEFAULT VALUES;
+ALTER TABLE platform_deletion_ledger_control OWNER TO platform_migrator;
 REVOKE ALL ON TABLE platform_deletion_ledger_control FROM PUBLIC, platform_runtime, platform_worker;
 
 CREATE FUNCTION platform_deletion_ledger_replay_active()
@@ -58,7 +59,8 @@ AS $$
      WHERE singleton
        AND current_setting('app.deletion_ledger_replay', true) = replay_token::text
   );
-$$;
+$;
+ALTER FUNCTION platform_deletion_ledger_replay_active() OWNER TO platform_migrator;
 REVOKE ALL ON FUNCTION platform_deletion_ledger_replay_active() FROM PUBLIC, platform_runtime, platform_worker;
 
 ALTER TABLE platform_deletion_ledger OWNER TO platform_migrator;

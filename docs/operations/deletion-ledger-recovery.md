@@ -60,6 +60,6 @@ Replay is idempotent: existing journal entries are not duplicated, workspace and
 - The ledger is not a substitute for PostgreSQL backups, WAL/PITR, object-storage backups, or encryption-key recovery; those are separate Phase 7 items.
 - The artifact must be exported and copied independently. This migration does not silently claim that the application has an offsite storage destination or that a local file is durable.
 - Run replay only after restoring the database and applying the current schema migrations, and before starting API/workers.
-- Use a dedicated `platform_migrator` connection. The API runtime and worker roles cannot read, export, or replay the global ledger.
+- Use a dedicated `platform_migrator` connection. The API runtime and worker roles cannot read, export, or replay the global ledger. The transaction-local replay context is authenticated by a private token stored in the database; do not set `app.deletion_ledger_replay` manually. Only the migrator-owned replay function can activate it.
 - The ledger is append-only. Do not edit its JSON manually. A malformed or invalidly signed artifact is rejected.
 - Protect and test recovery of the HMAC key independently. Losing the key makes the external artifact unverifiable.
