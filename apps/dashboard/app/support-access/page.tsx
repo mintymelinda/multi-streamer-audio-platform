@@ -2,6 +2,15 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+type AuditEntry = {
+  id: string;
+  actor_user_id: string | null;
+  action: string;
+  reason: string;
+  details: Record<string, unknown>;
+  created_at: string;
+};
+
 type Grant = {
   id: string;
   support_twitch_user_id: string;
@@ -38,6 +47,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export default function WorkspaceSupportAccessPage() {
   const [workspaceId, setWorkspaceId] = useState("");
   const [grants, setGrants] = useState<Grant[]>([]);
+  const [audit, setAudit] = useState<AuditEntry[]>([]);
   const [reason, setReason] = useState("");
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState("");
@@ -47,7 +57,12 @@ export default function WorkspaceSupportAccessPage() {
   const load = useCallback(async (id: string) => {
     setError("");
     try {
-      setGrants(await request<Grant[]>(`/workspaces/${id}/support-access`));
+      const [access, events] = await Promise.all([
+        request<Grant[]>(`/workspaces/${id}/support-access`),
+        request<AuditEntry[]>(`/workspaces/${id}/support-access/audit`),
+      ]);
+      setGrants(access);
+      setAudit(events);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not load support access history.");
     } finally {
@@ -117,6 +132,26 @@ export default function WorkspaceSupportAccessPage() {
             <div className="settings-form">
               <label>Reason for revoking support access<textarea value={reason} onChange={(event) => setReason(event.target.value)} maxLength={1000} rows={2} required /></label>
               <p className="panel-note">Choose Revoke on the specific active grant. Revocation takes effect immediately.</p>
+            </div>
+          )}
+        </section>
+      )}
+      {workspaceId && !loading && (
+        <section className="panel">
+          <div className="panel-heading"><div><p className="eyebrow">AUDIT TRAIL</p><h2>Support access activity</h2></div></div>
+          {audit.length === 0 ? <div className="quiet-empty"><p>No support access activity has been recorded.</p></div> : (
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>When</th><th>Action</th><th>Actor account ID</th><th>Reason</th></tr></thead>
+                <tbody>{audit.map((entry) => (
+                  <tr key={entry.id}>
+                    <td>{new Date(entry.created_at).toLocaleString()}</td>
+                    <td>{entry.action.replaceAll("_", " ")}</td>
+                    <td>{entry.actor_user_id ?? "System"}</td>
+                    <td>{entry.reason}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
             </div>
           )}
         </section>
