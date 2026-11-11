@@ -108,7 +108,7 @@ SELECT delete_current_platform_account();
 -- gain direct access to platform_administrators just for test assertions.
 RESET ROLE;
 
-DO $
+DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM platform_users WHERE id = '71000000-0000-4000-8000-000000000002') THEN
     RAISE EXCEPTION 'deleted account row remains';
