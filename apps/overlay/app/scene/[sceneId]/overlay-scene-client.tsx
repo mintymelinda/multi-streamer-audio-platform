@@ -34,6 +34,24 @@ function animationDuration(element: Record<string, unknown>) {
   return `${value}ms`;
 }
 
+function withoutAssetUrl(element: Record<string, unknown>) {
+  const { assetUrl: _assetUrl, ...comparable } = element;
+  return comparable;
+}
+
+function sceneStateKey(value: unknown): string {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return JSON.stringify(value);
+  const state = value as Record<string, unknown>;
+  return JSON.stringify({
+    ...state,
+    elements: Array.isArray(state.elements)
+      ? state.elements.map((element) => element && typeof element === 'object' && !Array.isArray(element)
+        ? withoutAssetUrl(element as Record<string, unknown>)
+        : element)
+      : state.elements,
+  });
+}
+
 function animationDelay(element: Record<string, unknown>) {
   const settings = element.animation && typeof element.animation === "object"
     ? element.animation as Record<string, unknown>
@@ -96,6 +114,8 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
   const [animatedIds, setAnimatedIds] = useState<string[]>([]);
   const [sceneTransitionActive, setSceneTransitionActive] = useState(false);
   const previousElements = useRef<Record<string, unknown>[]>([]);
+  const previousSceneState = useRef<string | null>(null);
+  const [sceneTransitionKey, setSceneTransitionKey] = useState(0);
 
   const loadSnapshot = useCallback(async (accessToken: string) => {
     const response = await fetch(apiUrl(`/overlay/scenes/${sceneId}/snapshot`), {
