@@ -229,7 +229,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION revoke_workspace_support_access(grant_id uuid, action_reason text)
+CREATE FUNCTION revoke_workspace_support_access(target_workspace_id uuid, grant_id uuid, action_reason text)
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -244,8 +244,9 @@ BEGIN
       USING ERRCODE = '22023';
   END IF;
 
+  PERFORM set_config('app.workspace_id', target_workspace_id::text, true);
   SELECT * INTO grant_row FROM public.workspace_support_access
-   WHERE id = grant_id FOR UPDATE;
+   WHERE id = grant_id AND workspace_id = target_workspace_id FOR UPDATE;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'support access grant not found'
       USING ERRCODE = 'P0002';
@@ -435,13 +436,13 @@ REVOKE ALL ON workspace_support_access FROM platform_runtime;
 REVOKE ALL ON workspace_support_access_audit FROM platform_runtime;
 REVOKE ALL ON FUNCTION create_workspace_support_access(uuid, text[], text, integer) FROM PUBLIC;
 REVOKE ALL ON FUNCTION list_workspace_support_access(uuid) FROM PUBLIC;
-REVOKE ALL ON FUNCTION revoke_workspace_support_access(uuid, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION revoke_workspace_support_access(uuid, uuid, text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION read_support_workspace_content(uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION get_workspace_technical_diagnostics(uuid) FROM PUBLIC;
 
 GRANT EXECUTE ON FUNCTION create_workspace_support_access(uuid, text[], text, integer) TO platform_runtime;
 GRANT EXECUTE ON FUNCTION list_workspace_support_access(uuid) TO platform_runtime;
-GRANT EXECUTE ON FUNCTION revoke_workspace_support_access(uuid, text) TO platform_runtime;
+GRANT EXECUTE ON FUNCTION revoke_workspace_support_access(uuid, uuid, text) TO platform_runtime;
 GRANT EXECUTE ON FUNCTION read_support_workspace_content(uuid) TO platform_runtime;
 GRANT EXECUTE ON FUNCTION get_workspace_technical_diagnostics(uuid) TO platform_runtime;
 
