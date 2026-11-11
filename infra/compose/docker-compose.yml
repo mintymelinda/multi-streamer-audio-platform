@@ -79,12 +79,6 @@ services:
       - "127.0.0.1:9001:9001"
     volumes:
       - object_storage_data:/data
-    healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-
   object-storage-init:
     image: minio/mc:RELEASE.2025-08-13T08-35-41Z
     depends_on:
