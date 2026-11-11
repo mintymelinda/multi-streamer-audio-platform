@@ -74,7 +74,7 @@ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public
 AS $rights_operator$
 BEGIN
   PERFORM public.require_platform_permission('rights_reports.manage');
-  IF NOT EXISTS (SELECT 1 FROM public.rights_holder_reports WHERE id = target_report_id) THEN
+  IF NOT EXISTS (SELECT 1 FROM public.rights_holder_reports report WHERE report.id = target_report_id) THEN
     RAISE EXCEPTION 'rights report was not found' USING ERRCODE = 'P0002';
   END IF;
   RETURN QUERY
