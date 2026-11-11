@@ -83,7 +83,7 @@ export default function ScenesPage() {
   const [editorBusy, setEditorBusy] = useState(false);
   const starterRequests = useRef(new Set<string>());
   const previewStage = useRef<HTMLDivElement | null>(null);
-  const dragState = useRef<{ index: number; pointerId: number; startX: number; startY: number; x: number; y: number } | null>(null);
+  const dragState = useRef<{ index: number; pointerId: number; mode: "move" | "resize"; startX: number; startY: number; x: number; y: number; width: number; height: number } | null>(null);
 
   const loadScenes = useCallback(async () => {
     if (!workspaceId) {
@@ -277,17 +277,20 @@ export default function ScenesPage() {
     return snapEnabled ? Math.round(value / snapSize) * snapSize : value;
   }
 
-  function startComponentDrag(event: React.PointerEvent<HTMLDivElement>, index: number, element: Record<string, unknown>) {
+  function startComponentDrag(event: React.PointerEvent<HTMLElement>, index: number, element: Record<string, unknown>, mode: "move" | "resize" = "move") {
     if (element.locked === true || !previewStage.current) return;
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
     dragState.current = {
       index,
       pointerId: event.pointerId,
+      mode,
       startX: event.clientX,
       startY: event.clientY,
       x: previewPercent(element.x, 5, 0, canvasMode === "fixed" ? canvasWidth : 100),
       y: previewPercent(element.y, 5, 0, canvasMode === "fixed" ? canvasHeight : 100),
+      width: previewPercent(element.width, canvasMode === "fixed" ? 42 * canvasWidth / 100 : 42, 1, canvasMode === "fixed" ? canvasWidth : 100),
+      height: previewPercent(element.height, canvasMode === "fixed" ? 18 * canvasHeight / 100 : 18, 1, canvasMode === "fixed" ? canvasHeight : 100),
     };
   }
 
@@ -303,11 +306,16 @@ export default function ScenesPage() {
     if (!element || element.locked === true) return;
     const maxX = canvasMode === "fixed" ? canvasWidth : 100;
     const maxY = canvasMode === "fixed" ? canvasHeight : 100;
-    const width = previewPercent(element.width, canvasMode === "fixed" ? 42 * canvasWidth / 100 : 42, 1, maxX);
-    const height = previewPercent(element.height, canvasMode === "fixed" ? 18 * canvasHeight / 100 : 18, 1, maxY);
+    if (drag.mode === "resize") {
+      updateComponent(drag.index, {
+        width: Math.min(maxX - drag.x, Math.max(1, snapValue(drag.width + dx))),
+        height: Math.min(maxY - drag.y, Math.max(1, snapValue(drag.height + dy))),
+      });
+      return;
+    }
     updateComponent(drag.index, {
-      x: Math.min(maxX - width, Math.max(0, snapValue(drag.x + dx))),
-      y: Math.min(maxY - height, Math.max(0, snapValue(drag.y + dy))),
+      x: Math.min(maxX - drag.width, Math.max(0, snapValue(drag.x + dx))),
+      y: Math.min(maxY - drag.height, Math.max(0, snapValue(drag.y + dy))),
     });
   }
 
@@ -533,7 +541,7 @@ export default function ScenesPage() {
                 className={`scene-preview-stage ${snapEnabled ? "has-layout-guides" : ""} ${canvasMode === "fixed" ? "is-fixed-canvas" : ""}`}
                 style={{
                   ...(canvasMode === "fixed" ? { width: `${canvasWidth}px`, height: `${canvasHeight}px`, aspectRatio: "auto" } : {}),
-                  ...(snapEnabled ? { backgroundSize: `${snapSize}% ${snapSize}%` } : {}),
+                  ...(snapEnabled ? { backgroundSize: canvasMode === "fixed" ? `${snapSize}px ${snapSize}px` : `${snapSize}% ${snapSize}%` } : {}),
                 }}
                 onPointerMove={moveComponentDrag}
                 onPointerUp={endComponentDrag}
@@ -557,6 +565,11 @@ export default function ScenesPage() {
                   >
                     <small>{typeof element.type === "string" ? element.type.replaceAll("-", " ") : "Component"}{element.locked === true ? " · locked" : ""}</small>
                     <span>{label}</span>
+                    {element.locked !== true && <i
+                      className="scene-preview-resize"
+                      role="presentation"
+                      onPointerDown={(event) => startComponentDrag(event, index, element, "resize")}
+                    />}
                   </div>;
                 })}
                 {previewElements.length === 0 && <div className="scene-preview-empty">Empty scene · add components in the next editor milestone</div>}
