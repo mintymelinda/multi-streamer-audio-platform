@@ -80,6 +80,16 @@ export class AssetsService {
     @Inject(ObjectStorageService) private readonly storage: ObjectStorageService,
   ) {}
 
+  async folders(workspaceId: VerifiedWorkspaceId, userId: string): Promise<string[]> {
+    const result = await this.database.transaction({ userId, verifiedWorkspaceId: workspaceId }, (client) =>
+      client.query<{ folder_path: string }>(
+        'SELECT DISTINCT folder_path FROM workspace_assets WHERE workspace_id = $1 AND status = \'ready\' ORDER BY folder_path',
+        [workspaceId],
+      ),
+    );
+    return result.rows.map((row) => row.folder_path).filter(Boolean);
+  }
+
   async list(workspaceId: VerifiedWorkspaceId, userId: string, folder?: string) {
     const path = folderPath(folder);
     const result = await this.database.transaction({ userId, verifiedWorkspaceId: workspaceId }, (client) =>
