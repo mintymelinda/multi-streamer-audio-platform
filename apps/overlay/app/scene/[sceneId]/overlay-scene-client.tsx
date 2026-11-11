@@ -255,7 +255,6 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
       const key = keyOf(element, index);
       const before = previousByKey.get(key);
       if (!before) return true;
-      if (JSON.stringify(withoutAssetUrl(before)) === JSON.stringify(withoutAssetUrl(element))) return false;
       const animation = element.animation && typeof element.animation === 'object'
         ? element.animation as Record<string, unknown>
         : {};
