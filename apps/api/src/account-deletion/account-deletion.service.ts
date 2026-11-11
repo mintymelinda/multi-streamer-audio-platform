@@ -1,5 +1,6 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service.js';
+import { DeletionLedgerService } from '../deletion-ledger/deletion-ledger.service.js';
 
 interface PostgresFailure {
   code?: string;
@@ -7,7 +8,10 @@ interface PostgresFailure {
 
 @Injectable()
 export class AccountDeletionService {
-  constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {}
+  constructor(
+    @Inject(DatabaseService) private readonly database: DatabaseService,
+    @Inject(DeletionLedgerService) private readonly ledger: DeletionLedgerService,
+  ) {}
 
   async delete(userId: string) {
     try {
@@ -17,6 +21,7 @@ export class AccountDeletionService {
         );
         const deletedUserId = result.rows[0]?.deleted_user_id;
         if (!deletedUserId) throw new NotFoundException('Account not found.');
+        await this.ledger.append('account', deletedUserId);
         return {
           deleted: true,
           message: 'Your platform account and personal data have been permanently deleted.',
