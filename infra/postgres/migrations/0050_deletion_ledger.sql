@@ -67,46 +67,52 @@ BEGIN
     RETURN NEW;
   END IF;
 
-  IF TG_TABLE_NAME = 'workspaces' AND TG_OP = 'DELETE' THEN
-    event_type_value := 'workspace.deleted';
-    subject_id_value := OLD.id;
-    workspace_id_value := OLD.id;
-    user_id_value := OLD.owner_user_id;
-    identity_key_value := OLD.broadcaster_twitch_user_id;
-    metadata_value := jsonb_build_object(
-      'broadcasterTwitchUserId', OLD.broadcaster_twitch_user_id
-    );
-  ELSIF TG_TABLE_NAME = 'platform_users' AND TG_OP = 'DELETE' THEN
-    event_type_value := 'user.deleted';
-    subject_id_value := OLD.id;
-    user_id_value := OLD.id;
-    identity_key_value := OLD.twitch_user_id;
-  ELSIF TG_TABLE_NAME = 'platform_users' AND TG_OP = 'UPDATE'
-    AND (OLD.status IS DISTINCT FROM NEW.status
-      OR OLD.suspension_reason IS DISTINCT FROM NEW.suspension_reason) THEN
-    event_type_value := CASE WHEN NEW.status = 'active'
-      THEN 'user.access.granted' ELSE 'user.access.revoked' END;
-    subject_id_value := NEW.id;
-    user_id_value := NEW.id;
-    identity_key_value := NEW.twitch_user_id;
-    metadata_value := jsonb_build_object(
-      'status', NEW.status,
-      'suspendedAt', NEW.suspended_at,
-      'suspensionReason', NEW.suspension_reason
-    );
-  ELSIF TG_TABLE_NAME = 'workspaces' AND TG_OP = 'UPDATE'
-    AND (OLD.status IS DISTINCT FROM NEW.status
-      OR OLD.restriction_reason IS DISTINCT FROM NEW.restriction_reason) THEN
-    event_type_value := CASE WHEN NEW.status = 'active'
-      THEN 'workspace.access.granted' ELSE 'workspace.access.revoked' END;
-    subject_id_value := NEW.id;
-    workspace_id_value := NEW.id;
-    user_id_value := NEW.owner_user_id;
-    identity_key_value := NEW.broadcaster_twitch_user_id;
-    metadata_value := jsonb_build_object(
-      'status', NEW.status,
-      'restrictionReason', NEW.restriction_reason
-    );
+  IF TG_TABLE_NAME = 'workspaces' THEN
+    IF TG_OP = 'DELETE' THEN
+      event_type_value := 'workspace.deleted';
+      subject_id_value := OLD.id;
+      workspace_id_value := OLD.id;
+      user_id_value := OLD.owner_user_id;
+      identity_key_value := OLD.broadcaster_twitch_user_id;
+      metadata_value := jsonb_build_object(
+        'broadcasterTwitchUserId', OLD.broadcaster_twitch_user_id
+      );
+    ELSIF TG_OP = 'UPDATE' AND (
+      OLD.status IS DISTINCT FROM NEW.status
+      OR OLD.restriction_reason IS DISTINCT FROM NEW.restriction_reason
+    ) THEN
+      event_type_value := CASE WHEN NEW.status = 'active'
+        THEN 'workspace.access.granted' ELSE 'workspace.access.revoked' END;
+      subject_id_value := NEW.id;
+      workspace_id_value := NEW.id;
+      user_id_value := NEW.owner_user_id;
+      identity_key_value := NEW.broadcaster_twitch_user_id;
+      metadata_value := jsonb_build_object(
+        'status', NEW.status,
+        'restrictionReason', NEW.restriction_reason
+      );
+    END IF;
+  ELSIF TG_TABLE_NAME = 'platform_users' THEN
+    IF TG_OP = 'DELETE' THEN
+      event_type_value := 'user.deleted';
+      subject_id_value := OLD.id;
+      user_id_value := OLD.id;
+      identity_key_value := OLD.twitch_user_id;
+    ELSIF TG_OP = 'UPDATE' AND (
+      OLD.status IS DISTINCT FROM NEW.status
+      OR OLD.suspension_reason IS DISTINCT FROM NEW.suspension_reason
+    ) THEN
+      event_type_value := CASE WHEN NEW.status = 'active'
+        THEN 'user.access.granted' ELSE 'user.access.revoked' END;
+      subject_id_value := NEW.id;
+      user_id_value := NEW.id;
+      identity_key_value := NEW.twitch_user_id;
+      metadata_value := jsonb_build_object(
+        'status', NEW.status,
+        'suspendedAt', NEW.suspended_at,
+        'suspensionReason', NEW.suspension_reason
+      );
+    END IF;
   ELSIF TG_TABLE_NAME = 'provider_credentials' THEN
     IF TG_OP = 'DELETE'
        OR (TG_OP = 'UPDATE' AND (
@@ -167,15 +173,15 @@ BEGIN
         'membershipId', NEW.id, 'role', NEW.role, 'createdAt', NEW.created_at
       );
     END IF;
-  ELSIF TG_TABLE_NAME = 'workspace_invitations'
-    AND TG_OP = 'UPDATE'
-    AND OLD.status = 'pending'
-    AND NEW.status IN ('cancelled', 'declined', 'expired') THEN
-    event_type_value := 'invitation.revoked';
-    subject_id_value := OLD.id;
-    workspace_id_value := OLD.workspace_id;
-    identity_key_value := OLD.invited_twitch_user_id;
-    metadata_value := jsonb_build_object('status', NEW.status, 'respondedAt', NEW.responded_at);
+  ELSIF TG_TABLE_NAME = 'workspace_invitations' THEN
+    IF TG_OP = 'UPDATE' AND OLD.status = 'pending'
+       AND NEW.status IN ('cancelled', 'declined', 'expired') THEN
+      event_type_value := 'invitation.revoked';
+      subject_id_value := OLD.id;
+      workspace_id_value := OLD.workspace_id;
+      identity_key_value := OLD.invited_twitch_user_id;
+      metadata_value := jsonb_build_object('status', NEW.status, 'respondedAt', NEW.responded_at);
+    END IF;
   ELSIF TG_TABLE_NAME = 'workspace_support_access' THEN
     IF TG_OP = 'INSERT' THEN
       event_type_value := 'support_access.granted';
@@ -239,7 +245,11 @@ BEGIN
       metadata_value := jsonb_build_object(
         'role', NEW.role, 'permissions', NEW.permissions, 'appointedAt', NEW.appointed_at
       );
-    ELSIF TG_OP = 'UPDATE' AND NEW.revoked_at IS NULL AND (OLD.revoked_at IS NOT NULL OR OLD.role IS DISTINCT FROM NEW.role OR OLD.permissions IS DISTINCT FROM NEW.permissions) THEN
+    ELSIF TG_OP = 'UPDATE' AND NEW.revoked_at IS NULL AND (
+      OLD.revoked_at IS NOT NULL
+      OR OLD.role IS DISTINCT FROM NEW.role
+      OR OLD.permissions IS DISTINCT FROM NEW.permissions
+    ) THEN
       event_type_value := 'platform_admin.granted';
       subject_id_value := NEW.user_id;
       user_id_value := NEW.user_id;
