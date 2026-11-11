@@ -13,7 +13,7 @@ interface LedgerConfig {
 
 function encode(value: string): string {
   return encodeURIComponent(value).replace(/[!'()*]/g, (character) =>
-    `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
+    '%' + character.charCodeAt(0).toString(16).toUpperCase(),
   );
 }
 
@@ -22,7 +22,7 @@ function hmac(key: Buffer | string, value: string): Buffer {
 }
 
 function signingKey(secret: string, date: string, region: string): Buffer {
-  return hmac(hmac(hmac(hmac(`AWS4${secret}`, date), region), 's3'), 'aws4_request');
+  return hmac(hmac(hmac(hmac('AWS4' + secret, date), region), 's3'), 'aws4_request');
 }
 
 @Injectable()
@@ -62,11 +62,11 @@ export class DeletionLedgerService {
       throw new TypeError('Deletion ledger entity ID must be a UUID.');
     }
 
-    const key = `v1/${entityType === 'workspace' ? 'workspaces' : 'accounts'}/${entityId.toLowerCase()}.json`;
+    const key = 'v1/' + (entityType === 'workspace' ? 'workspaces' : 'accounts') + '/' + entityId.toLowerCase() + '.json';
     const existing = await this.request(this.presign('HEAD', key), { method: 'HEAD' });
     if (existing.ok) return;
     if (existing.status !== 404) {
-      throw new Error(`Deletion ledger lookup failed (${existing.status}).`);
+      throw new Error('Deletion ledger lookup failed (' + existing.status + ').');
     }
 
     const record = {
@@ -76,11 +76,10 @@ export class DeletionLedgerService {
       entityId: entityId.toLowerCase(),
       deletedAt: new Date().toISOString(),
     };
-    const body = JSON.stringify(record);
     const response = await this.request(this.presign('PUT', key, true), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', 'If-None-Match': '*' },
-      body,
+      body: JSON.stringify(record),
     });
     // Conditional creation makes concurrent/retried deletes idempotent.
     if (response.ok || response.status === 412) return;
@@ -88,7 +87,7 @@ export class DeletionLedgerService {
       const retry = await this.request(this.presign('HEAD', key), { method: 'HEAD' });
       if (retry.ok) return;
     }
-    throw new Error(`Deletion ledger append failed (${response.status}).`);
+    throw new Error('Deletion ledger append failed (' + response.status + ').');
   }
 
   private presign(method: 'PUT' | 'HEAD', key: string, conditional = false): string {
@@ -96,33 +95,33 @@ export class DeletionLedgerService {
     if (!config) throw new Error('Deletion ledger storage is not configured.');
     const endpoint = new URL(config.endpoint);
     const now = new Date();
-    const amzDate = now.toISOString().replace(/[:-]|\\.\\d{3}/g, '');
+    const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, '');
     const date = amzDate.slice(0, 8);
-    const scope = `${date}/${config.region}/s3/aws4_request`;
-    const path = `/${encode(config.bucket)}/${key.split('/').map(encode).join('/')}`;
+    const scope = date + '/' + config.region + '/s3/aws4_request';
+    const path = '/' + encode(config.bucket) + '/' + key.split('/').map(encode).join('/');
     const query: Record<string, string> = {
       'X-Amz-Algorithm': 'AWS4-HMAC-SHA256',
-      'X-Amz-Credential': `${config.accessKey}/${scope}`,
+      'X-Amz-Credential': config.accessKey + '/' + scope,
       'X-Amz-Date': amzDate,
       'X-Amz-Expires': '60',
       'X-Amz-SignedHeaders': conditional ? 'content-type;host;if-none-match' : 'host',
     };
     const canonicalQuery = Object.entries(query)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([name, value]) => `${encode(name)}=${encode(value)}`)
+      .sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
+      .map(([name, value]) => encode(name) + '=' + encode(value))
       .join('&');
     const canonicalHeaders = conditional
-      ? `content-type:application/json\\nhost:${endpoint.host}\\nif-none-match:*\\n`
-      : `host:${endpoint.host}\\n`;
+      ? 'content-type:application/json\nhost:' + endpoint.host + '\nif-none-match:*\n'
+      : 'host:' + endpoint.host + '\n';
     const canonicalRequest = [
       method, path, canonicalQuery, canonicalHeaders, query['X-Amz-SignedHeaders'], 'UNSIGNED-PAYLOAD',
-    ].join('\\n');
+    ].join('\n');
     const stringToSign = [
       'AWS4-HMAC-SHA256', amzDate, scope,
       createHash('sha256').update(canonicalRequest).digest('hex'),
-    ].join('\\n');
+    ].join('\n');
     const signature = createHmac('sha256', signingKey(config.secretKey, date, config.region))
       .update(stringToSign, 'utf8').digest('hex');
-    return `${endpoint.origin}${path}?${canonicalQuery}&X-Amz-Signature=${signature}`;
+    return endpoint.origin + path + '?' + canonicalQuery + '&X-Amz-Signature=' + signature;
   }
 }
