@@ -34,8 +34,6 @@ export interface PlatformAccountRecord {
 export interface PlatformWorkspaceRecord {
   workspace_id: string;
   name: string;
-  owner_user_id: string;
-  owner_twitch_user_id: string;
   broadcaster_twitch_user_id: string;
   status: 'active' | 'restricted' | 'suspended';
   restriction_reason: string | null;
