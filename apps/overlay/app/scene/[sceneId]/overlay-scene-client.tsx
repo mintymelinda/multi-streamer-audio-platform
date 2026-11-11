@@ -116,7 +116,7 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
   const [overlayEvent, setOverlayEvent] = useState({ type: "", sequence: 0 });
   const previousElements = useRef<Record<string, unknown>[]>([]);
   const previousSceneState = useRef<string | null>(null);
-  const [sceneTransitionKey, setSceneTransitionKey] = useState(0);
+  const lastHandledEvent = useRef(0);
 
   const loadSnapshot = useCallback(async (accessToken: string) => {
     const response = await fetch(apiUrl(`/overlay/scenes/${sceneId}/snapshot`), {
@@ -212,16 +212,26 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
 
   useEffect(() => {
     if (!snapshot) return;
-    setSceneTransitionActive(true);
-    const duration = snapshot.publishedState && typeof snapshot.publishedState === "object"
+    const current = sceneStateKey(snapshot.publishedState);
+    const changed = previousSceneState.current !== null && previousSceneState.current !== current;
+    previousSceneState.current = current;
+    if (!changed) {
+      setSceneTransitionActive(false);
+      return;
+    }
+    const transition = snapshot.publishedState && typeof snapshot.publishedState === "object"
       ? (snapshot.publishedState as Record<string, unknown>).transition
       : null;
-    const configuredDuration = duration && typeof duration === "object"
-      ? (duration as Record<string, unknown>).durationMs
+    const configuredDuration = transition && typeof transition === "object"
+      ? (transition as Record<string, unknown>).durationMs
       : 320;
-    const timer = window.setTimeout(() => setSceneTransitionActive(false), typeof configuredDuration === "number" ? Math.min(5000, Math.max(0, configuredDuration)) + 80 : 400);
+    setSceneTransitionActive(true);
+    const timer = window.setTimeout(
+      () => setSceneTransitionActive(false),
+      typeof configuredDuration === "number" ? Math.min(5000, Math.max(0, configuredDuration)) + 80 : 400,
+    );
     return () => window.clearTimeout(timer);
-  }, [snapshot, overlayEvent]);
+  }, [snapshot]);
 
   useEffect(() => {
     if (!snapshot) return;
@@ -250,10 +260,13 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
         ? element.animation as Record<string, unknown>
         : {};
       const trigger = animation.trigger;
-      return trigger === 'content-change'
-        || (trigger === 'new-song' && element.type === 'now-playing')
-        || (trigger === 'announcement' && element.type === 'announcement');
+      const changed = JSON.stringify(withoutAssetUrl(before)) !== JSON.stringify(withoutAssetUrl(element));
+      const freshEvent = overlayEvent.sequence > lastHandledEvent.current;
+      return (trigger === 'content-change' && changed)
+        || (freshEvent && trigger === 'new-song' && element.type === 'now-playing' && /playback|track/i.test(overlayEvent.type))
+        || (freshEvent && trigger === 'announcement' && element.type === 'announcement' && /announcement/i.test(overlayEvent.type));
     }).filter((element) => animationName(element, 'enter') !== 'none');
+    if (overlayEvent.sequence > lastHandledEvent.current) lastHandledEvent.current = overlayEvent.sequence;
     previousElements.current = next;
     const reduceMotion = state?.reducedMotion === true
       || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -288,16 +301,7 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
     setExitingIds([]);
     setAnimatedIds([]);
     return undefined;
-  }, [snapshot]);
-
-  useEffect(() => {
-    if (!snapshot) return;
-    const current = sceneStateKey(snapshot.publishedState);
-    if (previousSceneState.current !== null && previousSceneState.current !== current) {
-      setSceneTransitionKey((value) => value + 1);
-    }
-    previousSceneState.current = current;
-  }, [snapshot]);
+  }, [snapshot, overlayEvent]);
 
   if (status === 'unauthorized') return <main className="overlay-message">This overlay URL is invalid or has been revoked.</main>;
   if (status === 'error') return <main className="overlay-message">The overlay is temporarily unavailable. Reconnecting…</main>;
