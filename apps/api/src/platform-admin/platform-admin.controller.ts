@@ -5,6 +5,8 @@ import {
   Get,
   Inject,
   Post,
+  Param,
+  Query,
   Req,
   UnauthorizedException,
   UseGuards,
@@ -27,6 +29,47 @@ export class PlatformAdminController {
   @Get('me')
   access(@Req() request: HttpRequest) {
     return this.platformAdmin.access(authenticatedUser(request).id);
+  }
+
+
+  @Get('accounts')
+  listAccounts(@Req() request: HttpRequest, @Query('search') search?: string) {
+    return this.platformAdmin.listAccounts(authenticatedUser(request).id, search);
+  }
+
+  @Get('workspaces')
+  listWorkspaces(@Req() request: HttpRequest, @Query('search') search?: string) {
+    return this.platformAdmin.listWorkspaces(authenticatedUser(request).id, search);
+  }
+
+  @Post('accounts/:userId/status')
+  @UseGuards(CsrfGuard)
+  setAccountStatus(
+    @Req() request: HttpRequest,
+    @Param('userId') userId: string,
+    @Body() body: unknown,
+  ) {
+    const input = typeof body === 'object' && body !== null
+      ? body as { status?: unknown; reason?: unknown }
+      : {};
+    return this.platformAdmin.setAccountStatus(
+      authenticatedUser(request).id, userId, input.status, input.reason,
+    ).then(() => ({ success: true }));
+  }
+
+  @Post('workspaces/:workspaceId/status')
+  @UseGuards(CsrfGuard)
+  setWorkspaceStatus(
+    @Req() request: HttpRequest,
+    @Param('workspaceId') workspaceId: string,
+    @Body() body: unknown,
+  ) {
+    const input = typeof body === 'object' && body !== null
+      ? body as { status?: unknown; reason?: unknown }
+      : {};
+    return this.platformAdmin.setWorkspaceStatus(
+      authenticatedUser(request).id, workspaceId, input.status, input.reason,
+    ).then(() => ({ success: true }));
   }
 
   @Get('administrators')
