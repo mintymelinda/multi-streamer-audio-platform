@@ -92,6 +92,13 @@ export class OverlayScenesService {
         if (current) {
           return { scene: current, accessToken: null, overlayPath: `/scene/${current.id}`, created: false };
         }
+        const provisioned = await client.query<{ overlay_starter_provisioned_at: Date | null }>(
+          'SELECT overlay_starter_provisioned_at FROM workspaces WHERE id = $1',
+          [workspaceId],
+        );
+        if (provisioned.rows[0]?.overlay_starter_provisioned_at) {
+          return { scene: null, accessToken: null, overlayPath: null, created: false };
+        }
 
         const sceneId = randomUUID();
         const accessToken = newOpaqueToken();
@@ -112,6 +119,10 @@ export class OverlayScenesService {
            VALUES ($1, $2, 'overlay.scene.starter_created', 'overlay_scene', $3,
                    jsonb_build_object('name', 'Now Playing'))`,
           [workspaceId, userId, sceneId],
+        );
+        await client.query(
+          'UPDATE workspaces SET overlay_starter_provisioned_at = now(), updated_at = now() WHERE id = $1 AND overlay_starter_provisioned_at IS NULL',
+          [workspaceId],
         );
         return { scene, accessToken, overlayPath: `/scene/${sceneId}`, created: true };
       },
