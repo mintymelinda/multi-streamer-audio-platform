@@ -14,6 +14,49 @@ function apiUrl(path: string) {
   return `${API_BASE}${path}`;
 }
 
+function OverflowMarquee({ text, className }: { text: string; className?: string }) {
+  const viewportRef = useRef<HTMLSpanElement | null>(null);
+  const contentRef = useRef<HTMLSpanElement | null>(null);
+  const [overflow, setOverflow] = useState(0);
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    const content = contentRef.current;
+    if (!viewport || !content) return;
+
+    const measure = () => {
+      setOverflow(Math.max(0, content.scrollWidth - viewport.clientWidth));
+    };
+
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(viewport);
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [text]);
+
+  const scrolling = overflow > 1;
+  const style = scrolling
+    ? {
+        "--marquee-distance": `${overflow}px`,
+        "--marquee-duration": `${Math.max(6, overflow / 18)}s`,
+      } as React.CSSProperties
+    : undefined;
+
+  return (
+    <span ref={viewportRef} className={`overlay-marquee ${className ?? ""}`} aria-label={text}>
+      <span
+        ref={contentRef}
+        className={`overlay-marquee__content ${scrolling ? "is-scrolling" : ""}`}
+        style={style}
+        aria-hidden="true"
+      >
+        {text}
+      </span>
+    </span>
+  );
+}
+
 export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
   const [token, setToken] = useState('');
   const [snapshot, setSnapshot] = useState<SceneSnapshot | null>(null);
@@ -148,7 +191,7 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
             >
               {type === "now-playing" && <div className="overlay-now-playing">
                 <div className="overlay-artwork">♫</div>
-                <div className="overlay-track-copy"><strong>{text || "Now Playing"}</strong><span>Artist · Album</span><div className="overlay-progress"><span /></div></div>
+                <div className="overlay-track-copy"><OverflowMarquee text={text || "Now Playing"} className="overlay-track-title" /><span>Artist · Album</span><div className="overlay-progress"><span /></div></div>
               </div>}
               {(type === "request-queue" || type === "recent-tracks") && <div className="overlay-list-component">
                 <strong>{text || (type === "request-queue" ? "Request Queue" : "Recently Played")}</strong>
