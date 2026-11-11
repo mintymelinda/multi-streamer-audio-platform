@@ -61,6 +61,11 @@ export class SupportAccessController {
     return this.support.listForWorkspace(user(request).id, workspaceId);
   }
 
+  @Get('workspaces/:workspaceId/support-access/audit')
+  auditForWorkspace(@Req() request: HttpRequest, @Param('workspaceId') workspaceId: string) {
+    return this.support.listAuditForWorkspace(user(request).id, workspaceId);
+  }
+
   @Delete('workspaces/:workspaceId/support-access/:grantId')
   @UseGuards(CsrfGuard)
   async revokeForWorkspace(
