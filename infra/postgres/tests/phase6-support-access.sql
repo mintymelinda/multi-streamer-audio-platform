@@ -105,9 +105,9 @@ BEGIN
   SELECT count(*) INTO audit_count
     FROM workspace_support_access_audit audit
    WHERE audit.workspace_id = target_workspace_id
-     AND action IN ('support_access.granted', 'support_access.content_read', 'support_access.revoked');
-  IF audit_count <> 3 THEN
-    RAISE EXCEPTION 'support access grant, content read, and revocation were not all audited';
+     AND action IN ('workspace.diagnostics.read', 'support_access.granted', 'support_access.content_read', 'support_access.revoked');
+  IF audit_count <> 4 THEN
+    RAISE EXCEPTION 'diagnostics, support grant, content read, and revocation were not all audited';
   END IF;
 END;
 $$;
