@@ -37,8 +37,11 @@ WITH starter_defaults AS (
   FROM overlay_scenes
   WHERE is_starter = true
     AND published_state IS NULL
-    AND jsonb_typeof(draft_state->'elements') = 'array'
-    AND jsonb_array_length(draft_state->'elements') = 0
+    AND CASE
+      WHEN jsonb_typeof(draft_state->'elements') = 'array'
+      THEN jsonb_array_length(draft_state->'elements') = 0
+      ELSE false
+    END
 )
 UPDATE overlay_scenes AS scenes
    SET draft_state = starter_defaults.state,
