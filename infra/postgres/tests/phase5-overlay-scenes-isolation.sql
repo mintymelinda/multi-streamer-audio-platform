@@ -10,6 +10,11 @@ DECLARE
   workspace_b uuid := gen_random_uuid();
   scene_a uuid := gen_random_uuid();
 BEGIN
+  IF has_table_privilege(current_user, 'public.platform_scene_usage', 'SELECT')
+     OR has_table_privilege(current_user, 'public.platform_scene_usage', 'UPDATE')
+     OR has_table_privilege(current_user, 'public.platform_settings', 'UPDATE') THEN
+    RAISE EXCEPTION 'runtime role can mutate or inspect protected global scene controls';
+  END IF;
   PERFORM set_config('app.user_id', user_a::text, true);
   INSERT INTO platform_users (id, twitch_user_id) VALUES (user_a, '980000001');
   PERFORM set_config('app.user_id', user_b::text, true);
@@ -30,8 +35,9 @@ BEGIN
 
   PERFORM set_config('app.user_id', user_a::text, true);
   PERFORM set_config('app.workspace_id', workspace_a::text, true);
-  INSERT INTO overlay_scenes (id, workspace_id, name, access_token_hash, created_by_user_id)
-  VALUES (scene_a, workspace_a, 'Now Playing', repeat('a', 64), user_a);
+  INSERT INTO overlay_scenes (id, workspace_id, name, is_starter, access_token_hash, created_by_user_id)
+  VALUES (scene_a, workspace_a, 'Now Playing', true, repeat('a', 64), user_a);
+  UPDATE workspaces SET overlay_starter_provisioned_at = now() WHERE id = workspace_a;
   IF (SELECT count(*) FROM overlay_scenes WHERE id = scene_a) <> 1 THEN
     RAISE EXCEPTION 'workspace owner cannot read their scene';
   END IF;
@@ -51,6 +57,10 @@ BEGIN
     RAISE EXCEPTION 'another workspace can read scene metadata or token hashes';
   END IF;
   UPDATE overlay_scenes SET name = 'Compromised' WHERE id = scene_a;
+  DELETE FROM overlay_scenes WHERE id = scene_a;
+  IF FOUND THEN
+    RAISE EXCEPTION 'another workspace deleted a scene';
+  END IF;
   BEGIN
     INSERT INTO overlay_scenes (workspace_id, name, access_token_hash, created_by_user_id)
     VALUES (workspace_a, 'Cross-tenant scene', repeat('b', 64), user_b);
@@ -64,6 +74,22 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM overlay_scenes WHERE id = scene_a AND name = 'Now Playing') THEN
     RAISE EXCEPTION 'another workspace modified a scene';
   END IF;
+
+  DELETE FROM overlay_scenes WHERE id = scene_a;
+  IF FOUND IS NOT TRUE THEN
+    RAISE EXCEPTION 'workspace owner could not delete their scene';
+  END IF;
+  IF (SELECT count(*) FROM get_overlay_scene_snapshot(scene_a, repeat('a', 64))) <> 0 THEN
+    RAISE EXCEPTION 'deleted scene token still resolves a published snapshot';
+  END IF;
+  IF (SELECT count(*) FROM get_active_overlay_scene_ids(workspace_a)) <> 0 THEN
+    RAISE EXCEPTION 'deleted scene remains in active scene lookup';
+  END IF;
+  IF (SELECT overlay_starter_provisioned_at FROM workspaces WHERE id = workspace_a) IS NULL THEN
+    RAISE EXCEPTION 'deleting the starter scene cleared its one-time provisioning marker';
+  END IF;
+  INSERT INTO overlay_scenes (id, workspace_id, name, access_token_hash, created_by_user_id)
+  VALUES (scene_a, workspace_a, 'Replacement', repeat('c', 64), user_a);
 END;
 $$;
 ROLLBACK;
