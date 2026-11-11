@@ -120,7 +120,7 @@ export class DeletionLedgerService {
 
   private assertConfigured(): void {
     if (!this.config) {
-      throw new Error('Permanent deletion and access revocation require the independent deletion ledger to be configured.');
+      throw new Error('Permanent deletion and access revocation are disabled because the independent deletion ledger is not configured.');
     }
   }
 
