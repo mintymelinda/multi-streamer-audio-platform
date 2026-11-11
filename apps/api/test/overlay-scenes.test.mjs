@@ -299,19 +299,19 @@ test('reorders only a complete, duplicate-free set of workspace scenes', async (
       query: async (sql, values = []) => {
         statements.push({ sql, values });
         if (sql.includes('SELECT id FROM overlay_scenes')) {
-          return { rows: [{ id: 'scene-a' }, { id: 'scene-b' }], rowCount: 2 };
+          return { rows: [{ id: '11111111-1111-4111-8111-111111111111' }, { id: '22222222-2222-4222-8222-222222222222' }], rowCount: 2 };
         }
         return { rows: [], rowCount: 1 };
       },
     }),
   };
   const service = new OverlayScenesService(database);
-  const result = await service.reorder('workspace-a', 'user-a', ['scene-b', 'scene-a']);
-  assert.deepEqual(result.sceneIds, ['scene-b', 'scene-a']);
+  const result = await service.reorder('workspace-a', 'user-a', ['22222222-2222-4222-8222-222222222222', '11111111-1111-4111-8111-111111111111']);
+  assert.deepEqual(result.sceneIds, ['22222222-2222-4222-8222-222222222222', '11111111-1111-4111-8111-111111111111']);
   const update = statements.find((entry) => entry.sql.includes('WITH ORDINALITY'));
-  assert.deepEqual(update.values, ['workspace-a', ['scene-b', 'scene-a']]);
-  await assert.rejects(service.reorder('workspace-a', 'user-a', ['scene-a', 'scene-a']), /duplicate IDs/);
-  await assert.rejects(service.reorder('workspace-a', 'user-a', ['scene-a']), /every scene/);
+  assert.deepEqual(update.values, ['workspace-a', ['22222222-2222-4222-8222-222222222222', '11111111-1111-4111-8111-111111111111']]);
+  await assert.rejects(service.reorder('workspace-a', 'user-a', ['11111111-1111-4111-8111-111111111111', '11111111-1111-4111-8111-111111111111']), /duplicate IDs/);
+  await assert.rejects(service.reorder('workspace-a', 'user-a', ['11111111-1111-4111-8111-111111111111']), /every scene/);
 });
 
 test('deletes a scene, audits deletion, and notifies overlay sockets to disconnect', async () => {
