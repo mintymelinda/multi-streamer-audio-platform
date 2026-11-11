@@ -585,7 +585,7 @@ export default function ScenesPage() {
             <div className="scene-preview-heading"><strong>Live draft preview</strong><span>LOCAL · UNSAVED CHANGES</span></div>
             <div className="scene-layout-toolbar">
               <label>Scene transition
-                <select value={typeof (previewState?.transition as Record<string, unknown> | undefined)?.type === "string" ? String((previewState.transition as Record<string, unknown>).type) : "none"} onChange={(event) => updateSceneMotion({ transition: { type: event.target.value, durationMs: 320 } })}>
+                <select value={typeof (previewState?.transition as Record<string, unknown> | undefined)?.type === "string" ? String((previewState?.transition as Record<string, unknown> | undefined)?.type) : "none"} onChange={(event) => updateSceneMotion({ transition: { type: event.target.value, durationMs: 320 } })}>
                   <option value="none">None</option><option value="fade">Fade</option><option value="slide">Slide</option><option value="scale">Scale</option>
                 </select>
               </label>
