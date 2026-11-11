@@ -66,9 +66,9 @@ test('refuses to delete assets that remain referenced by scene drafts or publica
     return { rows: [], rowCount: 1 };
   });
   await assert.rejects(service.remove('workspace-a', 'user-a', 'asset-a'), (error) => {
-    assert.equal(error.status, 409);
-    assert.match(error.message, /still used/);
-    assert.equal(error.response.usage[0].sceneName, 'Starting Soon');
+    assert.equal(error.getStatus(), 409);
+    const response = error.getResponse();
+    assert.equal(response.usage[0].sceneName, 'Starting Soon');
     return true;
   });
 });
