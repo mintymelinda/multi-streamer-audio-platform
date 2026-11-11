@@ -102,7 +102,7 @@ SET LOCAL ROLE platform_runtime;
 SELECT set_config('app.user_id', '71000000-0000-4000-8000-000000000002', true);
 SELECT delete_current_platform_account();
 
-DO $$
+DO $
 BEGIN
   IF EXISTS (SELECT 1 FROM platform_users WHERE id = '71000000-0000-4000-8000-000000000002') THEN
     RAISE EXCEPTION 'deleted account row remains';
@@ -121,6 +121,8 @@ BEGIN
      OR EXISTS (SELECT 1 FROM platform_administrators WHERE user_id = '71000000-0000-4000-8000-000000000002') THEN
     RAISE EXCEPTION 'account memberships or revoked administrator assignment remain';
   END IF;
+  PERFORM set_config('app.user_id', '71000000-0000-4000-8000-000000000001', true);
+  PERFORM set_config('app.workspace_id', '72000000-0000-4000-8000-000000000001', true);
   IF NOT EXISTS (SELECT 1 FROM workspaces WHERE id = '72000000-0000-4000-8000-000000000001')
      OR NOT EXISTS (
        SELECT 1 FROM workspace_memberships
