@@ -3,8 +3,8 @@
 BEGIN;
 
 -- Recovery runs as platform_migrator after restoring a database snapshot. These
--- narrowly-scoped policies allow the replay function to remove the two root
--- entity types; child records are removed by their existing FK cascades.
+-- narrowly-scoped policies grant the replay functions only the SELECT, DELETE,
+-- and UPDATE operations required for workspace, credential, and membership replay.
 CREATE POLICY deletion_ledger_restore_workspace_select
   ON public.workspaces
   FOR SELECT TO platform_migrator
