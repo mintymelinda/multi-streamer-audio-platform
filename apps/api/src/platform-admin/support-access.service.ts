@@ -47,6 +47,7 @@ export class SupportAccessService {
     ) {
       throw new BadRequestException('Select one or more valid read-only support scopes.');
     }
+    const scopes = input.scopes as SupportAccessScope[];
     const reason = typeof input.reason === 'string' ? input.reason.trim() : '';
     if (!reason || reason.length > 1000) {
       throw new BadRequestException('A reason between 1 and 1,000 characters is required.');
@@ -63,7 +64,7 @@ export class SupportAccessService {
     return this.database.transaction({ userId }, async (client) => {
       const result = await client.query(
         'SELECT * FROM create_workspace_support_access($1, $2::text[], $3, $4)',
-        [input.workspaceId, [...new Set(input.scopes)], reason, input.durationMinutes],
+        [input.workspaceId, [...new Set(scopes)], reason, input.durationMinutes],
       );
       return result.rows[0] ?? null;
     });
