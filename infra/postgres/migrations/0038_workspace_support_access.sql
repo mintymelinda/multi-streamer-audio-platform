@@ -198,7 +198,7 @@ BEGIN
   END IF;
 
   PERFORM set_config('app.workspace_id', target_workspace_id::text, true);
-  IF NOT EXISTS (SELECT 1 FROM public.workspaces WHERE id = target_workspace_id) THEN
+  IF NOT EXISTS (SELECT 1 FROM public.workspaces workspace_row WHERE workspace_row.id = target_workspace_id) THEN
     RAISE EXCEPTION 'workspace not found'
       USING ERRCODE = 'P0002';
   END IF;
@@ -271,8 +271,8 @@ DECLARE
   actor_id uuid := nullif(current_setting('app.user_id', true), '')::uuid;
 BEGIN
   IF NOT EXISTS (
-    SELECT 1 FROM public.workspaces
-     WHERE id = target_workspace_id AND owner_user_id = actor_id
+    SELECT 1 FROM public.workspaces workspace_row
+     WHERE workspace_row.id = target_workspace_id AND workspace_row.owner_user_id = actor_id
   ) THEN
     RAISE EXCEPTION 'workspace owner access is required'
       USING ERRCODE = '42501';
