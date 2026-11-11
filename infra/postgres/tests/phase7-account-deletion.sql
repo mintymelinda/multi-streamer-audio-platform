@@ -15,9 +15,11 @@ BEGIN
   IF function_owner <> 'platform_migrator' OR NOT function_definer OR NOT runtime_execute THEN
     RAISE EXCEPTION 'account deletion must be a migrator-owned SECURITY DEFINER function executable by runtime';
   END IF;
-  IF has_function_privilege('platform_runtime', 'delete_current_platform_account()', 'EXECUTE') IS NOT TRUE
-     OR has_table_privilege('platform_runtime', 'platform_users', 'DELETE') THEN
-    RAISE EXCEPTION 'runtime account deletion boundary is incorrect';
+  IF has_function_privilege('platform_runtime', 'delete_current_platform_account()', 'EXECUTE') IS NOT TRUE THEN
+    RAISE EXCEPTION 'runtime cannot execute the account deletion function';
+  END IF;
+  IF has_table_privilege('platform_runtime', 'platform_users', 'DELETE') THEN
+    RAISE EXCEPTION 'runtime has direct DELETE privilege on platform_users';
   END IF;
   IF has_column_privilege('platform_runtime', 'platform_administrators', 'user_id', 'SELECT') THEN
     RAISE EXCEPTION 'runtime must not receive direct platform administrator table access';
