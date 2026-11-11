@@ -104,7 +104,7 @@ services:
       until mc alias set local http://object-storage:9000 "${MINIO_ROOT_USER}" "${MINIO_ROOT_PASSWORD}"; do sleep 2; done &&
       mc mb --ignore-existing local/platform-assets &&
       mc mb --with-lock --ignore-existing local/platform-deletion-ledger &&
-      mc retention set --default COMPLIANCE 100y local/platform-deletion-ledger &&
+      mc retention set --default COMPLIANCE 36500d local/platform-deletion-ledger &&
       mc anonymous set none local/platform-deletion-ledger &&
       printf '%s' '{"CORSRules":[{"AllowedOrigins":["*"],"AllowedMethods":["PUT","GET","HEAD"],"AllowedHeaders":["*"],"ExposeHeaders":["ETag","Content-Length","Content-Type"],"MaxAgeSeconds":3600}]}' > /tmp/assets-cors.json &&
       mc cors set local/platform-assets /tmp/assets-cors.json &&
