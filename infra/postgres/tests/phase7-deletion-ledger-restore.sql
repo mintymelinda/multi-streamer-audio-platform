@@ -45,8 +45,10 @@ INSERT INTO workspace_memberships (workspace_id, user_id, role) VALUES
 
 -- Replaying only a workspace tombstone must preserve its former owner's
 -- account and unrelated memberships/workspaces.
+SET LOCAL ROLE platform_migrator;
 SELECT apply_deletion_tombstone('workspace', '75000000-0000-4000-8000-000000000001');
 SELECT apply_deletion_tombstone('workspace', '75000000-0000-4000-8000-000000000001');
+RESET ROLE;
 
 DO $$
 BEGIN
@@ -57,11 +59,14 @@ BEGIN
 END $$;
 
 -- Membership revocation survives restore, but a later re-invitation is preserved.
+SELECT set_config('test.membership_revoked_at', (now() + interval '1 second')::text, true);
+SET LOCAL ROLE platform_migrator;
 SELECT apply_membership_revocation(
   '75000000-0000-4000-8000-000000000002',
   '74000000-0000-4000-8000-000000000001',
-  now() + interval '1 second'
+  current_setting('test.membership_revoked_at')::timestamptz
 );
+RESET ROLE;
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -74,14 +79,17 @@ BEGIN
   END IF;
 END $$;
 UPDATE workspace_memberships
-   SET status = 'active', revoked_at = NULL, updated_at = now() + interval '2 seconds'
+   SET status = 'active', revoked_at = NULL,
+       updated_at = current_setting('test.membership_revoked_at')::timestamptz + interval '1 second'
  WHERE workspace_id = '75000000-0000-4000-8000-000000000002'
    AND user_id = '74000000-0000-4000-8000-000000000001';
+SET LOCAL ROLE platform_migrator;
 SELECT apply_membership_revocation(
   '75000000-0000-4000-8000-000000000002',
   '74000000-0000-4000-8000-000000000001',
-  now() + interval '1 second'
+  current_setting('test.membership_revoked_at')::timestamptz
 );
+RESET ROLE;
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -96,8 +104,10 @@ END $$;
 
 -- An account tombstone removes the account and its memberships, but never
 -- removes the unrelated workspace or its owner.
+SET LOCAL ROLE platform_migrator;
 SELECT apply_deletion_tombstone('account', '74000000-0000-4000-8000-000000000001');
 SELECT apply_deletion_tombstone('account', '74000000-0000-4000-8000-000000000001');
+RESET ROLE;
 
 DO $$
 BEGIN
@@ -132,6 +142,7 @@ INSERT INTO provider_credentials (
   '76000000-0000-4000-8000-000000000001',
   'ciphertext', 'nonce', 'tag', 'wrapped', 'dek-nonce', 'dek-tag', 'test', 1
 );
+SET LOCAL ROLE platform_migrator;
 SELECT apply_credential_tombstone(
   '77000000-0000-4000-8000-000000000001',
   '75000000-0000-4000-8000-000000000002',
@@ -142,6 +153,7 @@ SELECT apply_credential_tombstone(
   '75000000-0000-4000-8000-000000000002',
   '76000000-0000-4000-8000-000000000001'
 );
+RESET ROLE;
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM provider_credentials WHERE id = '77000000-0000-4000-8000-000000000001') THEN
