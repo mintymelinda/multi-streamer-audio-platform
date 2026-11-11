@@ -190,6 +190,64 @@ test('rejects scene documents larger than 256 KiB', async () => {
   assert.equal(calls.length, 0);
 });
 
+test('restores the default visual layout into the draft without changing published state or access security', async () => {
+  const statements = [];
+  const database = {
+    transaction: async (context, operation) => {
+      assert.deepEqual(context, { userId: 'user-a', verifiedWorkspaceId: 'workspace-a' });
+      return operation({
+        query: async (sql, values = []) => {
+          statements.push({ sql, values });
+          if (sql.includes('UPDATE overlay_scenes') && sql.includes('SET draft_state = $4::jsonb')) {
+            return {
+              rows: [{
+                id: values[0],
+                name: 'Starting Soon',
+                draft_state: JSON.parse(values[3]),
+                draft_revision: '5',
+                updated_at: new Date('2026-11-11T00:00:00.000Z'),
+              }],
+              rowCount: 1,
+            };
+          }
+          return { rows: [], rowCount: 1 };
+        },
+      });
+    },
+  };
+  const service = new OverlayScenesService(database, { append: async () => 'unused' });
+  const result = await service.restoreDefaults('workspace-a', 'user-a', 'scene-a', 4);
+  const update = statements.find((entry) => entry.sql.includes('UPDATE overlay_scenes'));
+  assert.deepEqual(update.values.slice(0, 3), ['scene-a', 'workspace-a', 4]);
+  assert.ok(update.sql.includes('draft_revision = draft_revision + 1'));
+  assert.ok(!update.sql.includes('published_state ='));
+  assert.ok(!update.sql.includes('access_token_hash'));
+  assert.equal(result.draftRevision, 5);
+  assert.equal(result.name, 'Starting Soon');
+  assert.equal(result.draftState.elements.length, 1);
+  assert.equal(result.draftState.elements[0].type, 'now-playing');
+  assert.equal(result.draftState.elements[0].name, 'Now Playing');
+  assert.deepEqual(result.draftState.elements[0].animation, {
+    enter: 'fade', exit: 'fade', durationMs: 240, delayMs: 0, trigger: 'always',
+  });
+  assert.equal(statements.some((entry) => entry.sql.includes('overlay.scene.defaults_restored')), true);
+});
+
+test('rejects restore-defaults when another editor has changed the draft revision', async () => {
+  const database = {
+    transaction: async (_context, operation) => operation({
+      query: async (sql) => sql.includes('SELECT 1 FROM overlay_scenes')
+        ? { rows: [{ '?column?': 1 }], rowCount: 1 }
+        : { rows: [], rowCount: 0 },
+    }),
+  };
+  const service = new OverlayScenesService(database, { append: async () => 'unused' });
+  await assert.rejects(
+    service.restoreDefaults('workspace-a', 'user-a', 'scene-a', 2),
+    /changed elsewhere/,
+  );
+});
+
 test('creates exactly one starter scene per workspace and returns its token only on creation', async () => {
   const calls = [];
   const starters = new Map();
@@ -234,6 +292,10 @@ test('creates exactly one starter scene per workspace and returns its token only
   assert.match(first.accessToken, /^[A-Za-z0-9_-]{43}$/);
   const insert = calls.find((call) => call.sql?.includes('INSERT INTO overlay_scenes') && call.sql.includes('is_starter'));
   assert.equal(insert.values[2], sha256(first.accessToken));
+  assert.ok(insert.sql.includes('draft_state, published_state, published_at'));
+  const starterState = JSON.parse(insert.values[4]);
+  assert.equal(starterState.elements.length, 1);
+  assert.equal(starterState.elements[0].type, 'now-playing');
   assert.equal(second.created, false);
   assert.equal(second.accessToken, null);
   assert.equal(second.scene.id, first.scene.id);
