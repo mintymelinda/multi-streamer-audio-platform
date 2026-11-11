@@ -73,6 +73,24 @@ function imageDimensions(bytes: Buffer, contentType: string): { width: number; h
   return null;
 }
 
+async function readLimited(response: Response, maximumBytes: number): Promise<Buffer> {
+  const reader = response.body?.getReader();
+  if (!reader) throw new BadRequestException('Uploaded image content could not be read.');
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  while (true) {
+    const chunk = await reader.read();
+    if (chunk.done) break;
+    totalBytes += chunk.value.byteLength;
+    if (totalBytes > maximumBytes) {
+      await reader.cancel();
+      throw new BadRequestException('Image files must be no larger than 10 MiB.');
+    }
+    chunks.push(chunk.value);
+  }
+  return Buffer.concat(chunks, totalBytes);
+}
+
 @Injectable()
 export class AssetsService {
   constructor(
@@ -165,7 +183,7 @@ export class AssetsService {
     if (head.headers.get('content-type')?.split(';')[0]?.trim() !== row.pending_content_type) throw new BadRequestException('Uploaded image content type does not match the declared type.');
     const response = await fetch(this.storage.presign('GET', row.pending_object_key, undefined, 60, true));
     if (!response.ok) throw new BadRequestException('The uploaded object could not be verified.');
-    const bytes = Buffer.from(await response.arrayBuffer());
+    const bytes = await readLimited(response, MAX_BYTES);
     if (bytes.length !== contentLength || bytes.length > MAX_BYTES) throw new BadRequestException('Image files must be no larger than 10 MiB.');
     const dimensions = imageDimensions(bytes, row.pending_content_type);
     if (!dimensions || dimensions.width < 1 || dimensions.height < 1 || dimensions.width > 8192 || dimensions.height > 8192) {
