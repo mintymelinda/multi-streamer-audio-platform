@@ -8,7 +8,8 @@ const userId = '74000000-0000-4000-8000-000000000002';
 function harness({ ledgerFailure = false } = {}) {
   const calls = [];
   const database = {
-    transaction: async (_context, operation) => operation({
+    transaction: async (_context, operation) => {
+      const result = await operation({
       query: async (sql) => {
         calls.push(sql);
         if (sql.startsWith('SELECT name,owner_user_id')) {
@@ -18,7 +19,10 @@ function harness({ ledgerFailure = false } = {}) {
         if (sql.startsWith('DELETE FROM workspaces')) return { rowCount: 1 };
         return { rows: [] };
       },
-    }),
+    });
+      calls.push('commit');
+      return result;
+    },
   };
   const storage = { delete: async () => undefined };
   const ledger = {
@@ -34,8 +38,8 @@ test('workspace deletion appends a tombstone after the database delete and befor
   const { service, calls } = harness();
   const result = await service.delete(workspaceId, userId, 'Example workspace');
   assert.equal(result.deleted, true);
-  assert.equal(calls.at(-1)[0], 'ledger');
-  assert.deepEqual(calls.at(-1), ['ledger', 'workspace', workspaceId]);
+  assert.deepEqual(calls.at(-2), ['ledger', 'workspace', workspaceId]);
+  assert.equal(calls.at(-1), 'commit');
 });
 
 test('workspace deletion fails closed when the independent ledger cannot be written', async () => {
