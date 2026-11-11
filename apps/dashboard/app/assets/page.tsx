@@ -65,6 +65,7 @@ export default function AssetsPage() {
 
   async function upload() {
     if (!workspaceId || !file) return;
+    if (file.size > 10 * 1024 * 1024) { setError('Image files must be no larger than 10 MiB.'); return; }
     setBusy(true); setError(""); setMessage("");
     try {
       const intent = await request<{ uploadUrl: string; headers: Record<string, string>; completePath: string }>(
@@ -83,6 +84,7 @@ export default function AssetsPage() {
 
   async function replace(asset: Asset, replacement: File | null) {
     if (!replacement || !workspaceId) return;
+    if (replacement.size > 10 * 1024 * 1024) { setError('Image files must be no larger than 10 MiB.'); return; }
     setBusy(true); setError(""); setMessage("");
     try {
       const intent = await request<{ uploadUrl: string; headers: Record<string, string>; completePath: string }>(
@@ -107,6 +109,18 @@ export default function AssetsPage() {
       await request(`/workspaces/${workspaceId}/assets/${asset.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
       await loadAssets();
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not rename asset."); }
+    finally { setBusy(false); }
+  }
+
+  async function move(asset: Asset) {
+    const destination = window.prompt('Folder path (leave blank for root)', asset.folder);
+    if (destination === null) return;
+    setBusy(true); setError('');
+    try {
+      await request(`/workspaces/${workspaceId}/assets/${asset.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ folder: destination }) });
+      setMessage(`Moved ${asset.name}.`);
+      await loadAssets();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not move asset.'); }
     finally { setBusy(false); }
   }
 
@@ -146,6 +160,7 @@ export default function AssetsPage() {
           <div className="scene-row-main"><strong>{asset.name}</strong><small>{asset.width} × {asset.height} · {(asset.size / 1024).toFixed(1)} KiB · {asset.folder || "Root"}</small></div>
           {canManage && <div className="scene-row-actions">
             <button type="button" className="text-button" disabled={busy} onClick={() => void rename(asset)}>Rename</button>
+            <button type="button" className="text-button" disabled={busy} onClick={() => void move(asset)}>Move</button>
             <label className="text-button">Replace<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden disabled={busy} onChange={(event) => void replace(asset, event.target.files?.[0] ?? null)} /></label>
             <button type="button" className="text-button danger-text" disabled={busy} onClick={() => void remove(asset)}>Delete</button>
           </div>}
