@@ -263,7 +263,7 @@ RETURNS TABLE (
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = pg_catalog, public
-AS $
+AS $$
 DECLARE
   actor_id uuid := nullif(current_setting('app.user_id', true), '')::uuid;
 BEGIN
@@ -292,7 +292,7 @@ BEGIN
     jsonb_build_object('limit', 100)
   );
 END;
-$;
+$$;
 
 CREATE FUNCTION revoke_workspace_support_access(target_workspace_id uuid, grant_id uuid, action_reason text)
 RETURNS void
