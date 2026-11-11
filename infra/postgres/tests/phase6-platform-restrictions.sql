@@ -5,6 +5,7 @@ BEGIN;
 DO $$
 DECLARE
   admin_id uuid := gen_random_uuid();
+  workspace_admin_id uuid := gen_random_uuid();
   account_id uuid := gen_random_uuid();
   owner_id uuid := gen_random_uuid();
   workspace_id uuid := gen_random_uuid();
@@ -12,6 +13,7 @@ BEGIN
   INSERT INTO platform_users (id, twitch_user_id)
   VALUES
     (admin_id, '980000030'),
+    (workspace_admin_id, '980000033'),
     (account_id, '980000031'),
     (owner_id, '980000032');
 
@@ -29,9 +31,11 @@ BEGIN
     (admin_id, '980000030', 'admin', ARRAY[
       'accounts.read', 'accounts.suspend', 'workspaces.read', 'workspaces.restrict'
     ]),
-    (owner_id, '980000032', 'owner', ARRAY[]::text[]);
+    (owner_id, '980000032', 'owner', ARRAY[]::text[]),
+    (workspace_admin_id, '980000033', 'admin', ARRAY['workspaces.read', 'workspaces.restrict']);
 
   PERFORM set_config('test.restrictions_admin_id', admin_id::text, true);
+  PERFORM set_config('test.restrictions_workspace_admin_id', workspace_admin_id::text, true);
   PERFORM set_config('test.restrictions_account_id', account_id::text, true);
   PERFORM set_config('test.restrictions_owner_id', owner_id::text, true);
   PERFORM set_config('test.restrictions_workspace_id', workspace_id::text, true);
@@ -45,6 +49,7 @@ DECLARE
   admin_id uuid := current_setting('test.restrictions_admin_id')::uuid;
   account_id uuid := current_setting('test.restrictions_account_id')::uuid;
   owner_id uuid := current_setting('test.restrictions_owner_id')::uuid;
+  workspace_admin_id uuid := current_setting('test.restrictions_workspace_admin_id')::uuid;
   workspace_id uuid := current_setting('test.restrictions_workspace_id')::uuid;
   account_count integer;
   workspace_count integer;
@@ -78,6 +83,21 @@ BEGIN
     RAISE EXCEPTION 'workspace directory did not return the matching active workspace';
   END IF;
 
+  -- Workspace-only administrators may inspect workspace records without
+  -- receiving the separate global account-directory permission.
+  PERFORM set_config('app.user_id', workspace_admin_id::text, true);
+  SELECT count(*) INTO account_count FROM platform_users;
+  IF account_count <> 1 THEN
+    RAISE EXCEPTION 'workspace-only administrator received global account visibility';
+  END IF;
+  SELECT count(*) INTO workspace_count
+    FROM list_platform_workspaces('Restriction test') directory
+   WHERE directory.workspace_id = current_setting('test.restrictions_workspace_id')::uuid;
+  IF workspace_count <> 1 THEN
+    RAISE EXCEPTION 'workspace-only administrator cannot inspect workspace directory';
+  END IF;
+
+  PERFORM set_config('app.user_id', admin_id::text, true);
   PERFORM set_platform_account_status(account_id, 'suspended', 'Confirmed platform abuse');
   SELECT count(*) INTO revoked_sessions
     FROM user_sessions
