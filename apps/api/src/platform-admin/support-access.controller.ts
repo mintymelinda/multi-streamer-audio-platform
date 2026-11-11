@@ -13,21 +13,14 @@ import {
 import type {
   AuthenticatedUser,
   HttpRequest,
-  WorkspaceRequestContext,
 } from '../identity/http.types.js';
 import { CsrfGuard } from '../identity/csrf.guard.js';
 import { SessionGuard } from '../identity/session.guard.js';
-import { WorkspaceAccessGuard } from '../workspaces/workspace-access.guard.js';
 import { SupportAccessService } from './support-access.service.js';
 
 function user(request: HttpRequest): AuthenticatedUser {
   if (!request.user) throw new UnauthorizedException('Sign-in is required.');
   return request.user;
-}
-
-function workspace(request: HttpRequest): WorkspaceRequestContext {
-  if (!request.workspace) throw new UnauthorizedException('Workspace access is required.');
-  return request.workspace;
 }
 
 function objectBody(body: unknown): Record<string, unknown> {
@@ -64,10 +57,8 @@ export class SupportAccessController {
   }
 
   @Get('workspaces/:workspaceId/support-access')
-  @UseGuards(WorkspaceAccessGuard)
-  listForWorkspace(@Req() request: HttpRequest) {
-    const current = workspace(request);
-    return this.support.listForWorkspace(user(request).id, current.id);
+  listForWorkspace(@Req() request: HttpRequest, @Param('workspaceId') workspaceId: string) {
+    return this.support.listForWorkspace(user(request).id, workspaceId);
   }
 
   @Delete('workspaces/:workspaceId/support-access/:grantId')
