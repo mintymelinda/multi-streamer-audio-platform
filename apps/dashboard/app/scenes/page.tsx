@@ -579,7 +579,7 @@ export default function ScenesPage() {
                   >
                     <small>{typeof element.type === "string" ? element.type.replaceAll("-", " ") : "Component"}{element.locked === true ? " · locked" : ""}</small>
                     {typeof element.type === "string" && element.type === "custom-image" && typeof element.assetId === "string" && assets.some((asset) => asset.id === element.assetId)
-                      ? <img src={assets.find((asset) => asset.id === element.assetId)?.url} alt="" style={{ width: "100%", height: "calc(100% - 18px)", objectFit: "contain" }} />
+                      ? <Image src={assets.find((asset) => asset.id === element.assetId)?.url ?? ""} alt="" width={640} height={360} unoptimized style={{ width: "100%", height: "calc(100% - 18px)", objectFit: "contain" }} />
                       : <span>{label}</span>}
                     {element.locked !== true && <i
                       className="scene-preview-resize"
