@@ -26,7 +26,7 @@ const COMPONENT_LIBRARY: { type: ComponentType; label: string; description: stri
   { type: "recent-tracks", label: "Recent Tracks", description: "Recently played tracks" },
   { type: "announcement", label: "Announcement", description: "A streamer announcement or notice" },
   { type: "custom-text", label: "Custom Text", description: "A text label with editable content" },
-  { type: "custom-image", label: "Custom Image", description: "An image from a URL" },
+  { type: "custom-image", label: "Custom Image", description: "Choose an image from the workspace library" },
   { type: "background", label: "Background", description: "A scene background layer" },
   { type: "decoration", label: "Decoration", description: "A decorative visual element" },
 ];
@@ -610,7 +610,7 @@ export default function ScenesPage() {
               </fieldset>)}
             </div>
             <div className="scene-editor-actions">
-              <button type="button" className="secondary-button" disabled={editorBusy || !editor} onClick={() => void restoreDefaults()}>Restore Defaults</button>
+              {canManage && <button type="button" className="secondary-button" disabled={editorBusy || !editor} onClick={() => void restoreDefaults()}>Restore Defaults</button>}
               <button type="button" className="secondary-button" disabled={editorBusy || !previewState} onClick={() => void saveDraft()}>{editorBusy ? "Working…" : "Save draft"}</button>
               <button type="button" className="primary-button" disabled={editorBusy || !previewState} onClick={() => void publishDraft()}>Publish draft</button>
             </div>
