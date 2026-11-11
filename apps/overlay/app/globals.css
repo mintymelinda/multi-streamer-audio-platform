@@ -115,16 +115,16 @@ body {
   to { opacity: 1; transform: scale(1); }
 }
 
-.overlay-scene[data-transition="fade"] {
-  animation: overlay-scene-fade 320ms ease-out both;
+.overlay-scene.is-transitioning[data-transition="fade"] {
+  animation: overlay-scene-fade var(--scene-transition-duration, 320ms) ease-out both;
 }
 
-.overlay-scene[data-transition="slide"] {
-  animation: overlay-scene-slide 320ms ease-out both;
+.overlay-scene.is-transitioning[data-transition="slide"] {
+  animation: overlay-scene-slide var(--scene-transition-duration, 320ms) ease-out both;
 }
 
-.overlay-scene[data-transition="scale"] {
-  animation: overlay-scene-scale 320ms ease-out both;
+.overlay-scene.is-transitioning[data-transition="scale"] {
+  animation: overlay-scene-scale var(--scene-transition-duration, 320ms) ease-out both;
 }
 
 @keyframes overlay-scene-fade {
@@ -146,7 +146,7 @@ body {
   .overlay-component,
   .overlay-component.is-entering,
   .overlay-component.is-exiting,
-  .overlay-scene[data-transition] {
+  .overlay-scene.is-transitioning[data-transition] {
     animation: none !important;
     transition: none !important;
     scroll-behavior: auto !important;
