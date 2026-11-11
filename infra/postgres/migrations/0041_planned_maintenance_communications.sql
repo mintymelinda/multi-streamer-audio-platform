@@ -31,7 +31,7 @@ REVOKE ALL ON platform_planned_maintenance FROM PUBLIC, platform_runtime, platfo
 -- The SECURITY DEFINER maintenance functions need to enumerate active account
 -- IDs for recipient fan-out, but do not expose those records to the API.
 CREATE POLICY platform_users_maintenance_recipient_scan
-  ON platform_users FOR SELECT TO platform_runtime
+  ON platform_users FOR SELECT TO platform_runtime, platform_migrator
   USING (platform_has_permission('status.manage'));
 
 CREATE FUNCTION list_public_planned_maintenance()
