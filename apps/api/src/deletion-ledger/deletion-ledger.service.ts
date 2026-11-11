@@ -118,7 +118,7 @@ export class DeletionLedgerService {
     await this.putRecord(key, record, 'deletion ledger membership append');
   }
 
-  private assertConfigured(): asserts this is this & { config: LedgerConfig } {
+  private assertConfigured(): void {
     if (!this.config) {
       throw new Error('Permanent deletion and access revocation require the independent deletion ledger to be configured.');
     }
