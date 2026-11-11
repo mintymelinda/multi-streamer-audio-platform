@@ -147,13 +147,13 @@ export class AssetsService {
     );
     const row = pending.rows[0];
     if (!row?.pending_object_key || !row.pending_content_type) throw new ConflictException('There is no pending upload for this asset.');
-    const url = this.storage.presign('HEAD', row.pending_object_key, undefined, 60);
+    const url = this.storage.presign('HEAD', row.pending_object_key, undefined, 60, true);
     const head = await fetch(url, { method: 'HEAD' });
     if (!head.ok) throw new BadRequestException('The uploaded object could not be verified.');
     const contentLength = Number(head.headers.get('content-length'));
     if (!Number.isSafeInteger(contentLength) || contentLength < 1 || contentLength > MAX_BYTES) throw new BadRequestException('Image files must be no larger than 10 MiB.');
     if (head.headers.get('content-type')?.split(';')[0]?.trim() !== row.pending_content_type) throw new BadRequestException('Uploaded image content type does not match the declared type.');
-    const response = await fetch(this.storage.presign('GET', row.pending_object_key, undefined, 60));
+    const response = await fetch(this.storage.presign('GET', row.pending_object_key, undefined, 60, true));
     if (!response.ok) throw new BadRequestException('The uploaded object could not be verified.');
     const bytes = Buffer.from(await response.arrayBuffer());
     if (bytes.length !== contentLength || bytes.length > MAX_BYTES) throw new BadRequestException('Image files must be no larger than 10 MiB.');
