@@ -20,6 +20,11 @@ CREATE POLICY deletion_ledger_restore_admin_assignment
   FOR DELETE TO platform_migrator
   USING (true);
 
+CREATE POLICY deletion_ledger_restore_credentials
+  ON public.provider_credentials
+  FOR DELETE TO platform_migrator
+  USING (true);
+
 CREATE FUNCTION apply_deletion_tombstone(p_entity_type text, p_entity_id uuid)
 RETURNS void
 LANGUAGE plpgsql
@@ -64,6 +69,34 @@ BEGIN
   PERFORM public.delete_current_platform_account();
 END;
 $deletion_replay$;
+
+CREATE FUNCTION apply_credential_tombstone(
+  p_credential_id uuid,
+  p_workspace_id uuid,
+  p_provider_instance_id uuid
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $credential_replay$
+BEGIN
+  IF p_credential_id IS NULL OR p_workspace_id IS NULL OR p_provider_instance_id IS NULL THEN
+    RAISE EXCEPTION 'credential tombstone identity is incomplete'
+      USING ERRCODE = '22023';
+  END IF;
+
+  PERFORM set_config('app.workspace_id', p_workspace_id::text, true);
+  DELETE FROM public.provider_credentials
+   WHERE id = p_credential_id
+     AND workspace_id = p_workspace_id
+     AND provider_instance_id = p_provider_instance_id;
+END;
+$credential_replay$;
+
+ALTER FUNCTION apply_credential_tombstone(uuid, uuid, uuid) OWNER TO platform_migrator;
+REVOKE ALL ON FUNCTION apply_credential_tombstone(uuid, uuid, uuid) FROM PUBLIC, platform_runtime, platform_worker;
+GRANT EXECUTE ON FUNCTION apply_credential_tombstone(uuid, uuid, uuid) TO platform_migrator;
 
 ALTER FUNCTION apply_deletion_tombstone(text, uuid) OWNER TO platform_migrator;
 REVOKE ALL ON FUNCTION apply_deletion_tombstone(text, uuid) FROM PUBLIC, platform_runtime, platform_worker;
