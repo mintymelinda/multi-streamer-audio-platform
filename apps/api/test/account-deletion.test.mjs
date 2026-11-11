@@ -13,7 +13,7 @@ function harness(handler) {
       } });
     },
   };
-  return { service: new AccountDeletionService(database), calls };
+  return { service: new AccountDeletionService(database, { append: async (...args) => calls.push({ ledger: args }) }), calls };
 }
 
 test('deletes only the authenticated account through the database-owned deletion function', async () => {
@@ -24,6 +24,7 @@ test('deletes only the authenticated account through the database-owned deletion
   assert.equal(result.deleted, true);
   assert.deepEqual(calls[0].context, { userId: 'user-a' });
   assert.equal(calls[1].sql, 'SELECT delete_current_platform_account() AS deleted_user_id');
+  assert.deepEqual(calls[2].ledger, ['account', 'user-a']);
 });
 
 test('requires owned workspace deletion before account deletion', async () => {
