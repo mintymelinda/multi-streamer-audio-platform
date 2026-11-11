@@ -50,6 +50,9 @@ Start the local services with `pnpm dev:infra`, then apply the role bootstrap an
 - `0038_workspace_support_access.sql` adds read-only, reasoned support grants with a 5–240 minute expiry, owner-visible grant history and audit events, immediate revocation, append-only grant/read/revoke/diagnostic auditing, and separate technical diagnostics. Support and diagnostic reads use narrow SECURITY DEFINER functions plus additional SELECT-only RLS policies; the runtime role cannot directly read grant or audit tables.
 - `0039_platform_restrictions.sql` adds permission-checked platform account/workspace directories and audited account suspension/reinstatement plus workspace restriction/suspension/restoration. Account suspension revokes active sessions; active platform owners cannot be suspended. These controls do not delete accounts, workspaces, or their data.
 
+- `0041_planned_maintenance_communications.sql` adds platform-operator planned-maintenance notices with public scheduling, expected impact, affected services, advance in-app notifications, optional opted-in email delivery, and audited publication/cancellation.
+- `0042_fix_planned_maintenance_recipient_context.sql` materializes recipient IDs before changing transaction-local RLS identity during notification fan-out and cancellation.
+
 The initial overlay scene safety ceiling is 1,000 across the entire platform. The platform runtime can read the configured value but cannot change it or mutate the usage counter. Until the platform settings controls are added to the platform-administration console, an operator changes it through the privileged database administration path, for example: `UPDATE platform_settings SET setting_value = '1500'::jsonb, updated_at = now() WHERE setting_key = 'overlay_scene_safety_ceiling';`.
 
 New tenant-owned tables must follow the same pattern. Never put plaintext provider credentials in integration rows, audit details, outbox payloads, logs, or job messages.
