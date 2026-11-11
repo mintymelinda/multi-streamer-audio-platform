@@ -20,8 +20,15 @@ BEGIN
   INSERT INTO platform_administrators (user_id, twitch_user_id, role, permissions)
   VALUES (support_id, '980000021', 'admin', ARRAY['support_access.manage', 'workspaces.read']);
 
-  INSERT INTO media_requests (workspace_id, source, title, status)
-  VALUES (workspace_id, 'dashboard', 'Private test track', 'queued');
+  INSERT INTO media_requests (
+    workspace_id, source, source_event_id, submitted_by_user_id,
+    requester_twitch_user_id, requester_display_name, provider, media_id, media_url,
+    title, artist, metadata, priority, status, status_reason
+  )
+  VALUES (
+    workspace_id, 'dashboard', NULL, owner_id, NULL, NULL, 'youtube', NULL, NULL,
+    'Private test track', 'Private test artist', '{}'::jsonb, 0, 'queued', NULL
+  );
 
   INSERT INTO provider_instances (
     workspace_id, provider_id, instance_key, contract_version, connection_health
