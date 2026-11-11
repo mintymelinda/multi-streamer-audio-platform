@@ -167,6 +167,7 @@ BEGIN
       USING ERRCODE = '22023';
   END IF;
 
+  PERFORM set_config('app.workspace_id', target_workspace_id::text, true);
   IF NOT EXISTS (SELECT 1 FROM public.workspaces WHERE id = target_workspace_id) THEN
     RAISE EXCEPTION 'workspace not found'
       USING ERRCODE = 'P0002';
@@ -371,12 +372,11 @@ BEGIN
       USING ERRCODE = '42501';
   END IF;
 
+  PERFORM set_config('app.workspace_id', target_workspace_id::text, true);
   IF NOT EXISTS (SELECT 1 FROM public.workspaces WHERE id = target_workspace_id) THEN
     RAISE EXCEPTION 'workspace not found'
       USING ERRCODE = 'P0002';
   END IF;
-
-  PERFORM set_config('app.workspace_id', target_workspace_id::text, true);
 
   RETURN jsonb_build_object(
     'workspaceId', target_workspace_id,
