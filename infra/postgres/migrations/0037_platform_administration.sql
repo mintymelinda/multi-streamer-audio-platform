@@ -23,7 +23,6 @@ CREATE TABLE platform_administrators (
     'administrators.manage',
     'rights_reports.manage'
   ]::text[]),
-  CHECK (role <> 'owner' OR revoked_at IS NULL)
 );
 
 CREATE INDEX platform_administrators_active_role
@@ -112,6 +111,7 @@ DECLARE
   actor_id uuid := nullif(current_setting('app.user_id', true), '')::uuid;
   actor_role platform_administrator_role;
   actor_permissions text[];
+  target_role platform_administrator_role;
 BEGIN
   IF actor_id IS NULL OR length(btrim(action_reason)) NOT BETWEEN 1 AND 1000 THEN
     RAISE EXCEPTION 'authenticated platform administrator and reason are required'
@@ -142,6 +142,14 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'target account must exist and be active'
       USING ERRCODE = '23503';
+  END IF;
+
+  SELECT role INTO target_role
+    FROM public.platform_administrators
+   WHERE user_id = target_user_id AND revoked_at IS NULL;
+  IF actor_role <> 'owner' AND target_role = 'owner' THEN
+    RAISE EXCEPTION 'only the platform owner can change an owner assignment'
+      USING ERRCODE = '42501';
   END IF;
 
   INSERT INTO public.platform_administrators (
