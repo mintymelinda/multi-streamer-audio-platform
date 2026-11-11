@@ -151,6 +151,9 @@ body {
     transition: none !important;
     scroll-behavior: auto !important;
   }
+  .overlay-marquee__content.is-scrolling {
+    animation: none !important;
+  }
 }
 
 .overlay-scene[data-reduced-motion="true"] .overlay-component,
