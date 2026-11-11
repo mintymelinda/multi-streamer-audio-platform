@@ -78,3 +78,10 @@ BEFORE INSERT OR DELETE ON overlay_scenes
 FOR EACH ROW EXECUTE FUNCTION enforce_overlay_scene_safety_ceiling();
 
 GRANT DELETE ON overlay_scenes TO platform_runtime;
+
+-- Default privileges grant runtime DML on newly created tables. Explicitly
+-- narrow these global control tables so only the definer trigger can mutate
+-- usage counters and only the migrator/operator can change the configured cap.
+REVOKE ALL ON platform_scene_usage FROM platform_runtime;
+REVOKE INSERT, UPDATE, DELETE ON platform_settings FROM platform_runtime;
+REVOKE ALL ON FUNCTION enforce_overlay_scene_safety_ceiling() FROM PUBLIC, platform_runtime;
