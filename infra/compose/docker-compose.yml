@@ -27,6 +27,7 @@ services:
       DELETION_LEDGER_ACCESS_KEY: ${DELETION_LEDGER_ACCESS_KEY:-local-minio}
       DELETION_LEDGER_SECRET_KEY: ${DELETION_LEDGER_SECRET_KEY:-local-minio-password}
       DELETION_LEDGER_REGION: ${DELETION_LEDGER_REGION:-us-east-1}
+      DELETION_LEDGER_ALLOW_INSECURE_HTTP: ${DELETION_LEDGER_ALLOW_INSECURE_HTTP:-true}
     depends_on:
       postgres:
         condition: service_healthy
