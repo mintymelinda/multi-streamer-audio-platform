@@ -20,6 +20,7 @@ function animationName(element: Record<string, unknown>, phase: "enter" | "exit"
     ? element.animation as Record<string, unknown>
     : {};
   const selected = settings[phase];
+  if (selected === undefined) return "overlay-fade";
   return selected === "fade" || selected === "slide" || selected === "scale" ? `overlay-${selected}` : "none";
 }
 
@@ -220,6 +221,9 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
       const animation = element.animation && typeof element.animation === 'object'
         ? element.animation as Record<string, unknown>
         : {};
+      if (animation.exit === "none") return 0;
+      const isExit = exitingIds.includes(typeof element.id === "string" ? element.id : "");
+      if (isExit && animation.exit === "none") return 0;
       const duration = typeof animation.durationMs === 'number' ? animation.durationMs : 240;
       const delay = typeof animation.delayMs === 'number' ? animation.delayMs : 0;
       return Math.min(5000, Math.max(0, duration + delay));
@@ -252,12 +256,16 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
 
   return (
     <main
+      key={JSON.stringify(publishedState)}
       className={`overlay-scene ${fixedCanvas ? "is-fixed-canvas" : "is-responsive-canvas"}`}
       data-transition={typeof publishedState?.transition === "object" && publishedState.transition !== null ? String((publishedState.transition as Record<string, unknown>).type ?? "none") : "none"}
       data-reduced-motion={publishedState?.reducedMotion === true ? "true" : "false"}
       aria-label={snapshot.name}
       data-scene-id={snapshot.sceneId}
-      style={fixedCanvas ? { width: `${canvasWidth}px`, height: `${canvasHeight}px`, minHeight: 0 } : undefined}
+      style={{
+        ...(fixedCanvas ? { width: `${canvasWidth}px`, height: `${canvasHeight}px`, minHeight: 0 } : {}),
+        "--scene-transition-duration": `${typeof (publishedState?.transition as Record<string, unknown> | undefined)?.durationMs === "number" ? Math.min(5000, Math.max(0, (publishedState?.transition as Record<string, unknown>).durationMs as number)) : 320}ms`,
+      } as CSSProperties}
     >
       {snapshot.publishedState === null
         ? <p className="overlay-message">This scene has not been published yet.</p>
