@@ -71,16 +71,16 @@ export class SupportAccessController {
   }
 
   @Delete('workspaces/:workspaceId/support-access/:grantId')
-  @UseGuards(CsrfGuard, WorkspaceAccessGuard)
+  @UseGuards(CsrfGuard)
   async revokeForWorkspace(
     @Req() request: HttpRequest,
+    @Param('workspaceId') workspaceId: string,
     @Param('grantId') grantId: string,
     @Body() body: unknown,
   ) {
-    const current = workspace(request);
     await this.support.revokeForWorkspace(
       user(request).id,
-      current.id,
+      workspaceId,
       grantId,
       objectBody(body).reason,
     );
