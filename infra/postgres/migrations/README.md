@@ -56,6 +56,7 @@ Start the local services with `pnpm dev:infra`, then apply the role bootstrap an
 - `0044_data_retention.sql` defines workspace-configurable request/history retention, terminal-only 30-day operational cleanup, notification retention, and a bounded cross-tenant retention function executable only by the restricted worker role.
 - `0045_workspace_export_deletion.sql` adds owner-verified workspace export with secret redaction and permanent deletion support through existing workspace foreign-key cascades.
 - `0046_support_access_audit_insert_policy.sql` restores narrowly-scoped append-only audit writes for trusted support `SECURITY DEFINER` functions under forced RLS; the runtime role retains no direct audit-table write grant.
+- `0047_support_access_grant_insert_policy.sql` permits only trusted `platform_migrator` support-grant creation under forced RLS, validating the actor relationship, read-only scopes, reason, Twitch ID, and expiry; the runtime role retains no direct grant-table write grant.
 
 The initial overlay scene safety ceiling is 1,000 across the entire platform. The platform runtime can read the configured value but cannot change it or mutate the usage counter. Until the platform settings controls are added to the platform-administration console, an operator changes it through the privileged database administration path, for example: `UPDATE platform_settings SET setting_value = '1500'::jsonb, updated_at = now() WHERE setting_key = 'overlay_scene_safety_ceiling';`.
 
