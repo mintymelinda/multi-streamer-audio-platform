@@ -362,3 +362,72 @@ h1 { margin: 7px 0 8px; font-size: clamp(28px, 4vw, 38px); letter-spacing: -.055
 .scene-preview-now-playing-progress { display: grid; gap: 3px; }
 .scene-preview-now-playing-progress > i { display: block; height: 3px; border-radius: 3px; background: #d9d0f5; }
 .scene-preview-now-playing-progress > div { display: flex; justify-content: space-between; color: #c4c2ca; font-size: clamp(5px, .7vw, 8px); }
+
+
+/* Public service status and incident communications. */
+.incident-notice {
+  margin: 0 0 14px;
+  padding: 16px 18px;
+  border: 1px solid #76552d;
+  border-radius: 11px;
+  background: #292116;
+  color: #f0d4a2;
+}
+.incident-notice-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.incident-notice-heading strong { font-size: 13px; }
+.incident-notice-heading span { color: #e9bf77; font-size: 10px; text-transform: capitalize; }
+.incident-notice p { margin: 8px 0; color: #d9c49f; font-size: 12px; line-height: 1.55; }
+.incident-notice a, .status-incidents a { color: #c7b7ff; font-size: 11px; text-decoration: none; }
+.status-brand { color: inherit; text-decoration: none; }
+.status-overview { display: flex; align-items: center; gap: 15px; margin-bottom: 18px; padding: 20px; border: 1px solid #315b49; border-radius: 13px; background: #17271f; }
+.status-overview--degraded, .status-overview--partial_outage { border-color: #76552d; background: #292116; }
+.status-overview--major_outage { border-color: #713c48; background: #2b171c; }
+.status-overview-mark { display: grid; place-items: center; width: 38px; height: 38px; flex: 0 0 auto; border-radius: 50%; color: #a0e6bd; background: #254a37; font-size: 20px; font-weight: 800; }
+.status-overview--degraded .status-overview-mark, .status-overview--partial_outage .status-overview-mark { color: #f1cf91; background: #62451f; }
+.status-overview--major_outage .status-overview-mark { color: #ffb5bd; background: #5b2935; }
+.status-overview > div { flex: 1; min-width: 0; }
+.status-overview strong { font-size: 15px; }
+.status-overview p { margin: 5px 0 0; color: #b7b9c2; font-size: 11px; }
+.status-overview-label { color: #9ddab7; font-size: 10px; text-transform: capitalize; white-space: nowrap; }
+.status-overview--degraded .status-overview-label, .status-overview--partial_outage .status-overview-label { color: #edc477; }
+.status-overview--major_outage .status-overview-label { color: #ffb2b9; }
+.status-incident { padding: 17px 0; border-top: 1px solid #2a2e39; }
+.status-incident-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.status-incident h3 { margin: 0 0 8px; font-size: 14px; }
+.status-incident p { margin: 9px 0; color: #b5b7c1; font-size: 12px; line-height: 1.6; }
+.status-incident > small, .status-incident time { color: #858a99; font-size: 10px; }
+.status-incident time { white-space: nowrap; }
+.status-incident-meta { display: flex; flex-wrap: wrap; gap: 7px; }
+.status-incident-meta span { padding: 4px 7px; border-radius: 5px; color: #c8c1df; background: #29263a; font-size: 9px; text-transform: capitalize; }
+.status-incidents { margin-bottom: 18px; }
+.incident-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.incident-form-grid label { display: grid; gap: 6px; color: #a4a7b4; font-size: 11px; }
+.incident-form-grid select, .settings-form input, .settings-form select, .settings-form textarea { width: 100%; padding: 10px; border: 1px solid #393d4b; border-radius: 8px; color: #f3f4f6; background: #10131b; }
+.settings-form { display: grid; gap: 14px; }
+.settings-form > label { display: grid; gap: 6px; color: #a4a7b4; font-size: 11px; }
+.settings-form textarea { resize: vertical; line-height: 1.5; }
+.settings-form fieldset { display: grid; gap: 10px; border: 1px solid #343744; border-radius: 9px; padding: 12px; }
+.settings-form legend { padding: 0 5px; color: #a4a7b4; font-size: 11px; }
+.incident-service-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 14px; }
+.settings-form .checkbox-row { display: flex; align-items: center; gap: 8px; color: #c5c6ce; font-size: 11px; }
+.settings-form .checkbox-row input { width: auto; }
+.success-banner { margin-bottom: 18px; padding: 13px 16px; border: 1px solid #315b49; border-radius: 10px; color: #a0e6bd; background: #17271f; font-size: 12px; }
+:root[data-theme="light"] .incident-notice { color: #684a1b; background: #fff7e8; border-color: #e6c98f; }
+:root[data-theme="light"] .incident-notice p { color: #735a32; }
+:root[data-theme="light"] .status-overview { background: #edf8f1; border-color: #b7dfc7; color: #235b3d; }
+:root[data-theme="light"] .status-overview--degraded, :root[data-theme="light"] .status-overview--partial_outage { background: #fff7e8; border-color: #e6c98f; color: #684a1b; }
+:root[data-theme="light"] .status-overview--major_outage { background: #fff0f1; border-color: #e8b9c0; color: #7b2634; }
+:root[data-theme="light"] .status-overview p, :root[data-theme="light"] .status-incident p { color: #646a78; }
+:root[data-theme="light"] .status-incident { border-top-color: #dce0e9; }
+:root[data-theme="light"] .status-incident-meta span { color: #5d527e; background: #eeebf8; }
+:root[data-theme="light"] .incident-form-grid label, :root[data-theme="light"] .settings-form > label, :root[data-theme="light"] .settings-form legend { color: #565d6b; }
+:root[data-theme="light"] .settings-form input, :root[data-theme="light"] .settings-form select, :root[data-theme="light"] .settings-form textarea, :root[data-theme="light"] .incident-form-grid select { color: #202330; background: #fff; border-color: #cbd0dc; }
+:root[data-theme="light"] .settings-form .checkbox-row { color: #343a48; }
+:root[data-theme="light"] .success-banner { color: #235b3d; background: #edf8f1; border-color: #b7dfc7; }
+@media (max-width: 760px) {
+  .status-overview { align-items: flex-start; flex-wrap: wrap; }
+  .status-overview-label { margin-left: 53px; }
+  .status-incident-heading { flex-direction: column; }
+  .incident-form-grid { grid-template-columns: 1fr; }
+  .incident-service-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
