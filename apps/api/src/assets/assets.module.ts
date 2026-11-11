@@ -10,6 +10,6 @@ import { ObjectStorageService } from './object-storage.service.js';
   imports: [DatabaseModule, IdentityModule, WorkspacesModule],
   controllers: [AssetsController],
   providers: [AssetsService, ObjectStorageService],
-  exports: [AssetsService],
+  exports: [AssetsService, ObjectStorageService],
 })
 export class AssetsModule {}
