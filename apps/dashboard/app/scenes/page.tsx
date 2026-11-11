@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type Workspace = { id: string; name: string; role: "owner" | "admin" | "moderator" | "viewer" };
