@@ -22,7 +22,7 @@ CREATE TABLE platform_administrators (
     'administrators.read',
     'administrators.manage',
     'rights_reports.manage'
-  ]::text[]),
+  ]::text[])
 );
 
 CREATE INDEX platform_administrators_active_role
@@ -57,6 +57,9 @@ BEGIN
 
   IF OLD.role = 'owner' AND OLD.revoked_at IS NULL
      AND (TG_OP = 'DELETE' OR NEW.role <> 'owner' OR NEW.revoked_at IS NOT NULL) THEN
+    -- Serialize owner removals so concurrent transactions cannot each observe
+    -- the other owner and leave the platform with no active owner.
+    PERFORM pg_advisory_xact_lock(7219045202);
     SELECT count(*) INTO remaining_owners
       FROM platform_administrators
      WHERE role = 'owner'
@@ -97,7 +100,7 @@ FOR EACH ROW EXECUTE FUNCTION prevent_platform_administration_audit_mutation();
 -- SECURITY DEFINER functions are the only runtime write path. They derive the
 -- actor from the authenticated transaction context and prevent permission escalation.
 CREATE FUNCTION appoint_platform_administrator(
-  target_user_id uuid,
+  target_twitch_user_id text,
   assigned_role platform_administrator_role,
   assigned_permissions text[],
   action_reason text
@@ -112,9 +115,12 @@ DECLARE
   actor_role platform_administrator_role;
   actor_permissions text[];
   target_role platform_administrator_role;
+  target_user_id uuid;
+  previous_twitch_lookup text := current_setting('app.twitch_lookup_id', true);
 BEGIN
-  IF actor_id IS NULL OR length(btrim(action_reason)) NOT BETWEEN 1 AND 1000 THEN
-    RAISE EXCEPTION 'authenticated platform administrator and reason are required'
+  IF actor_id IS NULL OR length(btrim(action_reason)) NOT BETWEEN 1 AND 1000
+     OR target_twitch_user_id !~ '^[0-9]{1,32}$' THEN
+    RAISE EXCEPTION 'authenticated platform administrator, valid Twitch ID, and reason are required'
       USING ERRCODE = '42501';
   END IF;
 
@@ -136,11 +142,16 @@ BEGIN
       USING ERRCODE = '42501';
   END IF;
 
-  IF NOT EXISTS (
-    SELECT 1 FROM public.platform_users
-     WHERE id = target_user_id AND status = 'active'
-  ) THEN
-    RAISE EXCEPTION 'target account must exist and be active'
+  -- The platform_users table is FORCE RLS. Use its existing narrow Twitch-ID
+  -- lookup policy rather than bypassing tenant/account isolation.
+  PERFORM set_config('app.twitch_lookup_id', target_twitch_user_id, true);
+  SELECT id INTO target_user_id
+    FROM public.platform_users
+   WHERE twitch_user_id = target_twitch_user_id AND status = 'active';
+  PERFORM set_config('app.twitch_lookup_id', COALESCE(previous_twitch_lookup, ''), true);
+
+  IF target_user_id IS NULL THEN
+    RAISE EXCEPTION 'target account must sign in and be active before appointment'
       USING ERRCODE = '23503';
   END IF;
 
@@ -233,23 +244,25 @@ BEGIN
 END;
 $$;
 
-GRANT SELECT ON platform_administrators TO platform_runtime;
-GRANT SELECT ON platform_administration_audit TO platform_runtime;
 REVOKE ALL ON platform_administrators FROM platform_runtime;
 REVOKE ALL ON platform_administration_audit FROM platform_runtime;
 GRANT SELECT ON platform_administrators TO platform_runtime;
 GRANT SELECT ON platform_administration_audit TO platform_runtime;
 REVOKE ALL ON FUNCTION protect_final_platform_owner() FROM PUBLIC;
 REVOKE ALL ON FUNCTION prevent_platform_administration_audit_mutation() FROM PUBLIC;
-REVOKE ALL ON FUNCTION appoint_platform_administrator(uuid, platform_administrator_role, text[], text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION appoint_platform_administrator(text, platform_administrator_role, text[], text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION revoke_platform_administrator(uuid, text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION appoint_platform_administrator(uuid, platform_administrator_role, text[], text) TO platform_runtime;
+GRANT EXECUTE ON FUNCTION appoint_platform_administrator(text, platform_administrator_role, text[], text) TO platform_runtime;
 GRANT EXECUTE ON FUNCTION revoke_platform_administrator(uuid, text) TO platform_runtime;
 
 -- Bootstrap the first owner only after the operator has signed in with Twitch:
+-- BEGIN;
+-- SELECT set_config('app.twitch_lookup_id', '<verified numeric Twitch ID>', true);
 -- INSERT INTO platform_administrators (user_id, role)
--- SELECT id, 'owner' FROM platform_users WHERE twitch_user_id = '<verified numeric Twitch ID>';
--- Run this once with platform_migrator or an equivalent privileged operator role.
+-- SELECT id, 'owner' FROM platform_users
+--  WHERE twitch_user_id = current_setting('app.twitch_lookup_id', true);
+-- COMMIT;
+-- Run once with platform_migrator or an equivalent privileged operator role.
 -- The owner is not inferred from a username, email address, or environment variable.
 
 COMMIT;
