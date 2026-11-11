@@ -9,7 +9,7 @@ BEGIN
   END IF;
 END;
 $$;
-GRANT USAGE ON SCHEMA public TO platform_provider_execution_owner;
+GRANT USAGE, CREATE ON SCHEMA public TO platform_provider_execution_owner;
 GRANT SELECT (id, status) ON platform_users TO platform_provider_execution_owner;
 GRANT SELECT (id, owner_user_id, status) ON workspaces TO platform_provider_execution_owner;
 GRANT SELECT (workspace_id, user_id, status) ON workspace_memberships TO platform_provider_execution_owner;
@@ -112,9 +112,11 @@ END;
 $function$;
 ALTER FUNCTION platform_validate_provider_execution_job(uuid, uuid, uuid, uuid, integer)
   OWNER TO platform_provider_execution_owner;
+REVOKE CREATE ON SCHEMA public FROM platform_provider_execution_owner;
 REVOKE ALL ON FUNCTION platform_validate_provider_execution_job(uuid, uuid, uuid, uuid, integer) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION platform_validate_provider_execution_job(uuid, uuid, uuid, uuid, integer)
   TO platform_provider_worker;
 GRANT CONNECT ON DATABASE platform TO platform_provider_worker;
 GRANT USAGE ON SCHEMA public TO platform_provider_worker;
+GRANT USAGE ON TYPE request_source, request_status TO platform_provider_worker;
 -- No table, sequence, or schema-creation grants are given to the worker login.
