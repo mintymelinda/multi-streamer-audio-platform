@@ -73,6 +73,7 @@ export default function AccountDataExportsPage() {
         </div>
       </article>)}</div> : <div className="quiet-empty"><span>♫</span><p>No account exports yet.</p><small>Request an export to create a downloadable copy of your personal account data.</small></div>}
     </section>
+    <section className="panel team-panel"><div className="panel-heading"><div><p className="eyebrow">ACCOUNT CONTROL</p><h2>Delete your account</h2></div></div><p className="subheading">Permanently remove your platform account and personal data. Workspace-owned data is not deleted here. You must delete any workspace you own first.</p><a className="secondary-button" href="/account/delete">Review account deletion</a></section>
     <footer className="footer"><span>Personal account data</span><a href="/">Back to dashboard</a></footer>
   </main>;
 }
