@@ -137,7 +137,7 @@ export default function AssetsPage() {
       </div>}
       <div className="scene-list">
         {assets.map((asset) => <article className="scene-row" key={asset.id}>
-          <img src={asset.url} alt={asset.name} width={96} height={72} style={{ objectFit: "contain", background: "#171923", borderRadius: 6 }} />
+          <Image src={asset.url} alt={asset.name} width={96} height={72} unoptimized style={{ objectFit: "contain", background: "#171923", borderRadius: 6 }} />
           <div className="scene-row-main"><strong>{asset.name}</strong><small>{asset.width} × {asset.height} · {(asset.size / 1024).toFixed(1)} KiB · {asset.folder || "Root"}</small></div>
           {canManage && <div className="scene-row-actions">
             <button type="button" className="text-button" disabled={busy} onClick={() => void rename(asset)}>Rename</button>
