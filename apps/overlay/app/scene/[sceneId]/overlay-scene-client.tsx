@@ -224,7 +224,8 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
   }, [snapshot, overlayEvent]);
 
   useEffect(() => {
-    const state = snapshot?.publishedState && typeof snapshot.publishedState === 'object'
+    if (!snapshot) return;
+    const state = snapshot.publishedState && typeof snapshot.publishedState === 'object'
       ? snapshot.publishedState as Record<string, unknown>
       : null;
     const next = state && Array.isArray(state.elements)
@@ -238,31 +239,39 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
     const previousByKey = new Map(previous.map((element, index) => [keyOf(element, index), element]));
     const nextKeys = new Set(next.map(keyOf));
     const removed = previous.filter((element, index) => !nextKeys.has(keyOf(element, index)));
-    const ids = removed.map((element, index) => keyOf(element, index));
+    const exitElements = removed.filter((element) => animationName(element, 'exit') !== 'none');
+    const exitIds = exitElements.map((element) => keyOf(element, previous.indexOf(element)));
     const entering = next.filter((element, index) => {
       const key = keyOf(element, index);
       const before = previousByKey.get(key);
       if (!before) return true;
+      if (JSON.stringify(withoutAssetUrl(before)) === JSON.stringify(withoutAssetUrl(element))) return false;
       const animation = element.animation && typeof element.animation === 'object'
         ? element.animation as Record<string, unknown>
         : {};
       const trigger = animation.trigger;
-      if (JSON.stringify(before) === JSON.stringify(element)) return false;
-      return (trigger === "content-change")
-        || (trigger === "new-song" && element.type === "now-playing" && /playback|track/i.test(overlayEvent.type))
-        || (trigger === "announcement" && element.type === "announcement" && /announcement/i.test(overlayEvent.type));
-    }).map(keyOf);
+      return trigger === 'content-change'
+        || (trigger === 'new-song' && element.type === 'now-playing')
+        || (trigger === 'announcement' && element.type === 'announcement');
+    }).filter((element) => animationName(element, 'enter') !== 'none');
     previousElements.current = next;
-    setRenderedElements([...next, ...removed]);
-    setExitingIds(ids);
-    setAnimatedIds(entering);
-    const allAnimated = [...removed, ...next.filter((element, index) => entering.includes(keyOf(element, index)))];
+    const reduceMotion = state?.reducedMotion === true
+      || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduceMotion) {
+      setRenderedElements(next);
+      setExitingIds([]);
+      setAnimatedIds([]);
+      return;
+    }
+    setRenderedElements([...next, ...exitElements]);
+    setExitingIds(exitIds);
+    const enteringIds = entering.map((element) => keyOf(element, next.indexOf(element)));
+    setAnimatedIds(enteringIds);
+    const allAnimated = [...exitElements, ...entering];
     const longest = Math.max(0, ...allAnimated.map((element) => {
       const animation = element.animation && typeof element.animation === 'object'
         ? element.animation as Record<string, unknown>
         : {};
-      const isExit = removed.includes(element);
-      if (isExit && animation.exit === "none") return 0;
       const duration = typeof animation.durationMs === 'number' ? animation.durationMs : 240;
       const delay = typeof animation.delayMs === 'number' ? animation.delayMs : 0;
       return Math.min(5000, Math.max(0, duration + delay));
@@ -275,7 +284,19 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
       }, longest + 80);
       return () => window.clearTimeout(timer);
     }
+    setRenderedElements(next);
+    setExitingIds([]);
+    setAnimatedIds([]);
     return undefined;
+  }, [snapshot]);
+
+  useEffect(() => {
+    if (!snapshot) return;
+    const current = sceneStateKey(snapshot.publishedState);
+    if (previousSceneState.current !== null && previousSceneState.current !== current) {
+      setSceneTransitionKey((value) => value + 1);
+    }
+    previousSceneState.current = current;
   }, [snapshot]);
 
   if (status === 'unauthorized') return <main className="overlay-message">This overlay URL is invalid or has been revoked.</main>;
