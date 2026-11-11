@@ -1,0 +1,125 @@
+import {
+  BadRequestException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+} from '@nestjs/common';
+import { DatabaseService } from '../database/database.service.js';
+
+export const PLATFORM_PERMISSIONS = [
+  'accounts.read',
+  'accounts.suspend',
+  'workspaces.read',
+  'workspaces.restrict',
+  'settings.read',
+  'settings.write',
+  'support_access.manage',
+  'administrators.read',
+  'administrators.manage',
+  'rights_reports.manage',
+] as const;
+
+export type PlatformPermission = (typeof PLATFORM_PERMISSIONS)[number];
+export type PlatformAdminRole = 'owner' | 'admin';
+
+export interface PlatformAdminAssignment {
+  user_id: string;
+  twitch_user_id: string;
+  role: PlatformAdminRole;
+  permissions: PlatformPermission[];
+  appointed_at: Date;
+  revoked_at: Date | null;
+}
+
+@Injectable()
+export class PlatformAdminService {
+  constructor(@Inject(DatabaseService) private readonly database: DatabaseService) {}
+
+  async access(userId: string) {
+    const result = await this.database.transaction({ userId }, (client) =>
+      client.query<{ role: PlatformAdminRole; permissions: PlatformPermission[] }>(
+        "SELECT role, permissions FROM platform_administrators WHERE user_id = $1 AND revoked_at IS NULL",
+        [userId],
+      ),
+    );
+    const assignment = result.rows[0];
+    return {
+      isPlatformAdministrator: Boolean(assignment),
+      role: assignment?.role ?? null,
+      permissions: assignment?.role === 'owner' ? [...PLATFORM_PERMISSIONS] : assignment?.permissions ?? [],
+    };
+  }
+
+  async listAdministrators(userId: string): Promise<PlatformAdminAssignment[]> {
+    return this.database.transaction({ userId }, async (client) => {
+      await this.requirePermission(client, userId, 'administrators.read');
+      const result = await client.query<PlatformAdminAssignment>(
+        `SELECT administrators.user_id, users.twitch_user_id, administrators.role,
+                administrators.permissions, administrators.appointed_at, administrators.revoked_at
+           FROM platform_administrators administrators
+           JOIN platform_users users ON users.id = administrators.user_id
+          ORDER BY (administrators.revoked_at IS NULL) DESC,
+                   administrators.role ASC, administrators.appointed_at ASC`,
+      );
+      return result.rows;
+    });
+  }
+
+  async appoint(
+    actorUserId: string,
+    input: { userId: unknown; role: unknown; permissions: unknown; reason: unknown },
+  ): Promise<void> {
+    if (typeof input.userId !== 'string' || !/^[0-9a-f-]{36}$/i.test(input.userId)) {
+      throw new BadRequestException('A valid target account ID is required.');
+    }
+    if (input.role !== 'owner' && input.role !== 'admin') {
+      throw new BadRequestException('Role must be owner or admin.');
+    }
+    if (
+      !Array.isArray(input.permissions) ||
+      input.permissions.some((permission) => !PLATFORM_PERMISSIONS.includes(permission))
+    ) {
+      throw new BadRequestException('One or more platform permissions are invalid.');
+    }
+    if (typeof input.reason !== 'string' || input.reason.trim().length < 1 || input.reason.trim().length > 1000) {
+      throw new BadRequestException('A reason between 1 and 1,000 characters is required.');
+    }
+
+    await this.database.transaction({ userId: actorUserId }, async (client) => {
+      await client.query(
+        'SELECT appoint_platform_administrator($1, $2::platform_administrator_role, $3::text[], $4)',
+        [input.userId, input.role, input.permissions, input.reason.trim()],
+      );
+    });
+  }
+
+  async revoke(actorUserId: string, targetUserId: string, reasonInput: unknown): Promise<void> {
+    if (!/^[0-9a-f-]{36}$/i.test(targetUserId)) {
+      throw new BadRequestException('A valid target account ID is required.');
+    }
+    if (typeof reasonInput !== 'string' || reasonInput.trim().length < 1 || reasonInput.trim().length > 1000) {
+      throw new BadRequestException('A reason between 1 and 1,000 characters is required.');
+    }
+    await this.database.transaction({ userId: actorUserId }, async (client) => {
+      await client.query('SELECT revoke_platform_administrator($1, $2)', [
+        targetUserId,
+        reasonInput.trim(),
+      ]);
+    });
+  }
+
+  private async requirePermission(
+    client: import('pg').PoolClient,
+    userId: string,
+    permission: PlatformPermission,
+  ): Promise<void> {
+    const result = await client.query<{ role: PlatformAdminRole; permissions: PlatformPermission[] }>(
+      'SELECT role, permissions FROM platform_administrators WHERE user_id = $1 AND revoked_at IS NULL',
+      [userId],
+    );
+    const assignment = result.rows[0];
+    if (!assignment || (assignment.role !== 'owner' && !assignment.permissions.includes(permission))) {
+      throw new ForbiddenException('You do not have permission to manage platform administrators.');
+    }
+  }
+}
