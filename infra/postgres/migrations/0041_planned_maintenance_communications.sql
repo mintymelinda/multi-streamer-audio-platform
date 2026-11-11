@@ -36,8 +36,12 @@ CREATE TABLE platform_notification_recipients (
 );
 REVOKE ALL ON platform_notification_recipients FROM PUBLIC, platform_runtime, platform_worker;
 
+-- Temporary migration-only visibility for the one-time recipient directory backfill.
+CREATE POLICY platform_users_migration_recipient_backfill
+  ON platform_users FOR SELECT TO platform_migrator USING (true);
 INSERT INTO platform_notification_recipients (user_id, active)
 SELECT id, status = 'active' FROM platform_users;
+DROP POLICY platform_users_migration_recipient_backfill ON platform_users;
 
 CREATE FUNCTION sync_platform_notification_recipient()
 RETURNS trigger
