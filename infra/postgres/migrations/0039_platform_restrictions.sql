@@ -172,6 +172,7 @@ BEGIN
   END IF;
 
   PERFORM public.require_platform_permission('accounts.read');
+  PERFORM set_config('app.platform_status_reason', btrim(action_reason), true);
 
   SELECT users.status
     INTO previous_status
@@ -199,7 +200,6 @@ BEGIN
       USING ERRCODE = '23514';
   END IF;
 
-  PERFORM set_config('app.platform_status_reason', btrim(action_reason), true);
   UPDATE public.platform_users
      SET status = desired_status,
          suspended_at = CASE WHEN desired_status = 'suspended' THEN now() ELSE NULL END,
@@ -240,6 +240,7 @@ BEGIN
   END IF;
 
   PERFORM public.require_platform_permission('workspaces.read');
+  PERFORM set_config('app.platform_status_reason', btrim(action_reason), true);
 
   SELECT workspace.status
     INTO previous_status
@@ -257,7 +258,6 @@ BEGIN
       USING ERRCODE = '23514';
   END IF;
 
-  PERFORM set_config('app.platform_status_reason', btrim(action_reason), true);
   UPDATE public.workspaces
      SET status = desired_status,
          restriction_reason = CASE WHEN desired_status = 'active' THEN NULL ELSE btrim(action_reason) END,
