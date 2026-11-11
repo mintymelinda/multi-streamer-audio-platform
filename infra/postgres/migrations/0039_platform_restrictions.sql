@@ -171,6 +171,8 @@ BEGIN
       USING ERRCODE = '22023';
   END IF;
 
+  PERFORM public.require_platform_permission('accounts.read');
+
   SELECT users.status
     INTO previous_status
     FROM public.platform_users users
@@ -236,6 +238,8 @@ BEGIN
     RAISE EXCEPTION 'target workspace, status, and reason are required'
       USING ERRCODE = '22023';
   END IF;
+
+  PERFORM public.require_platform_permission('workspaces.read');
 
   SELECT workspace.status
     INTO previous_status
