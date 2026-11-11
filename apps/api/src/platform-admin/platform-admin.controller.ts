@@ -6,6 +6,7 @@ import {
   Inject,
   Post,
   Param,
+  Patch,
   Query,
   Req,
   UnauthorizedException,
