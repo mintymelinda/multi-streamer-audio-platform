@@ -202,7 +202,7 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
               {type === "custom-text" && <div className="overlay-custom-text">{text}</div>}
               {type === "custom-image" && (imageUrl
                 ? <img className="overlay-custom-image" src={imageUrl} alt={text || "Custom scene image"} />
-                : <div className="overlay-image-placeholder">Add an image URL in the editor</div>)}
+                : <div className="overlay-image-placeholder">Choose an image asset in the editor</div>)}
               {type === "background" && <div className="overlay-background-label">{text}</div>}
               {type === "decoration" && <div className="overlay-decoration" aria-hidden="true" />}
             </section>;
