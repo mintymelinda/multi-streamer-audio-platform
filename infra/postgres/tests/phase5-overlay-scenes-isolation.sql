@@ -30,8 +30,9 @@ BEGIN
 
   PERFORM set_config('app.user_id', user_a::text, true);
   PERFORM set_config('app.workspace_id', workspace_a::text, true);
-  INSERT INTO overlay_scenes (id, workspace_id, name, access_token_hash, created_by_user_id)
-  VALUES (scene_a, workspace_a, 'Now Playing', repeat('a', 64), user_a);
+  INSERT INTO overlay_scenes (id, workspace_id, name, is_starter, access_token_hash, created_by_user_id)
+  VALUES (scene_a, workspace_a, 'Now Playing', true, repeat('a', 64), user_a);
+  UPDATE workspaces SET overlay_starter_provisioned_at = now() WHERE id = workspace_a;
   IF (SELECT count(*) FROM overlay_scenes WHERE id = scene_a) <> 1 THEN
     RAISE EXCEPTION 'workspace owner cannot read their scene';
   END IF;
@@ -74,6 +75,9 @@ BEGIN
   END IF;
   IF (SELECT count(*) FROM get_active_overlay_scene_ids(workspace_a)) <> 0 THEN
     RAISE EXCEPTION 'deleted scene remains in active scene lookup';
+  END IF;
+  IF (SELECT overlay_starter_provisioned_at FROM workspaces WHERE id = workspace_a) IS NULL THEN
+    RAISE EXCEPTION 'deleting the starter scene cleared its one-time provisioning marker';
   END IF;
   INSERT INTO overlay_scenes (id, workspace_id, name, access_token_hash, created_by_user_id)
   VALUES (scene_a, workspace_a, 'Replacement', repeat('c', 64), user_a);
