@@ -45,7 +45,7 @@ export class ObjectStorageService {
     this.config = { endpoint: parsed.origin, bucket, accessKey, secretKey, region: process.env.OBJECT_STORAGE_REGION ?? 'us-east-1' };
   }
 
-  presign(method: 'PUT' | 'GET' | 'HEAD', key: string, contentType?: string, expiresSeconds = 600): string {
+  presign(method: 'PUT' | 'GET' | 'HEAD' | 'DELETE', key: string, contentType?: string, expiresSeconds = 600): string {
     const now = new Date();
     const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, '');
     const date = amzDate.slice(0, 8);
@@ -74,7 +74,7 @@ export class ObjectStorageService {
   }
 
   async delete(key: string): Promise<void> {
-    const response = await fetch(this.presign('GET', key, undefined, 60), { method: 'DELETE' });
+    const response = await fetch(this.presign('DELETE', key, undefined, 60), { method: 'DELETE' });
     if (!response.ok && response.status !== 404) throw new Error(`Object storage delete failed (${response.status}).`);
   }
 }
