@@ -99,12 +99,12 @@ RESET ROLE;
 
 DO $$
 DECLARE
-  workspace_id uuid := current_setting('test.support_workspace_id')::uuid;
+  target_workspace_id uuid := current_setting('test.support_workspace_id')::uuid;
   audit_count integer;
 BEGIN
   SELECT count(*) INTO audit_count
-    FROM workspace_support_access_audit
-   WHERE workspace_id = workspace_id
+    FROM workspace_support_access_audit audit
+   WHERE audit.workspace_id = target_workspace_id
      AND action IN ('support_access.granted', 'support_access.content_read', 'support_access.revoked');
   IF audit_count <> 3 THEN
     RAISE EXCEPTION 'support access grant, content read, and revocation were not all audited';
