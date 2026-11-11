@@ -90,7 +90,7 @@ BEGIN
   PERFORM set_platform_workspace_status(workspace_id, 'restricted', 'Policy investigation');
   SELECT count(*) INTO workspace_count
     FROM list_platform_workspaces(workspace_id::text)
-   WHERE workspace_id = set_platform_workspace_status.workspace_id
+   WHERE workspace_id = current_setting('test.restrictions_workspace_id')::uuid
      AND status = 'restricted'
      AND restriction_reason = 'Policy investigation';
   IF workspace_count <> 1 THEN
