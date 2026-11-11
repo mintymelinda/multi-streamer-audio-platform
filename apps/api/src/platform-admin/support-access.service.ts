@@ -3,7 +3,6 @@ import {
   Inject,
   Injectable,
 } from '@nestjs/common';
-import type { VerifiedWorkspaceId } from '@platform/contracts';
 import { DatabaseService } from '../database/database.service.js';
 
 export const SUPPORT_ACCESS_SCOPES = [
@@ -81,8 +80,9 @@ export class SupportAccessService {
     });
   }
 
-  async listForWorkspace(userId: string, workspaceId: VerifiedWorkspaceId) {
-    return this.database.transaction({ userId, verifiedWorkspaceId: workspaceId }, async (client) => {
+  async listForWorkspace(userId: string, workspaceId: string) {
+    if (!validUuid(workspaceId)) throw new BadRequestException('A valid workspace ID is required.');
+    return this.database.transaction({ userId }, async (client) => {
       const result = await client.query(
         'SELECT * FROM list_workspace_support_access($1)',
         [workspaceId],
