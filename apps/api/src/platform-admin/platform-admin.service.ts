@@ -38,8 +38,7 @@ export class PlatformAdminService {
   async access(userId: string) {
     const result = await this.database.transaction({ userId }, (client) =>
       client.query<{ role: PlatformAdminRole; permissions: PlatformPermission[] }>(
-        "SELECT role, permissions FROM platform_administrators WHERE user_id = $1 AND revoked_at IS NULL",
-        [userId],
+        "SELECT role, permissions FROM get_current_platform_administrator()",
       ),
     );
     const assignment = result.rows[0];
@@ -52,14 +51,8 @@ export class PlatformAdminService {
 
   async listAdministrators(userId: string): Promise<PlatformAdminAssignment[]> {
     return this.database.transaction({ userId }, async (client) => {
-      await this.requirePermission(client, userId, 'administrators.read');
       const result = await client.query<PlatformAdminAssignment>(
-        `SELECT administrators.user_id, users.twitch_user_id, administrators.role,
-                administrators.permissions, administrators.appointed_at, administrators.revoked_at
-           FROM platform_administrators administrators
-           JOIN platform_users users ON users.id = administrators.user_id
-          ORDER BY (administrators.revoked_at IS NULL) DESC,
-                   administrators.role ASC, administrators.appointed_at ASC`,
+        'SELECT * FROM list_platform_administrators()',
       );
       return result.rows;
     });
@@ -108,18 +101,4 @@ export class PlatformAdminService {
     });
   }
 
-  private async requirePermission(
-    client: import('pg').PoolClient,
-    userId: string,
-    permission: PlatformPermission,
-  ): Promise<void> {
-    const result = await client.query<{ role: PlatformAdminRole; permissions: PlatformPermission[] }>(
-      'SELECT role, permissions FROM platform_administrators WHERE user_id = $1 AND revoked_at IS NULL',
-      [userId],
-    );
-    const assignment = result.rows[0];
-    if (!assignment || (assignment.role !== 'owner' && !assignment.permissions.includes(permission))) {
-      throw new ForbiddenException('You do not have permission to manage platform administrators.');
-    }
-  }
 }
