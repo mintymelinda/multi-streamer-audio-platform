@@ -2,11 +2,13 @@ import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../database/database.module.js';
 import { DatabaseService } from '../database/database.service.js';
 import { ProviderHealthService, ProviderInstanceService } from './provider-instance.service.js';
+import { InvidiousResolverService } from './invidious-resolver.service.js';
 
 @Module({
   imports: [DatabaseModule],
   providers: [
     ProviderHealthService,
+    InvidiousResolverService,
     {
       provide: ProviderInstanceService,
       inject: [DatabaseService],
@@ -71,6 +73,6 @@ import { ProviderHealthService, ProviderInstanceService } from './provider-insta
         }),
     },
   ],
-  exports: [ProviderInstanceService, ProviderHealthService],
+  exports: [ProviderInstanceService, ProviderHealthService, InvidiousResolverService],
 })
 export class ProviderInstanceModule {}
