@@ -3,6 +3,10 @@
 -- are cleared when the referenced account is deleted.
 BEGIN;
 
+-- The local role bootstrap grants broad default DML to future tables. Remove
+-- the inherited DELETE grant from this protected identity table explicitly.
+REVOKE DELETE ON public.platform_users FROM platform_runtime;
+
 ALTER TABLE provider_output_assignments
   ALTER COLUMN assigned_by DROP NOT NULL;
 ALTER TABLE provider_output_assignments
