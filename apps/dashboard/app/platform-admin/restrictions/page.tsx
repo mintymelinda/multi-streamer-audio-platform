@@ -94,7 +94,7 @@ export default function PlatformRestrictionsPage() {
 
   async function changeStatus(kind: "account" | "workspace", id: string, status: string, label: string) {
     if (!window.confirm(`${label} this ${kind}? This does not delete the account, workspace, or its data.`)) return;
-    const reason = window.prompt(`Reason for ${label.toLowerCase()}ing this ${kind}`);
+    const reason = window.prompt(`Reason for this ${kind} status change`);
     if (!reason?.trim()) return;
     setBusy(true);
     setError("");
