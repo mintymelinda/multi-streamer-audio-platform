@@ -59,7 +59,7 @@ AS $$
      WHERE singleton
        AND current_setting('app.deletion_ledger_replay', true) = replay_token::text
   );
-$;
+$$;
 ALTER FUNCTION platform_deletion_ledger_replay_active() OWNER TO platform_migrator;
 REVOKE ALL ON FUNCTION platform_deletion_ledger_replay_active() FROM PUBLIC, platform_runtime, platform_worker;
 
@@ -442,13 +442,13 @@ CREATE POLICY deletion_ledger_replay_context ON workspace_invitations
 
 -- The baseline spans global identity/workspace tables as well as forced-RLS
 -- workspace tables. Use the same transaction-local policy gate as recovery replay.
-DO $
+DO $$
 DECLARE replay_token_value text;
 BEGIN
   SELECT replay_token::text INTO replay_token_value
     FROM platform_deletion_ledger_control WHERE singleton;
   PERFORM set_config('app.deletion_ledger_replay', replay_token_value, true);
-END $;
+END $$;
 
 -- Seed the journal with the current access/revocation state. This gives a
 -- restore from a pre-0050 snapshot a stable baseline before later events replay.
