@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, Get, Inject, Param, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, UnauthorizedException, Body, Controller, Delete, Get, Inject, Param, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
 import type { AuthenticatedUser, HttpRequest, WorkspaceRequestContext } from '../identity/http.types.js';
 import { CsrfGuard } from '../identity/csrf.guard.js';
 import { SessionGuard } from '../identity/session.guard.js';
@@ -7,7 +7,7 @@ import { RequireWorkspacePermission, WorkspacePermissionGuard } from '../workspa
 import { AssetsService } from './assets.service.js';
 
 function identity(request: HttpRequest): { user: AuthenticatedUser; workspace: WorkspaceRequestContext } {
-  if (!request.user || !request.workspace) throw new BadRequestException('Authenticated workspace access is required.');
+  if (!request.user || !request.workspace) throw new UnauthorizedException('Authenticated workspace access is required.');
   return { user: request.user, workspace: request.workspace };
 }
 
