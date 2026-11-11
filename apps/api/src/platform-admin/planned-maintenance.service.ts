@@ -43,7 +43,7 @@ export class PlannedMaintenanceService {
     if (summary.length < 10 || summary.length > 2000) throw new BadRequestException('Summary must be between 10 and 2,000 characters.');
     if (expectedImpact.length < 5 || expectedImpact.length > 1000) throw new BadRequestException('Expected impact must be between 5 and 1,000 characters.');
     if (!Array.isArray(input.affectedServices) || input.affectedServices.length < 1 || input.affectedServices.length > SERVICES.length ||
-        input.affectedServices.some((value) => typeof value !== 'string' || !SERVICES.includes(value)) ||
+        input.affectedServices.some((value) => typeof value !== 'string' || !(SERVICES as readonly string[]).includes(value)) ||
         new Set(input.affectedServices).size !== input.affectedServices.length) {
       throw new BadRequestException('Select one or more valid affected services.');
     }
