@@ -33,7 +33,7 @@ for (const file of await walk(root)) {
       || record.version !== 1
       || !['account', 'workspace', 'credential'].includes(record.entityType)
       || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(record.entityId)
-      || (record.entityType === 'credential' && (!/^[0-9a-f-]{36}$/i.test(record.workspaceId) || !/^[0-9a-f-]{36}$/i.test(record.providerInstanceId)))
+      || (record.entityType === 'credential' && (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(record.workspaceId) || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(record.providerInstanceId)))
       || typeof record.deletedAt !== 'string'
       || Number.isNaN(Date.parse(record.deletedAt))) {
     throw new Error(`Invalid deletion tombstone: ${relative(root, file)}`);
@@ -77,7 +77,7 @@ try {
       throw error;
     }
   }
-  console.log(`Replayed ${records.length} deletion tombstone(s) (workspaces first, then accounts).`);
+  console.log(`Replayed ${records.length} deletion tombstone(s) (workspaces, credentials, then accounts).`);
 } finally {
   await pool.end();
 }
