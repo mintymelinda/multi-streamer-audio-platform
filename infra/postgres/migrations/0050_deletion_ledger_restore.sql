@@ -5,6 +5,11 @@ BEGIN;
 -- Recovery runs as platform_migrator after restoring a database snapshot. These
 -- narrowly-scoped policies allow the replay function to remove the two root
 -- entity types; child records are removed by their existing FK cascades.
+CREATE POLICY deletion_ledger_restore_workspace_select
+  ON public.workspaces
+  FOR SELECT TO platform_migrator
+  USING (true);
+
 CREATE POLICY deletion_ledger_restore_migrator
   ON public.workspaces
   FOR DELETE TO platform_migrator
@@ -48,6 +53,7 @@ BEGIN
   -- Workspace tombstones are replayed before account tombstones. Remove any
   -- platform-admin assignment restored from a snapshot before invoking the
   -- same account-deletion function used by the live authenticated endpoint.
+  PERFORM set_config('app.user_id', p_entity_id::text, true);
   PERFORM 1 FROM public.platform_users WHERE id = p_entity_id FOR UPDATE;
   IF NOT FOUND THEN
     RETURN;
