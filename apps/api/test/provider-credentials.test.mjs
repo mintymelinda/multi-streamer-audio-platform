@@ -5,6 +5,7 @@ import { ProviderCredentialsService } from '../dist/providers/provider-credentia
 function createService() {
   const state = new Map();
   const audit = [];
+  const ledgerWrites = [];
   const db = {
     transaction: async (_context, operation) =>
       operation({
@@ -25,7 +26,7 @@ function createService() {
           }
           if (sql.includes('DELETE FROM provider_credentials')) {
             state.delete(values[0]);
-            return { rows: [], rowCount: 1 };
+            return { rows: [{ id: values[0] }], rowCount: 1 };
           }
           return { rows: [], rowCount: 1 };
         },
@@ -39,8 +40,10 @@ function createService() {
     },
     { revoke: async () => ({ revoked: true }) },
     { append: async (_client, event) => audit.push(event) },
+    undefined,
+    { appendCredential: async (...args) => ledgerWrites.push(args) },
   );
-  return { service, state, audit };
+  return { service, state, audit, ledgerWrites };
 }
 
 test('persists encrypted credentials and never returns plaintext to callers', async () => {
@@ -75,7 +78,7 @@ test('rejects broader-than-requested scopes and credentials for a different work
 });
 
 test('disconnect revokes provider authorization and removes credentials but preserves preferences', async () => {
-  const { service, state, audit } = createService();
+  const { service, state, audit, ledgerWrites } = createService();
   const connected = await service.connect({
     workspaceId: 'workspace-a',
     providerInstanceId: 'spotify-a',
@@ -92,6 +95,7 @@ test('disconnect revokes provider authorization and removes credentials but pres
   });
 
   assert.equal(state.has(connected.credentialId), false);
+  assert.deepEqual(ledgerWrites, [[connected.credentialId, 'workspace-a', 'spotify-a']]);
   assert.equal(
     audit.some((event) => event.eventType === 'provider.disconnected'),
     true,
