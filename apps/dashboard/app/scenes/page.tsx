@@ -608,7 +608,7 @@ export default function ScenesPage() {
               <button type="button" className="secondary-button" aria-label={`Move ${scene.name} down`} disabled={busy || index === scenes.length - 1} onClick={() => void moveScene(scene, 1)}>Move down</button>
               <button type="button" className="secondary-button" disabled={busy} onClick={() => void rotateToken(scene)}>Issue new token</button>
               {scene.has_active_access && <button type="button" className="text-button danger-text" disabled={busy} onClick={() => void revokeToken(scene)}>Revoke access</button>}
-              <button type="button" className="text-button danger-text" disabled={busy} onClick={() => void deleteScene(scene)}>Delete scene</button>}
+              <button type="button" className="text-button danger-text" disabled={busy} onClick={() => void deleteScene(scene)}>Delete scene</button>
             </div>}
           </article>;
         })}</div> : <div className="quiet-empty"><span>♫</span><p>No scenes have been created for this workspace.</p><small>Create a scene to issue its first OBS access URL.</small></div>}
