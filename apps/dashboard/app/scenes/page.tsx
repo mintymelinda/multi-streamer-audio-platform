@@ -505,7 +505,7 @@ export default function ScenesPage() {
                 </label>}
                 <div className="component-number-grid">
                   {(["x", "y", "width", "height"] as const).map((key) => <label key={key}>{key.toUpperCase()} ({canvasMode === "fixed" ? "px" : "%"})
-                    <input type="number" min={key === "width" || key === "height" ? 1 : 0} max={canvasMode === "fixed" ? (key === "x" || key === "width" ? canvasWidth : canvasHeight) : 100} value={previewPercent(element[key], key === "width" ? 42 : key === "height" ? 18 : 5, 0, key === "x" || key === "width" ? (canvasMode === "fixed" ? canvasWidth : 100) : (canvasMode === "fixed" ? canvasHeight : 100))} onChange={(event) => {
+                    <input type="number" min={key === "width" || key === "height" ? 1 : 0} max={canvasMode === "fixed" ? (key === "x" || key === "width" ? canvasWidth : canvasHeight) : 100} disabled={element.locked === true} value={previewPercent(element[key], key === "width" ? 42 : key === "height" ? 18 : 5, 0, key === "x" || key === "width" ? (canvasMode === "fixed" ? canvasWidth : 100) : (canvasMode === "fixed" ? canvasHeight : 100))} onChange={(event) => {
                       const value = Number(event.target.value);
                       const maxWidth = canvasMode === "fixed" ? canvasWidth : 100;
                       const maxHeight = canvasMode === "fixed" ? canvasHeight : 100;
