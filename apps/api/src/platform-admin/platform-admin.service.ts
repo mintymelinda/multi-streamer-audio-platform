@@ -73,14 +73,15 @@ export class PlatformAdminService {
     ) {
       throw new BadRequestException('One or more platform permissions are invalid.');
     }
-    if (typeof input.reason !== 'string' || input.reason.trim().length < 1 || input.reason.trim().length > 1000) {
+    const reason = typeof input.reason === 'string' ? input.reason.trim() : '';
+    if (reason.length < 1 || reason.length > 1000) {
       throw new BadRequestException('A reason between 1 and 1,000 characters is required.');
     }
 
     await this.database.transaction({ userId: actorUserId }, async (client) => {
       await client.query(
         'SELECT appoint_platform_administrator($1, $2::platform_administrator_role, $3::text[], $4)',
-        [input.twitchUserId, input.role, input.permissions, input.reason.trim()],
+        [input.twitchUserId, input.role, input.permissions, reason],
       );
     });
   }
