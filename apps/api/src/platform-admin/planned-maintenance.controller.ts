@@ -25,7 +25,10 @@ export class PlannedMaintenanceController {
     if (typeof body !== 'object' || body === null || Array.isArray(body)) {
       throw new BadRequestException('Maintenance details must be an object.');
     }
-    return this.maintenance.save(this.userId(request), body);
+    return this.maintenance.save(this.userId(request), body as {
+      id?: unknown; title?: unknown; summary?: unknown; expectedImpact?: unknown;
+      affectedServices?: unknown; startsAt?: unknown; endsAt?: unknown;
+    });
   }
 
   @Delete(':maintenanceId')
