@@ -17,7 +17,6 @@ test('deletion ledger writes one immutable workspace tombstone', async () => {
   const calls = [];
   const service = new DeletionLedgerService(async (url, init) => {
     calls.push({ url: String(url), init });
-    if (init.method === 'HEAD') return new Response(null, { status: 404 });
     return new Response(null, { status: 200 });
   });
 
