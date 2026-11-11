@@ -36,7 +36,31 @@ CREATE TABLE platform_deletion_ledger (
   identity_key text,
   metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
   occurred_at timestamptz NOT NULL DEFAULT clock_timestamp()
+); 
+
+CREATE TABLE platform_deletion_ledger_control (
+  singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
+  replay_token uuid NOT NULL DEFAULT gen_random_uuid()
 );
+INSERT INTO platform_deletion_ledger_control DEFAULT VALUES;
+REVOKE ALL ON TABLE platform_deletion_ledger_control FROM PUBLIC, platform_runtime, platform_worker;
+
+CREATE FUNCTION platform_deletion_ledger_replay_active()
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+      FROM public.platform_deletion_ledger_control
+     WHERE singleton
+       AND current_setting('app.deletion_ledger_replay', true) = replay_token::text
+  );
+$$;
+REVOKE ALL ON FUNCTION platform_deletion_ledger_replay_active() FROM PUBLIC, platform_runtime, platform_worker;
+
 ALTER TABLE platform_deletion_ledger OWNER TO platform_migrator;
 REVOKE ALL ON platform_deletion_ledger FROM PUBLIC, platform_runtime, platform_worker;
 REVOKE ALL ON SEQUENCE platform_deletion_ledger_entry_id_seq FROM PUBLIC, platform_runtime, platform_worker;
@@ -71,7 +95,7 @@ DECLARE
   identity_key_value text;
   metadata_value jsonb := '{}'::jsonb;
 BEGIN
-  IF current_setting('app.deletion_ledger_replay', true) = 'on' THEN
+  IF public.platform_deletion_ledger_replay_active() THEN
     IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
     RETURN NEW;
   END IF;
@@ -340,7 +364,7 @@ SECURITY DEFINER
 SET search_path = pg_catalog, public
 AS $$
 BEGIN
-  IF current_setting('app.deletion_ledger_replay', true) = 'on' THEN
+  IF public.platform_deletion_ledger_replay_active() THEN
     RETURN NEW;
   END IF;
 
@@ -389,34 +413,34 @@ CREATE TRIGGER provider_credentials_deletion_tombstone
 -- The replay role gets narrowly-scoped policies that are usable only inside
 -- the SECURITY DEFINER replay function while its transaction-local guard is set.
 CREATE POLICY deletion_ledger_replay_context ON platform_users
-  TO platform_migrator USING (current_setting('app.deletion_ledger_replay', true) = 'on')
-  WITH CHECK (current_setting('app.deletion_ledger_replay', true) = 'on');
+  TO platform_migrator USING (public.platform_deletion_ledger_replay_active())
+  WITH CHECK (public.platform_deletion_ledger_replay_active());
 CREATE POLICY deletion_ledger_replay_context ON user_sessions
-  TO platform_migrator USING (current_setting('app.deletion_ledger_replay', true) = 'on')
-  WITH CHECK (current_setting('app.deletion_ledger_replay', true) = 'on');
+  TO platform_migrator USING (public.platform_deletion_ledger_replay_active())
+  WITH CHECK (public.platform_deletion_ledger_replay_active());
 CREATE POLICY deletion_ledger_replay_context ON workspaces
-  TO platform_migrator USING (current_setting('app.deletion_ledger_replay', true) = 'on')
-  WITH CHECK (current_setting('app.deletion_ledger_replay', true) = 'on');
+  TO platform_migrator USING (public.platform_deletion_ledger_replay_active())
+  WITH CHECK (public.platform_deletion_ledger_replay_active());
 CREATE POLICY deletion_ledger_replay_context ON workspace_memberships
-  TO platform_migrator USING (current_setting('app.deletion_ledger_replay', true) = 'on')
-  WITH CHECK (current_setting('app.deletion_ledger_replay', true) = 'on');
+  TO platform_migrator USING (public.platform_deletion_ledger_replay_active())
+  WITH CHECK (public.platform_deletion_ledger_replay_active());
 CREATE POLICY deletion_ledger_replay_context ON provider_credentials
-  TO platform_migrator USING (current_setting('app.deletion_ledger_replay', true) = 'on')
-  WITH CHECK (current_setting('app.deletion_ledger_replay', true) = 'on');
+  TO platform_migrator USING (public.platform_deletion_ledger_replay_active())
+  WITH CHECK (public.platform_deletion_ledger_replay_active());
 CREATE POLICY deletion_ledger_replay_context ON workspace_integrations
-  TO platform_migrator USING (current_setting('app.deletion_ledger_replay', true) = 'on')
-  WITH CHECK (current_setting('app.deletion_ledger_replay', true) = 'on');
+  TO platform_migrator USING (public.platform_deletion_ledger_replay_active())
+  WITH CHECK (public.platform_deletion_ledger_replay_active());
 CREATE POLICY deletion_ledger_replay_context ON workspace_support_access
-  TO platform_migrator USING (current_setting('app.deletion_ledger_replay', true) = 'on')
-  WITH CHECK (current_setting('app.deletion_ledger_replay', true) = 'on');
+  TO platform_migrator USING (public.platform_deletion_ledger_replay_active())
+  WITH CHECK (public.platform_deletion_ledger_replay_active());
 CREATE POLICY deletion_ledger_replay_context ON workspace_invitations
-  TO platform_migrator USING (current_setting('app.deletion_ledger_replay', true) = 'on')
-  WITH CHECK (current_setting('app.deletion_ledger_replay', true) = 'on');
+  TO platform_migrator USING (public.platform_deletion_ledger_replay_active())
+  WITH CHECK (public.platform_deletion_ledger_replay_active());
 
 
 -- The baseline spans global identity/workspace tables as well as forced-RLS
 -- workspace tables. Use the same transaction-local policy gate as recovery replay.
-SELECT set_config('app.deletion_ledger_replay', 'on', true);
+SELECT set_config('app.deletion_ledger_replay', (SELECT replay_token::text FROM platform_deletion_ledger_control WHERE singleton), true);
 
 -- Seed the journal with the current access/revocation state. This gives a
 -- restore from a pre-0050 snapshot a stable baseline before later events replay.
@@ -561,6 +585,7 @@ DECLARE
   replayed_count integer := 0;
   event_row record;
   previous_replay_setting text := current_setting('app.deletion_ledger_replay', true);
+  replay_token_value text;
 BEGIN
   IF p_document IS NULL
      OR p_document->>'format' <> 'multi-streamer-audio-platform.deletion-ledger'
@@ -577,7 +602,9 @@ BEGIN
       USING ERRCODE = '22023';
   END IF;
 
-  PERFORM set_config('app.deletion_ledger_replay', 'on', true);
+  SELECT replay_token::text INTO replay_token_value
+    FROM public.platform_deletion_ledger_control WHERE singleton;
+  PERFORM set_config('app.deletion_ledger_replay', replay_token_value, true);
 
   INSERT INTO public.platform_deletion_ledger (
     event_id, event_type, subject_id, affected_workspace_id, user_id,
@@ -877,7 +904,7 @@ DECLARE
   actor_id uuid := nullif(current_setting('app.user_id', true), '')::uuid;
   action_reason text := nullif(btrim(current_setting('app.platform_status_reason', true)), '');
 BEGIN
-  IF current_setting('app.deletion_ledger_replay', true) = 'on' THEN
+  IF public.platform_deletion_ledger_replay_active() THEN
     RETURN NEW;
   END IF;
 
@@ -921,7 +948,7 @@ DECLARE
   actor_id uuid := nullif(current_setting('app.user_id', true), '')::uuid;
   action_reason text := nullif(btrim(current_setting('app.platform_status_reason', true)), '');
 BEGIN
-  IF current_setting('app.deletion_ledger_replay', true) = 'on' THEN
+  IF public.platform_deletion_ledger_replay_active() THEN
     RETURN NEW;
   END IF;
 

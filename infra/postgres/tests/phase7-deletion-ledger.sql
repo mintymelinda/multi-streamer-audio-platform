@@ -25,7 +25,9 @@ BEGIN
     RAISE EXCEPTION 'runtime must not directly access the global deletion ledger';
   END IF;
   IF has_function_privilege('platform_runtime','export_platform_deletion_ledger()','EXECUTE')
-     OR has_function_privilege('platform_runtime','replay_platform_deletion_ledger(jsonb)','EXECUTE') THEN
+     OR has_function_privilege('platform_runtime','replay_platform_deletion_ledger(jsonb)','EXECUTE')
+     OR has_function_privilege('platform_runtime','platform_deletion_ledger_replay_active()','EXECUTE')
+     OR has_table_privilege('platform_runtime','platform_deletion_ledger_control','SELECT') THEN
     RAISE EXCEPTION 'runtime must not export or replay the global deletion ledger';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='workspaces_deletion_ledger')
@@ -151,7 +153,7 @@ DELETE FROM platform_users WHERE id='73000000-0000-4000-8000-000000000001';
 
 -- Simulate restoring a database snapshot taken before those operations. The
 -- replay guard permits only this recovery simulation to reintroduce stale rows.
-SELECT set_config('app.deletion_ledger_replay','on',true);
+SELECT set_config('app.deletion_ledger_replay',(SELECT replay_token::text FROM platform_deletion_ledger_control WHERE singleton),true);
 INSERT INTO platform_users (id, twitch_user_id)
 VALUES ('73000000-0000-4000-8000-000000000001', '730001');
 INSERT INTO platform_users (id, twitch_user_id)
@@ -302,6 +304,35 @@ BEGIN
     RAISE EXCEPTION 'expected deletion and revocation events were not persisted';
   END IF;
 END $$;
+
+-- A runtime caller can set the custom GUC but cannot forge the private
+-- token or bypass the credential tombstone guard.
+SET LOCAL ROLE platform_runtime;
+SELECT set_config('app.user_id','73000000-0000-4000-8000-000000000002',true);
+SELECT set_config('app.workspace_id','74000000-0000-4000-8000-000000000002',true);
+SELECT set_config('app.deletion_ledger_replay','on',true);
+DO $
+BEGIN
+  BEGIN
+    INSERT INTO provider_credentials (
+      id, workspace_id, provider_instance_id, ciphertext, nonce, auth_tag,
+      wrapped_dek, dek_nonce, dek_auth_tag, kek_version, format_version
+    ) VALUES (
+      '77000000-0000-4000-8000-000000000001',
+      '74000000-0000-4000-8000-000000000002',
+      '76000000-0000-4000-8000-000000000001',
+      'spoofed-replay', 'nonce', 'auth-tag', 'wrapped', 'dek-nonce', 'dek-auth-tag',
+      'test-key-v1', 1
+    );
+    RAISE EXCEPTION 'runtime replay GUC bypassed a credential tombstone';
+  EXCEPTION WHEN unique_violation THEN
+    NULL;
+  END;
+END $;
+RESET ROLE;
+SELECT set_config('app.user_id','',true);
+SELECT set_config('app.workspace_id','',true);
+SELECT set_config('app.deletion_ledger_replay','',true);
 
 -- Once the external ledger has been replayed, normal writes cannot recreate
 -- permanent user, workspace, or credential identities from stale data.
