@@ -90,10 +90,10 @@ services:
     image: minio/mc:RELEASE.2025-08-13T08-35-41Z
     depends_on:
       object-storage:
-        condition: service_healthy
+        condition: service_started
     entrypoint: ["/bin/sh", "-lc"]
     command: >-
-      mc alias set local http://object-storage:9000 "${MINIO_ROOT_USER}" "${MINIO_ROOT_PASSWORD}" &&
+      until mc alias set local http://object-storage:9000 "${MINIO_ROOT_USER}" "${MINIO_ROOT_PASSWORD}" &&
       mc mb --ignore-existing local/platform-assets &&
       printf '%s' '{"CORSRules":[{"AllowedOrigins":["*"],"AllowedMethods":["PUT","GET","HEAD"],"AllowedHeaders":["*"],"ExposeHeaders":["ETag","Content-Length","Content-Type"],"MaxAgeSeconds":3600}]}' > /tmp/assets-cors.json &&
       mc cors set local/platform-assets /tmp/assets-cors.json &&
