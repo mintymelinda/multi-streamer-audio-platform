@@ -99,7 +99,7 @@ export default function WorkspaceSupportAccessPage() {
           {grants.length === 0 ? <div className="quiet-empty"><p>No support access has been granted to this workspace.</p></div> : (
             <div className="table-wrap">
               <table>
-                <thead><tr><th>Support account</th><th>Reason</th><th>Scopes</th><th>Expires</th><th>Status</th></tr></thead>
+                <thead><tr><th>Support account</th><th>Reason</th><th>Scopes</th><th>Expires</th><th>Status</th><th /></tr></thead>
                 <tbody>{grants.map((grant) => (
                   <tr key={grant.id}>
                     <td>{grant.support_twitch_user_id}</td>
@@ -107,17 +107,17 @@ export default function WorkspaceSupportAccessPage() {
                     <td>{grant.scopes.join(", ")}</td>
                     <td>{new Date(grant.expires_at).toLocaleString()}</td>
                     <td>{grant.active ? <strong>Active</strong> : grant.revoked_at ? "Revoked" : "Expired"}</td>
+                    <td>{grant.active && <button className="text-button" disabled={Boolean(busyId) || !reason.trim()} onClick={() => void revoke(grant)}>{busyId === grant.id ? "Revoking…" : "Revoke"}</button>}</td>
                   </tr>
                 ))}</tbody>
               </table>
             </div>
           )}
           {grants.some((grant) => grant.active) && (
-            <form className="settings-form" onSubmit={(event) => { event.preventDefault(); const active = grants.find((grant) => grant.active); if (active) void revoke(active); }}>
-              <label>Reason for revoking the active support grant<textarea value={reason} onChange={(event) => setReason(event.target.value)} maxLength={1000} rows={2} required /></label>
-              <p className="panel-note">This revokes the earliest active grant shown above. Refresh the page to review other active grants before revoking them.</p>
-              <button className="secondary-button" type="submit" disabled={Boolean(busyId) || !reason.trim()}>{busyId ? "Revoking…" : "Revoke active support access"}</button>
-            </form>
+            <div className="settings-form">
+              <label>Reason for revoking support access<textarea value={reason} onChange={(event) => setReason(event.target.value)} maxLength={1000} rows={2} required /></label>
+              <p className="panel-note">Choose Revoke on the specific active grant. Revocation takes effect immediately.</p>
+            </div>
           )}
         </section>
       )}
