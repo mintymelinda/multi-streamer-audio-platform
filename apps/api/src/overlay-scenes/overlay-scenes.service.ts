@@ -115,7 +115,7 @@ export class OverlayScenesService {
         );
         return { scene, accessToken, overlayPath: `/scene/${sceneId}`, created: true };
       },
-    );
+    ).catch((error: unknown) => this.mapSceneMutationError(error));
   }
 
   async create(workspaceId: VerifiedWorkspaceId, userId: string, nameInput: unknown) {
