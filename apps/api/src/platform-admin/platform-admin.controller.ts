@@ -38,10 +38,10 @@ export class PlatformAdminController {
   @UseGuards(CsrfGuard)
   appoint(@Req() request: HttpRequest, @Body() body: unknown) {
     const input = typeof body === 'object' && body !== null
-      ? body as { userId?: unknown; role?: unknown; permissions?: unknown; reason?: unknown }
+      ? body as { twitchUserId?: unknown; role?: unknown; permissions?: unknown; reason?: unknown }
       : {};
     return this.platformAdmin.appoint(authenticatedUser(request).id, {
-      userId: input.userId,
+      twitchUserId: input.twitchUserId,
       role: input.role,
       permissions: input.permissions,
       reason: input.reason,
