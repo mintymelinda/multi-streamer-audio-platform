@@ -19,7 +19,7 @@ If the ledger is unavailable or unconfigured, permanent deletion fails closed an
 
 The ledger endpoint must be in a separate failure and backup domain from the application database and ordinary asset storage. Replicate it off-host. The bucket must have S3 Object Lock enabled at creation and a default COMPLIANCE retention period covering the platform's maximum backup-retention and recovery horizon. Do not use a bucket that can be recreated from an ordinary NAS/object-storage snapshot.
 
-Provision a dedicated application identity with only the permissions required to HEAD and conditionally PUT objects in this bucket. It must not have DeleteObject, PutObjectRetention, PutObjectLegalHold, bucket-policy, lifecycle, or bucket-delete permissions. Use a separate recovery identity with ListBucket/GetObject read access. Keep the recovery credentials and database migrator credentials outside the restored backup set.
+Provision a dedicated application identity with only PutObject permission for this bucket (the API does not need read or delete access). It must not have DeleteObject, PutObjectRetention, PutObjectLegalHold, bucket-policy, lifecycle, or bucket-delete permissions. Use a separate recovery identity with ListBucket/GetObject read access. Keep the recovery credentials and database migrator credentials outside the restored backup set.
 
 The local Compose stack creates a separate MinIO bucket with Object Lock and a long COMPLIANCE retention period for development. Local root credentials are for development only and are not an acceptable production credential model.
 
