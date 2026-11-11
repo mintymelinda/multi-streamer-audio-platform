@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { createHash, createHmac } from 'node:crypto';
 
 export type DeletionEntityType = 'account' | 'workspace';
@@ -30,8 +30,8 @@ export class DeletionLedgerService {
   private readonly config: LedgerConfig | null;
   private readonly request: typeof fetch;
 
-  constructor(request: typeof fetch = fetch) {
-    this.request = request;
+  constructor(@Optional() @Inject('DELETION_LEDGER_FETCH') request?: typeof fetch) {
+    this.request = request ?? fetch;
     const endpoint = process.env.DELETION_LEDGER_INTERNAL_ENDPOINT
       ?? process.env.DELETION_LEDGER_ENDPOINT;
     const bucket = process.env.DELETION_LEDGER_BUCKET;
@@ -88,6 +88,43 @@ export class DeletionLedgerService {
       if (retry.ok) return;
     }
     throw new Error('Deletion ledger append failed (' + response.status + ').');
+  }
+
+  async appendCredential(credentialId: string, workspaceId: string, providerInstanceId: string): Promise<void> {
+    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!this.config) {
+      throw new Error('Permanent credential revocation is disabled because the independent deletion ledger is not configured.');
+    }
+    if (!uuid.test(credentialId) || !uuid.test(workspaceId) || !uuid.test(providerInstanceId)) {
+      throw new TypeError('Credential tombstones require valid credential, workspace, and provider instance UUIDs.');
+    }
+    const normalizedId = credentialId.toLowerCase();
+    const key = 'v1/credentials/' + normalizedId + '.json';
+    const existing = await this.request(this.presign('HEAD', key), { method: 'HEAD' });
+    if (existing.ok) return;
+    if (existing.status !== 404) {
+      throw new Error('Deletion ledger lookup failed (' + existing.status + ').');
+    }
+    const record = {
+      format: 'multi-streamer-audio-platform.deletion-tombstone',
+      version: 1,
+      entityType: 'credential',
+      entityId: normalizedId,
+      workspaceId: workspaceId.toLowerCase(),
+      providerInstanceId: providerInstanceId.toLowerCase(),
+      deletedAt: new Date().toISOString(),
+    };
+    const response = await this.request(this.presign('PUT', key, true), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'If-None-Match': '*' },
+      body: JSON.stringify(record),
+    });
+    if (response.ok || response.status === 412) return;
+    if (response.status === 409) {
+      const retry = await this.request(this.presign('HEAD', key), { method: 'HEAD' });
+      if (retry.ok) return;
+    }
+    throw new Error('Deletion ledger credential append failed (' + response.status + ').');
   }
 
   private presign(method: 'PUT' | 'HEAD', key: string, conditional = false): string {
