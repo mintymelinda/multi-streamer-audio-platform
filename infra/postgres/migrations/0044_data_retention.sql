@@ -91,6 +91,8 @@ BEGIN
     LEFT JOIN user_notification_preferences p ON p.user_id=n.recipient_user_id
     WHERE n.category NOT IN ('account','security')
       AND n.created_at < now()-make_interval(days => COALESCE(p.retention_days,90))
+      AND NOT EXISTS (SELECT 1 FROM email_outbox pending_email
+        WHERE pending_email.notification_id=n.id AND pending_email.status IN ('pending','sending'))
     ORDER BY n.created_at,n.id LIMIT 5000
   )
   DELETE FROM user_notifications n USING doomed d WHERE n.id=d.id;
