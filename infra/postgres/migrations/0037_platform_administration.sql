@@ -25,6 +25,23 @@ CREATE TABLE platform_administrators (
   ]::text[])
 );
 
+-- Platform administrators with administrator-directory permission may resolve
+-- other account identities for appointments and audit display.
+CREATE POLICY platform_users_platform_admin_directory
+  ON platform_users FOR SELECT
+  USING (
+    EXISTS (
+      SELECT 1 FROM platform_administrators administrators
+       WHERE administrators.user_id = nullif(current_setting('app.user_id', true), '')::uuid
+         AND administrators.revoked_at IS NULL
+         AND (
+           administrators.role = 'owner'
+           OR 'administrators.read' = ANY(administrators.permissions)
+           OR 'administrators.manage' = ANY(administrators.permissions)
+         )
+    )
+  );
+
 CREATE INDEX platform_administrators_active_role
   ON platform_administrators (role, user_id)
   WHERE revoked_at IS NULL;
