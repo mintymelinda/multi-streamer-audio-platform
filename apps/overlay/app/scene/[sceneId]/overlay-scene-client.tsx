@@ -183,7 +183,8 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
               typeof value === "number" && Number.isFinite(value) ? Math.min(maximum, Math.max(0, value)) : fallback;
             const type = typeof element.type === "string" ? element.type : "custom-text";
             const text = typeof element.text === "string" ? element.text : "";
-            const imageUrl = typeof element.src === "string" && /^https?:\/\//i.test(element.src) ? element.src : null;
+            const candidateImageUrl = typeof element.assetUrl === "string" ? element.assetUrl : element.src;
+            const imageUrl = typeof candidateImageUrl === "string" && /^https?:\/\//i.test(candidateImageUrl) ? candidateImageUrl : null;
             return <section
               className={`overlay-component overlay-component--${type}`}
               key={typeof element.id === "string" ? element.id : index}
