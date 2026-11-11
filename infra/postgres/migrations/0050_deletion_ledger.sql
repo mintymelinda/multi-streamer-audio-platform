@@ -219,24 +219,31 @@ BEGIN
     RETURN NEW;
   END IF;
 
-  IF TG_TABLE_NAME = 'platform_users' AND EXISTS (
-    SELECT 1 FROM public.platform_deletion_ledger
-     WHERE event_type = 'user.deleted' AND identity_key = NEW.twitch_user_id
-  ) THEN
-    RAISE EXCEPTION 'this Twitch identity has a permanent deletion tombstone'
-      USING ERRCODE = '23505';
-  ELSIF TG_TABLE_NAME = 'workspaces' AND EXISTS (
-    SELECT 1 FROM public.platform_deletion_ledger
-     WHERE event_type = 'workspace.deleted' AND subject_id = NEW.id
-  ) THEN
-    RAISE EXCEPTION 'this workspace has a permanent deletion tombstone'
-      USING ERRCODE = '23505';
-  ELSIF TG_TABLE_NAME = 'provider_credentials' AND EXISTS (
-    SELECT 1 FROM public.platform_deletion_ledger
-     WHERE event_type = 'credential.revoked' AND subject_id = NEW.id
-  ) THEN
-    RAISE EXCEPTION 'this provider credential has a revocation tombstone'
-      USING ERRCODE = '23505';
+  IF TG_TABLE_NAME = 'platform_users' THEN
+    IF EXISTS (
+      SELECT 1 FROM public.platform_deletion_ledger
+       WHERE event_type = 'user.deleted' AND identity_key = NEW.twitch_user_id
+    ) THEN
+      RAISE EXCEPTION 'this Twitch identity has a permanent deletion tombstone'
+        USING ERRCODE = '23505';
+    END IF;
+  ELSIF TG_TABLE_NAME = 'workspaces' THEN
+    IF EXISTS (
+      SELECT 1 FROM public.platform_deletion_ledger
+       WHERE event_type = 'workspace.deleted' AND subject_id = NEW.id
+    ) THEN
+      RAISE EXCEPTION 'this workspace has a permanent deletion tombstone'
+        USING ERRCODE = '23505';
+    END IF;
+  ELSIF TG_TABLE_NAME = 'provider_credentials' THEN
+    IF EXISTS (
+      SELECT 1 FROM public.platform_deletion_ledger
+       WHERE event_type = 'credential.revoked' AND subject_id = NEW.id
+         AND COALESCE(metadata->>'credentialTable', 'provider_credentials') = 'provider_credentials'
+    ) THEN
+      RAISE EXCEPTION 'this provider credential has a revocation tombstone'
+        USING ERRCODE = '23505';
+    END IF;
   END IF;
   RETURN NEW;
 END;
