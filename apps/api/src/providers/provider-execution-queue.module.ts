@@ -58,11 +58,14 @@ type ExecutionRow = {
                 }
                 const blocked = await client.query(
                   `SELECT 1 FROM media_requests r
+                    JOIN provider_instances p
+                      ON p.workspace_id = r.workspace_id AND p.id = $3
                     JOIN rights_content_blocks b
-                      ON b.workspace_id = r.workspace_id AND b.content_id = r.media_id
+                      ON b.workspace_id = r.workspace_id
+                     AND b.content_id IN (r.media_id, p.provider_id || ':' || r.media_id)
                    WHERE r.workspace_id = $1 AND r.id = $2
                    LIMIT 1`,
-                  [workspaceId, requestId],
+                  [workspaceId, requestId, providerInstanceId],
                 );
                 if ((blocked.rowCount ?? 0) > 0) {
                   const error = new Error('This media item is blocked by workspace rights policy.');
