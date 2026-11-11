@@ -50,3 +50,36 @@ CREATE POLICY workspace_assets_workspace_access
   );
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON workspace_assets TO platform_runtime;
+
+-- The public overlay runtime can resolve only assets referenced by a scene
+-- whose bearer token is valid; object keys remain server-side.
+CREATE POLICY workspace_assets_migrator_read
+  ON workspace_assets FOR SELECT TO platform_migrator
+  USING (true);
+
+CREATE FUNCTION get_overlay_scene_assets(p_scene_id uuid, p_token_hash text)
+RETURNS TABLE (asset_id uuid, object_key text)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $$
+  SELECT a.id, a.object_key
+    FROM public.overlay_scenes s
+    CROSS JOIN LATERAL jsonb_array_elements(
+      CASE WHEN jsonb_typeof(s.published_state->'elements') = 'array'
+           THEN s.published_state->'elements' ELSE '[]'::jsonb END
+    ) element
+    JOIN public.workspace_assets a
+      ON a.id = CASE
+        WHEN element->>'assetId' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+        THEN (element->>'assetId')::uuid ELSE NULL END
+     AND a.workspace_id = s.workspace_id
+     AND a.status = 'ready'
+   WHERE s.id = p_scene_id
+     AND s.access_token_hash = p_token_hash
+     AND s.token_revoked_at IS NULL
+$$;
+
+REVOKE ALL ON FUNCTION get_overlay_scene_assets(uuid, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION get_overlay_scene_assets(uuid, text) TO platform_runtime;
