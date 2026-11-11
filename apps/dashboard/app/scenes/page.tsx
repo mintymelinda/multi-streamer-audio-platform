@@ -237,7 +237,7 @@ export default function ScenesPage() {
     : {};
   const canvasMode = canvasState.mode === "fixed" ? "fixed" : "responsive";
   const snapEnabled = canvasState.snap !== false;
-  const snapSize = previewPercent(canvasState.snapSize, 2, 1, 25);
+  const snapSize = previewPercent(canvasState.snapSize, 2, 1, canvasMode === "fixed" ? 500 : 25);
   const canvasWidth = previewPercent(canvasState.width, 1920, 320, 7680);
   const canvasHeight = previewPercent(canvasState.height, 1080, 180, 4320);
 
@@ -525,7 +525,7 @@ export default function ScenesPage() {
                 <label>Height (px)<input type="number" min="180" max="4320" value={canvasHeight} onChange={(event) => updateCanvas({ height: previewPercent(Number(event.target.value), 1080, 180, 4320) })} /></label>
               </>}
               <label className="snap-toggle"><input type="checkbox" checked={snapEnabled} onChange={(event) => updateCanvas({ snap: event.target.checked })} /> Snap to guides</label>
-              <label>Grid ({canvasMode === "fixed" ? "px" : "%"})<input type="number" min="1" max={canvasMode === "fixed" ? 500 : 25} value={snapSize} onChange={(event) => updateCanvas({ snapSize: previewPercent(Number(event.target.value), 2, 1, 25) })} /></label>
+              <label>Grid ({canvasMode === "fixed" ? "px" : "%"})<input type="number" min="1" max={canvasMode === "fixed" ? 500 : 25} value={snapSize} onChange={(event) => updateCanvas({ snapSize: previewPercent(Number(event.target.value), 2, 1, canvasMode === "fixed" ? 500 : 25) })} /></label>
             </div>
             <div className="scene-preview-canvas">
               <div
