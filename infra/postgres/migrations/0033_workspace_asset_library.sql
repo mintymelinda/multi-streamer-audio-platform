@@ -69,11 +69,11 @@ AS $$
     CROSS JOIN LATERAL jsonb_array_elements(
       CASE WHEN jsonb_typeof(s.published_state->'elements') = 'array'
            THEN s.published_state->'elements' ELSE '[]'::jsonb END
-    ) element
+    ) AS elements(value)
     JOIN public.workspace_assets a
       ON a.id = CASE
-        WHEN element->>'assetId' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
-        THEN (element->>'assetId')::uuid ELSE NULL END
+        WHEN elements.value->>'assetId' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+        THEN (elements.value->>'assetId')::uuid ELSE NULL END
      AND a.workspace_id = s.workspace_id
      AND a.status = 'ready'
    WHERE s.id = p_scene_id
