@@ -402,8 +402,17 @@ BEGIN
        WHERE workspace_id = target_workspace_id AND revoked_at IS NULL AND expires_at > now()
     )
   );
+
+  INSERT INTO public.workspace_support_access_audit (
+    workspace_id, actor_user_id, action, reason, details
+  )
+  VALUES (
+    target_workspace_id, actor_id, 'workspace.diagnostics.read',
+    'Content-free technical diagnostics',
+    jsonb_build_object('content_accessed', false)
+  );
 END;
-$$;
+$;
 
 REVOKE ALL ON workspace_support_access FROM platform_runtime;
 REVOKE ALL ON workspace_support_access_audit FROM platform_runtime;
