@@ -10,6 +10,11 @@ DECLARE
   workspace_b uuid := gen_random_uuid();
   scene_a uuid := gen_random_uuid();
 BEGIN
+  IF has_table_privilege(current_user, 'public.platform_scene_usage', 'SELECT')
+     OR has_table_privilege(current_user, 'public.platform_scene_usage', 'UPDATE')
+     OR has_table_privilege(current_user, 'public.platform_settings', 'UPDATE') THEN
+    RAISE EXCEPTION 'runtime role can mutate or inspect protected global scene controls';
+  END IF;
   PERFORM set_config('app.user_id', user_a::text, true);
   INSERT INTO platform_users (id, twitch_user_id) VALUES (user_a, '980000001');
   PERFORM set_config('app.user_id', user_b::text, true);
