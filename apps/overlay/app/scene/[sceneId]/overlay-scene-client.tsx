@@ -113,6 +113,7 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
   const [exitingIds, setExitingIds] = useState<string[]>([]);
   const [animatedIds, setAnimatedIds] = useState<string[]>([]);
   const [sceneTransitionActive, setSceneTransitionActive] = useState(false);
+  const [overlayEvent, setOverlayEvent] = useState({ type: "", sequence: 0 });
   const previousElements = useRef<Record<string, unknown>[]>([]);
   const previousSceneState = useRef<string | null>(null);
   const [sceneTransitionKey, setSceneTransitionKey] = useState(0);
@@ -173,8 +174,13 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
           void loadSnapshot(token).catch(() => setStatus('error'));
         } else if (packet.startsWith('42/overlay,')) {
           try {
-            const [eventName] = JSON.parse(packet.slice('42/overlay,'.length)) as [string, unknown];
+            const [eventName, eventPayload] = JSON.parse(packet.slice('42/overlay,'.length)) as [string, unknown];
             if (eventName === 'overlay:invalidate') {
+              const eventType = eventPayload && typeof eventPayload === "object" && "eventType" in eventPayload
+                && typeof (eventPayload as { eventType?: unknown }).eventType === "string"
+                ? (eventPayload as { eventType: string }).eventType
+                : "";
+              setOverlayEvent((current) => ({ type: eventType, sequence: current.sequence + 1 }));
               void loadSnapshot(token).catch(() => setStatus('error'));
             }
           } catch {
@@ -215,7 +221,7 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
       : 320;
     const timer = window.setTimeout(() => setSceneTransitionActive(false), typeof configuredDuration === "number" ? Math.min(5000, Math.max(0, configuredDuration)) + 80 : 400);
     return () => window.clearTimeout(timer);
-  }, [snapshot]);
+  }, [snapshot, overlayEvent]);
 
   useEffect(() => {
     const state = snapshot?.publishedState && typeof snapshot.publishedState === 'object'
@@ -243,8 +249,8 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
       const trigger = animation.trigger;
       if (JSON.stringify(before) === JSON.stringify(element)) return false;
       return (trigger === "content-change")
-        || (trigger === "new-song" && element.type === "now-playing")
-        || (trigger === "announcement" && element.type === "announcement");
+        || (trigger === "new-song" && element.type === "now-playing" && /playback|track/i.test(overlayEvent.type))
+        || (trigger === "announcement" && element.type === "announcement" && /announcement/i.test(overlayEvent.type));
     }).map(keyOf);
     previousElements.current = next;
     setRenderedElements([...next, ...removed]);
