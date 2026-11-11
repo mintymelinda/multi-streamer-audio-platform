@@ -75,7 +75,6 @@ BEGIN
     RAISE EXCEPTION 'administrator with directory permission cannot list assignments';
   END IF;
 
-  PERFORM set_config('app.user_id', current_setting('test.platform_owner_id'), true);
   PERFORM set_config('app.user_id', (SELECT id::text FROM platform_users WHERE twitch_user_id = '980000012'), true);
   IF EXISTS (SELECT 1 FROM get_current_platform_administrator()) THEN
     RAISE EXCEPTION 'ordinary platform account received administrator access';
