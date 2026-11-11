@@ -43,6 +43,7 @@ Start the local services with `pnpm dev:infra`, then apply the role bootstrap an
 - `0029_overlay_scenes.sql` adds workspace-owned scene identities and hashed, independently revocable OBS access tokens with forced workspace RLS.
 - `0030_overlay_scene_runtime.sql` adds the published-state snapshot column and migrator-owned, narrowly scoped token/active-scene lookup functions for the read-only overlay runtime.
 - `0033_workspace_asset_library.sql` adds workspace-isolated image asset metadata, forced RLS, and a token-scoped runtime lookup for assets referenced by published scenes.
+- `0034_overlay_scene_management.sql` adds audited scene management, a centrally configurable platform-wide scene ceiling, and a trigger-maintained global usage counter protected from runtime-role mutation.
 
 New tenant-owned tables must follow the same pattern. Never put plaintext provider credentials in integration rows, audit details, outbox payloads, logs, or job messages.
 
