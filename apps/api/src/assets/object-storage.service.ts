@@ -8,7 +8,8 @@ function awsEncode(value: string): string {
 }
 
 function hmac(key: Buffer | string, value: string, encoding?: 'hex'): Buffer | string {
-  return createHmac('sha256', key).update(value, 'utf8').digest(encoding);
+  const signer = createHmac('sha256', key).update(value, 'utf8');
+  return encoding ? signer.digest(encoding) : signer.digest();
 }
 
 function signingKey(secret: string, date: string, region: string): Buffer {
@@ -41,6 +42,7 @@ export class ObjectStorageService {
       throw new Error('Object storage is not configured. Set OBJECT_STORAGE_ENDPOINT, OBJECT_STORAGE_BUCKET, OBJECT_STORAGE_ACCESS_KEY, and OBJECT_STORAGE_SECRET_KEY.');
     }
     const parsed = new URL(endpoint);
+    if (!internalEndpoint) throw new Error('Internal object storage endpoint is not configured.');
     const internalParsed = new URL(internalEndpoint);
     if (parsed.protocol !== 'https:' && parsed.hostname !== 'localhost' && parsed.hostname !== '127.0.0.1') {
       throw new Error('Object storage must use HTTPS outside local development.');
