@@ -100,8 +100,6 @@ CREATE FUNCTION list_platform_workspaces(search_term text DEFAULT NULL)
 RETURNS TABLE (
   workspace_id uuid,
   name text,
-  owner_user_id uuid,
-  owner_twitch_user_id text,
   broadcaster_twitch_user_id text,
   status workspace_status,
   restriction_reason text,
@@ -117,11 +115,10 @@ DECLARE
   normalized_search text := nullif(btrim(search_term), '');
 BEGIN
   RETURN QUERY
-    SELECT workspace.id, workspace.name, workspace.owner_user_id, owner.twitch_user_id,
-           workspace.broadcaster_twitch_user_id, workspace.status,
-           workspace.restriction_reason, workspace.created_at, workspace.updated_at
+    SELECT workspace.id, workspace.name, workspace.broadcaster_twitch_user_id,
+           workspace.status, workspace.restriction_reason,
+           workspace.created_at, workspace.updated_at
       FROM public.workspaces workspace
-      JOIN public.platform_users owner ON owner.id = workspace.owner_user_id
      WHERE normalized_search IS NULL
         OR workspace.name ILIKE '%' || normalized_search || '%'
         OR workspace.broadcaster_twitch_user_id = normalized_search
