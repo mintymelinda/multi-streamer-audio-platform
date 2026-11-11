@@ -206,17 +206,18 @@ test('service incident creation and updates use the audited database function', 
     affectedServices: ['dashboard', 'api'],
   };
   assert.deepEqual(await service.saveServiceIncident('status-admin', input), { id: 'incident-123' });
-  assert.deepEqual(calls[1].values, [
-    null, input.title, input.summary, input.status, input.impact, input.affectedServices,
-  ]);
   await service.saveServiceIncident('status-admin', { ...input, id: '123e4567-e89b-42d3-a456-426614174000', status: 'resolved' });
-  assert.deepEqual(calls[2].values, [
-    '123e4567-e89b-42d3-a456-426614174000',
-    input.title,
-    input.summary,
-    'resolved',
-    input.impact,
-    input.affectedServices,
+  const saves = calls.filter((call) => call.sql?.includes('set_platform_service_incident'));
+  assert.deepEqual(saves.map((call) => call.values), [
+    [null, input.title, input.summary, input.status, input.impact, input.affectedServices],
+    [
+      '123e4567-e89b-42d3-a456-426614174000',
+      input.title,
+      input.summary,
+      'resolved',
+      input.impact,
+      input.affectedServices,
+    ],
   ]);
 });
 
