@@ -20,6 +20,7 @@ import { SpotifyConnectOAuthModule } from './providers/spotify-connect-oauth.mod
 import { RightsComplianceModule } from './compliance/rights-compliance.module.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
 import { AccountExportsModule } from './account-exports/account-exports.module.js';
+import { AccountDeletionModule } from './account-deletion/account-deletion.module.js';
 import { UserPreferencesModule } from './user-preferences/user-preferences.module.js';
 import { OverlayScenesModule } from './overlay-scenes/overlay-scenes.module.js';
 import { AssetsModule } from './assets/assets.module.js';
@@ -29,7 +30,7 @@ import { WorkspaceLifecycleModule } from './workspaces/workspace-lifecycle.modul
 
 @Module({
   imports: [
-    DatabaseModule, IdentityModule, WorkspacesModule, NotificationsModule, AccountExportsModule,
+    DatabaseModule, IdentityModule, WorkspacesModule, NotificationsModule, AccountExportsModule, AccountDeletionModule,
     UserPreferencesModule, OverlayScenesModule, AssetsModule, ProviderInstanceModule,
     ProviderCredentialsModule, ProviderOutputAssignmentModule, PlaybackCoordinatorModule,
     ProviderExecutionQueueModule, SpotifyConnectOAuthModule, RightsComplianceModule,
