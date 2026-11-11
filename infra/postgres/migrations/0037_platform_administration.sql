@@ -114,6 +114,63 @@ CREATE TRIGGER platform_administration_audit_immutable
 BEFORE UPDATE OR DELETE ON platform_administration_audit
 FOR EACH ROW EXECUTE FUNCTION prevent_platform_administration_audit_mutation();
 
+-- Runtime reads are also mediated by narrow functions so ordinary API
+-- queries cannot enumerate the global administrator directory or audit records.
+CREATE FUNCTION get_current_platform_administrator()
+RETURNS TABLE (role platform_administrator_role, permissions text[])
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $
+  SELECT administrators.role, administrators.permissions
+    FROM public.platform_administrators administrators
+   WHERE administrators.user_id = nullif(current_setting('app.user_id', true), '')::uuid
+     AND administrators.revoked_at IS NULL
+$;
+
+CREATE FUNCTION list_platform_administrators()
+RETURNS TABLE (
+  user_id uuid,
+  twitch_user_id text,
+  role platform_administrator_role,
+  permissions text[],
+  appointed_at timestamptz,
+  revoked_at timestamptz
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $
+DECLARE
+  actor_id uuid := nullif(current_setting('app.user_id', true), '')::uuid;
+  actor_role platform_administrator_role;
+  actor_permissions text[];
+BEGIN
+  SELECT administrators.role, administrators.permissions
+    INTO actor_role, actor_permissions
+    FROM public.platform_administrators administrators
+   WHERE administrators.user_id = actor_id
+     AND administrators.revoked_at IS NULL;
+
+  IF NOT FOUND OR (
+    actor_role <> 'owner'
+    AND NOT ('administrators.read' = ANY(actor_permissions))
+    AND NOT ('administrators.manage' = ANY(actor_permissions))
+  ) THEN
+    RAISE EXCEPTION 'administrator directory permission is required'
+      USING ERRCODE = '42501';
+  END IF;
+
+  RETURN QUERY
+    SELECT administrators.user_id, users.twitch_user_id, administrators.role,
+           administrators.permissions, administrators.appointed_at, administrators.revoked_at
+      FROM public.platform_administrators administrators
+      JOIN public.platform_users users ON users.id = administrators.user_id
+     ORDER BY (administrators.revoked_at IS NULL) DESC,
+              administrators.role ASC, administrators.appointed_at ASC;
+END;
+$;
+
 -- SECURITY DEFINER functions are the only runtime write path. They derive the
 -- actor from the authenticated transaction context and prevent permission escalation.
 CREATE FUNCTION appoint_platform_administrator(
@@ -263,12 +320,14 @@ $$;
 
 REVOKE ALL ON platform_administrators FROM platform_runtime;
 REVOKE ALL ON platform_administration_audit FROM platform_runtime;
-GRANT SELECT ON platform_administrators TO platform_runtime;
-GRANT SELECT ON platform_administration_audit TO platform_runtime;
+REVOKE ALL ON FUNCTION get_current_platform_administrator() FROM PUBLIC;
+REVOKE ALL ON FUNCTION list_platform_administrators() FROM PUBLIC;
 REVOKE ALL ON FUNCTION protect_final_platform_owner() FROM PUBLIC;
 REVOKE ALL ON FUNCTION prevent_platform_administration_audit_mutation() FROM PUBLIC;
 REVOKE ALL ON FUNCTION appoint_platform_administrator(text, platform_administrator_role, text[], text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION revoke_platform_administrator(uuid, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION get_current_platform_administrator() TO platform_runtime;
+GRANT EXECUTE ON FUNCTION list_platform_administrators() TO platform_runtime;
 GRANT EXECUTE ON FUNCTION appoint_platform_administrator(text, platform_administrator_role, text[], text) TO platform_runtime;
 GRANT EXECUTE ON FUNCTION revoke_platform_administrator(uuid, text) TO platform_runtime;
 
