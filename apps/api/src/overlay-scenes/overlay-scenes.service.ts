@@ -121,7 +121,7 @@ export class OverlayScenesService {
           [workspaceId, userId, sceneId],
         );
         await client.query(
-          'UPDATE workspaces SET overlay_starter_provisioned_at = now(), updated_at = now() WHERE id = $1 AND overlay_starter_provisioned_at IS NULL',
+          'UPDATE workspaces SET overlay_starter_provisioned_at = now() WHERE id = $1 AND overlay_starter_provisioned_at IS NULL',
           [workspaceId],
         );
         return { scene, accessToken, overlayPath: `/scene/${sceneId}`, created: true };
@@ -213,8 +213,8 @@ export class OverlayScenesService {
       if (sceneIds.length > 0) {
         await client.query(
           `UPDATE overlay_scenes AS scene
-              SET sort_order = ordered.position - 1, updated_at = now()
-             FROM unnest($2::uuid[]) WITH ORDINALITY AS ordered(id, position)
+              SET sort_order = ordered.ordinal - 1, updated_at = now()
+             FROM unnest($2::uuid[]) WITH ORDINALITY AS ordered(id, ordinal)
             WHERE scene.id = ordered.id AND scene.workspace_id = $1`,
           [workspaceId, sceneIds],
         );
