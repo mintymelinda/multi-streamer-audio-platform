@@ -16,7 +16,7 @@ function serviceHarness(queryHandler = async () => ({ rows: [], rowCount: 1 })) 
     },
   };
   const storage = {
-    presign: (method, key, contentType, expires, internal) => `https://assets.example.test/${method}/${key}?type=${contentType ?? ''}&internal=${Boolean(internal)}`,
+    presign: (method, key, contentType, expires, internal) => `https://assets.example.test/${method}/${key}?type=${contentType ?? ''}&expires=${expires}&internal=${Boolean(internal)}`,
     delete: async () => undefined,
   };
   return { service: new AssetsService(database, storage), calls };
