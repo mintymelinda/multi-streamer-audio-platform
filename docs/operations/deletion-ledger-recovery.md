@@ -30,7 +30,7 @@ export DELETION_LEDGER_HMAC_KEY='…'
 node scripts/deletion-ledger.mjs export-s3
 ```
 
-The command writes one signed bundle to a unique immutable object key under `DELETION_LEDGER_S3_PREFIX`, then prints the export UUID and full `s3://` object path. Record that export UUID in the backup/recovery inventory. The bundle contains the complete versioned ledger document and its HMAC-SHA256 signature. Each export uses a new UUID key and conditional creation; the CLI never overwrites or deletes prior exports.
+The command writes one signed bundle containing the complete cumulative journal to a unique immutable object key under `DELETION_LEDGER_S3_PREFIX`, then prints the export UUID and full `s3://` object path. Record the newest successful export UUID in an independent recovery catalog and alongside backup metadata. Later exports supersede earlier ones because each contains the complete journal. Each export uses a new UUID key and conditional creation; the CLI never overwrites or deletes prior exports.
 
 For offline/manual operation, the file-based `export` command remains available and writes the JSON document plus a `.hmac` sidecar. Copy both files to an independent, access-controlled location. A successful local file export is not an offsite copy.
 
@@ -39,7 +39,7 @@ For offline/manual operation, the file-based `export` command remains available 
 1. Stop API and worker services so no user or background activity can occur during recovery.
 2. Restore the PostgreSQL backup/PITR target.
 3. Apply all migrations required by the application version being restored, including `0050_deletion_ledger.sql`.
-4. Retrieve the export UUID recorded with the backup/recovery inventory and recover the HMAC key independently.
+4. Select the newest complete ledger export that includes the deletion/revocation events occurring after the chosen restore point. Do not use a stale export merely because it was created alongside the backup being restored; the ledger is cumulative, so the newest valid export supersedes earlier ones. Recover its export UUID and the HMAC key independently.
 5. Verify and replay the S3 artifact using the privileged migrator connection:
 
    ```sh
@@ -57,8 +57,8 @@ Replay is idempotent: existing journal entries are not duplicated, workspace and
 ## Operational boundaries
 
 - The ledger is not a substitute for PostgreSQL backups, WAL/PITR, object-storage backups, or encryption-key recovery; those are separate Phase 7 items.
-- Production must provision the archive bucket independently of the ordinary workspace asset bucket and exclude it from database/object-storage restore operations. Configure Object Lock at bucket creation and a default COMPLIANCE retention period covering the maximum backup-retention and recovery horizon.
-- The export identity should have PutObject only. The recovery identity should have GetObject only for the archive objects; neither identity may delete objects, change retention/legal holds, change bucket policy, or delete the bucket. Keep recovery credentials and the HMAC key outside the restored backup set.
+- Production must provision the archive bucket independently of the ordinary workspace asset bucket and exclude it from database/object-storage restore operations. Configure Object Lock at bucket creation and a default COMPLIANCE retention period covering the maximum backup-retention and recovery horizon. Enable provider-side encryption at rest, enforce TLS and block all public access.
+- The export identity should have PutObject only. The recovery identity should have GetObject only for the archive objects; neither identity may delete objects, change retention/legal holds, change bucket policy, or delete the bucket. Enforce conditional `If-None-Match: *` writes in the bucket policy where the provider supports that condition. Keep recovery credentials and the HMAC key outside the restored backup set.
 - The local Compose stack creates a separate MinIO bucket with Object Lock and a 100-year COMPLIANCE retention period for development only. Local root credentials are not an acceptable production credential model.
 - The artifact must be exported and preserved independently. A local file or a bucket on the same backup/restore failure domain is not sufficient.
 - Run replay only after restoring the database and applying the current schema migrations, and before starting API/workers.
