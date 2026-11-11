@@ -57,6 +57,10 @@ BEGIN
     RAISE EXCEPTION 'another workspace can read scene metadata or token hashes';
   END IF;
   UPDATE overlay_scenes SET name = 'Compromised' WHERE id = scene_a;
+  DELETE FROM overlay_scenes WHERE id = scene_a;
+  IF FOUND THEN
+    RAISE EXCEPTION 'another workspace deleted a scene';
+  END IF;
   BEGIN
     INSERT INTO overlay_scenes (workspace_id, name, access_token_hash, created_by_user_id)
     VALUES (workspace_a, 'Cross-tenant scene', repeat('b', 64), user_b);
