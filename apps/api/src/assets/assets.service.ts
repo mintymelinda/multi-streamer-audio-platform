@@ -146,11 +146,16 @@ export class AssetsService {
     );
     const row = pending.rows[0];
     if (!row?.pending_object_key || !row.pending_content_type) throw new ConflictException('There is no pending upload for this asset.');
-    const url = this.storage.presign('GET', row.pending_object_key, undefined, 60);
-    const response = await fetch(url, { method: 'GET' });
+    const url = this.storage.presign('HEAD', row.pending_object_key, undefined, 60);
+    const head = await fetch(url, { method: 'HEAD' });
+    if (!head.ok) throw new BadRequestException('The uploaded object could not be verified.');
+    const contentLength = Number(head.headers.get('content-length'));
+    if (!Number.isSafeInteger(contentLength) || contentLength < 1 || contentLength > MAX_BYTES) throw new BadRequestException('Image files must be no larger than 10 MiB.');
+    if (head.headers.get('content-type')?.split(';')[0]?.trim() !== row.pending_content_type) throw new BadRequestException('Uploaded image content type does not match the declared type.');
+    const response = await fetch(this.storage.presign('GET', row.pending_object_key, undefined, 60));
     if (!response.ok) throw new BadRequestException('The uploaded object could not be verified.');
     const bytes = Buffer.from(await response.arrayBuffer());
-    if (!bytes.length || bytes.length > MAX_BYTES) throw new BadRequestException('Image files must be no larger than 10 MiB.');
+    if (bytes.length !== contentLength || bytes.length > MAX_BYTES) throw new BadRequestException('Image files must be no larger than 10 MiB.');
     const dimensions = imageDimensions(bytes, row.pending_content_type);
     if (!dimensions || dimensions.width < 1 || dimensions.height < 1 || dimensions.width > 8192 || dimensions.height > 8192) {
       throw new BadRequestException('The uploaded file is not a supported image or its dimensions exceed 8192 × 8192.');
@@ -161,10 +166,11 @@ export class AssetsService {
         `UPDATE workspace_assets SET object_key = pending_object_key, content_type = pending_content_type,
              byte_size = $3, width = $4, height = $5, status = 'ready',
              pending_object_key = NULL, pending_content_type = NULL, updated_at = now()
-           WHERE id = $1 AND workspace_id = $2
+           WHERE id = $1 AND workspace_id = $2 AND pending_object_key = $6
            RETURNING id, name, folder_path, content_type, byte_size, width, height, created_at, updated_at`,
-        [assetId, workspaceId, bytes.length, dimensions.width, dimensions.height],
+        [assetId, workspaceId, bytes.length, dimensions.width, dimensions.height, row.pending_object_key],
       );
+      if (!result.rowCount) throw new ConflictException('A newer upload replaced this pending upload.');
       await client.query(
         `INSERT INTO audit_events (workspace_id, actor_user_id, event_type, target_type, target_id, details)
          VALUES ($1, $2, 'asset.upload_completed', 'workspace_asset', $3,
