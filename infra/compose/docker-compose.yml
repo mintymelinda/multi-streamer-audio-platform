@@ -21,6 +21,14 @@ services:
       OBJECT_STORAGE_ACCESS_KEY: ${OBJECT_STORAGE_ACCESS_KEY:-local-minio}
       OBJECT_STORAGE_SECRET_KEY: ${OBJECT_STORAGE_SECRET_KEY:-local-minio-password}
       OBJECT_STORAGE_REGION: ${OBJECT_STORAGE_REGION:-us-east-1}
+      DELETION_LEDGER_HMAC_KEY: ${DELETION_LEDGER_HMAC_KEY:-local-ledger-signing-key-at-least-32-bytes}
+      DELETION_LEDGER_S3_ENDPOINT: ${DELETION_LEDGER_S3_ENDPOINT:-http://object-storage:9000}
+      DELETION_LEDGER_S3_BUCKET: ${DELETION_LEDGER_S3_BUCKET:-platform-deletion-ledger}
+      DELETION_LEDGER_S3_PREFIX: ${DELETION_LEDGER_S3_PREFIX:-v1/exports}
+      DELETION_LEDGER_S3_ACCESS_KEY: ${DELETION_LEDGER_S3_ACCESS_KEY:-local-minio}
+      DELETION_LEDGER_S3_SECRET_KEY: ${DELETION_LEDGER_S3_SECRET_KEY:-local-minio-password}
+      DELETION_LEDGER_S3_REGION: ${DELETION_LEDGER_S3_REGION:-us-east-1}
+      DELETION_LEDGER_S3_ALLOW_INSECURE_HTTP: ${DELETION_LEDGER_S3_ALLOW_INSECURE_HTTP:-true}
     depends_on:
       postgres:
         condition: service_healthy
@@ -97,6 +105,9 @@ services:
     command: >-
       until mc alias set local http://object-storage:9000 "${MINIO_ROOT_USER}" "${MINIO_ROOT_PASSWORD}"; do sleep 2; done &&
       mc mb --ignore-existing local/platform-assets &&
+      mc mb --with-lock --ignore-existing local/platform-deletion-ledger &&
+      mc retention set --default COMPLIANCE 36500d local/platform-deletion-ledger &&
+      mc anonymous set none local/platform-deletion-ledger &&
       printf '%s' '{"CORSRules":[{"AllowedOrigins":["*"],"AllowedMethods":["PUT","GET","HEAD"],"AllowedHeaders":["*"],"ExposeHeaders":["ETag","Content-Length","Content-Type"],"MaxAgeSeconds":3600}]}' > /tmp/assets-cors.json &&
       mc cors set local/platform-assets /tmp/assets-cors.json &&
       mc anonymous set none local/platform-assets
