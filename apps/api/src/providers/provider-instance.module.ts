@@ -8,7 +8,10 @@ import { InvidiousResolverService } from './invidious-resolver.service.js';
   imports: [DatabaseModule],
   providers: [
     ProviderHealthService,
-    InvidiousResolverService,
+    {
+      provide: InvidiousResolverService,
+      useFactory: () => new InvidiousResolverService(),
+    },
     {
       provide: ProviderInstanceService,
       inject: [DatabaseService],
