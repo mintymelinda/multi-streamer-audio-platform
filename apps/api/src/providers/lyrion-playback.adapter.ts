@@ -51,12 +51,12 @@ export class LyrionPlaybackAdapter implements PlaybackAdapter {
   }
 
   async pause(): Promise<ProviderCommandResult> {
-    await this.command(['pause']);
+    await this.command(['pause', '1']);
     return { outcome: 'paused' };
   }
 
   async resume(): Promise<ProviderCommandResult> {
-    await this.command(['play']);
+    await this.command(['pause', '0']);
     return { outcome: 'resumed' };
   }
 
@@ -79,7 +79,7 @@ export class LyrionPlaybackAdapter implements PlaybackAdapter {
     providerPlaybackId?: string;
     requestId?: string;
   }> {
-    const response = await this.command(['status', '-', '1', 'tags:adKl']);
+    const response = await this.command(['status', '-', '1', 'tags:adKlur']);
     const result = response.result ?? {};
     const mode = typeof result.mode === 'string' ? result.mode : 'stop';
     const status = mode === 'play' ? 'playing' : mode === 'pause' ? 'paused' : 'stopped';
@@ -97,7 +97,7 @@ export class LyrionPlaybackAdapter implements PlaybackAdapter {
 
   async healthCheck(): Promise<{ status: 'healthy' | 'unavailable' }> {
     try {
-      await this.command(['serverstatus']);
+      await this.command(['mode', '?']);
       return { status: 'healthy' };
     } catch {
       return { status: 'unavailable' };
