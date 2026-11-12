@@ -60,6 +60,23 @@ type ExecutionRow = {
                 if ((sourceProvider.rowCount ?? 0) !== 1) {
                   throw new Error('No healthy source resolver is configured for this media provider.');
                 }
+                if (sourceProviderId === 'spotify') {
+                  const credential = await client.query(
+                    `SELECT 1 FROM provider_credentials
+                      WHERE workspace_id = $1 AND provider_instance_id IN (
+                        SELECT id FROM provider_instances
+                         WHERE workspace_id = $1 AND provider_id = 'spotify'
+                           AND enabled = true AND connection_health = 'healthy'
+                      )
+                        AND status = 'connected'
+                        AND (expires_at IS NULL OR expires_at > now())
+                      LIMIT 1`,
+                    [workspaceId],
+                  );
+                  if ((credential.rowCount ?? 0) !== 1) {
+                    throw new Error('Spotify source authorization is unavailable or expired.');
+                  }
+                }
                 const restriction = await client.query(
                   `SELECT 1 FROM workspace_provider_path_restrictions
                     WHERE workspace_id = $1 AND provider_id = ANY($2::text[]) AND disabled_at IS NOT NULL
