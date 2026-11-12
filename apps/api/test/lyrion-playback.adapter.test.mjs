@@ -159,7 +159,7 @@ test('does not dispatch a command when source resolution is unsupported', async 
       actorId: 'actor-a',
       payload: { sourceProviderId: 'spotify', mediaId: 'spotify-track' },
     }),
-    (error) => error.code === 'MEDIA_RESOLUTION_FAILED',
+    (error) => error.code === 'UNSUPPORTED_MEDIA_SOURCE',
   );
   assert.equal(calls, 0);
 });
