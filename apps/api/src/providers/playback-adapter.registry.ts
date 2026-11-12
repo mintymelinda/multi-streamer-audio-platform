@@ -3,7 +3,7 @@ import {
   PlaybackCoordinatorError,
   type PlaybackAdapter,
   type PlaybackCommandInput,
-} from './playback-coordinator.service.js';
+} from '../playback/playback-coordinator.service.js';
 
 export type PlaybackAdapterFactory = (
   input: PlaybackCommandInput,
