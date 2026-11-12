@@ -197,23 +197,6 @@ function validateEndpoint(value: string, allowedHosts: string[]): URL {
   return url;
 }
 
-function findCurrentStreamUrl(result: Record<string, unknown>): string | null {
-  const loop = result.playlist_loop;
-  if (!Array.isArray(loop)) return null;
-  const currentIndex = String(result.playlist_cur_index ?? '0');
-  const current = loop.find((entry) =>
-    isRecord(entry) && String(entry['playlist index'] ?? '') === currentIndex,
-  );
-  const item = isRecord(current)
-    ? current
-    : loop.find(isRecord);
-  if (!item) return null;
-  for (const key of ['url', 'path', 'file']) {
-    if (typeof item[key] === 'string') return item[key] as string;
-  }
-  return null;
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
