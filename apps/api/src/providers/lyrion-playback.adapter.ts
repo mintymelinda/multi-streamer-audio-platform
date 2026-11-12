@@ -81,7 +81,8 @@ export class LyrionPlaybackAdapter implements PlaybackAdapter {
   }> {
     const response = await this.command(['status', '-', '1', 'tags:adKlur']);
     const result = response.result ?? {};
-    const mode = typeof result.mode === 'string' ? result.mode : 'stop';
+    const rawMode = result.mode ?? result._mode;
+    const mode = typeof rawMode === 'string' ? rawMode : 'stop';
     const status = mode === 'play' ? 'playing' : mode === 'pause' ? 'paused' : 'stopped';
     const media = await this.resolveSource(input).catch(() => null);
     const currentUrl = findCurrentStreamUrl(result);
@@ -97,7 +98,9 @@ export class LyrionPlaybackAdapter implements PlaybackAdapter {
 
   async healthCheck(): Promise<{ status: 'healthy' | 'unavailable' }> {
     try {
-      await this.command(['mode', '?']);
+      const response = await this.command(['mode', '?']);
+      const mode = response.result?.mode ?? response.result?._mode;
+      if (typeof mode !== 'string') return { status: 'unavailable' };
       return { status: 'healthy' };
     } catch {
       return { status: 'unavailable' };
