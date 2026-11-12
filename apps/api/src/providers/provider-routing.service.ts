@@ -133,8 +133,10 @@ export class ProviderRoutingService {
     const outputOperations = requestedOperations.filter((operation) =>
       operation !== 'search' && operation !== 'resolve',
     );
-    const sourceRequirements = sourceOperations.length > 0 ? sourceOperations : ['resolve'];
-    const outputRequirements = outputOperations.length > 0 ? outputOperations : ['playback'];
+    const sourceRequirements: NonNullable<ProviderRequestRequirements['requiredOperations']> =
+      sourceOperations.length > 0 ? sourceOperations : ['resolve'];
+    const outputRequirements: NonNullable<ProviderRequestRequirements['requiredOperations']> =
+      outputOperations.length > 0 ? outputOperations : ['playback'];
 
     const baseReason = (instance: RoutableProviderInstance, providerId: string): string => {
       if (!instance.enabled) return 'provider instance is disabled';
