@@ -344,3 +344,27 @@ test('treats an ambiguous provider exception as uncertain instead of retryable f
   assert.equal(result.status, 'uncertain');
   assert.equal(operations.get('command-timeout').status, 'uncertain');
 });
+
+test('passes verified workspace and actor context to the output adapter factory', async () => {
+  let received;
+  const { service } = createCoordinator({
+    getProviderAdapter: async (providerInstanceId, context) => {
+      received = { providerInstanceId, context };
+      return { play: async () => ({ outcome: 'started' }) };
+    },
+  });
+  await service.execute({
+    workspaceId: 'workspace-a',
+    providerInstanceId: 'lyrion-a',
+    playerId: 'player-a',
+    outputId: 'output-a',
+    requestId: 'request-a',
+    command: 'play',
+    idempotencyKey: 'command-context',
+    actorId: 'actor-a',
+  });
+  assert.equal(received.providerInstanceId, 'lyrion-a');
+  assert.equal(received.context.workspaceId, 'workspace-a');
+  assert.equal(received.context.actorId, 'actor-a');
+  assert.equal(received.context.outputId, 'output-a');
+});
