@@ -73,7 +73,7 @@ export function verifyProviderExecutionHandoffSignature(input: {
   body: unknown;
   nowSeconds?: number;
 }): boolean {
-  if (!/^\\d{10}$/.test(input.timestamp) || !/^[a-f0-9]{64}$/i.test(input.signature)) return false;
+  if (!/^\d{10}$/.test(input.timestamp) || !/^[a-f0-9]{64}$/i.test(input.signature)) return false;
   const timestamp = Number(input.timestamp);
   const now = input.nowSeconds ?? Math.floor(Date.now() / 1000);
   if (!Number.isSafeInteger(timestamp) || Math.abs(now - timestamp) > maxClockSkewSeconds) return false;
