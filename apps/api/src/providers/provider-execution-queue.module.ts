@@ -38,18 +38,21 @@ type ExecutionRow = {
             await database.transaction(
               { userId: actorId, verifiedWorkspaceId: workspaceId as never },
               async (client) => {
-                const provider = await client.query<{ provider_id: string }>(
-                  `SELECT provider_id FROM provider_instances
-                    WHERE workspace_id = $1 AND id = $2`,
-                  [workspaceId, providerInstanceId],
+                const provider = await client.query<{ provider_id: string; source_provider_id: string | null }>(
+                  `SELECT p.provider_id, r.provider AS source_provider_id
+                     FROM provider_instances p
+                     JOIN media_requests r ON r.workspace_id = p.workspace_id AND r.id = $3
+                    WHERE p.workspace_id = $1 AND p.id = $2`,
+                  [workspaceId, providerInstanceId, requestId],
                 );
                 const providerId = provider.rows[0]?.provider_id;
+                const sourceProviderId = provider.rows[0]?.source_provider_id;
                 if (!providerId) throw new Error('Provider instance was not found in this workspace.');
                 const restriction = await client.query(
                   `SELECT 1 FROM workspace_provider_path_restrictions
-                    WHERE workspace_id = $1 AND provider_id = $2 AND disabled_at IS NOT NULL
+                    WHERE workspace_id = $1 AND provider_id = ANY($2::text[]) AND disabled_at IS NOT NULL
                     LIMIT 1`,
-                  [workspaceId, providerId],
+                  [workspaceId, [providerId, sourceProviderId].filter((value): value is string => Boolean(value))],
                 );
                 if ((restriction.rowCount ?? 0) > 0) {
                   const error = new Error('This provider path is disabled by workspace rights policy.');
@@ -62,7 +65,7 @@ type ExecutionRow = {
                       ON p.workspace_id = r.workspace_id AND p.id = $3
                     JOIN rights_content_blocks b
                       ON b.workspace_id = r.workspace_id
-                     AND b.content_id IN (r.media_id, p.provider_id || ':' || r.media_id)
+                     AND b.content_id IN (r.media_id, p.provider_id || ':' || r.media_id, r.provider || ':' || r.media_id)
                    WHERE r.workspace_id = $1 AND r.id = $2
                    LIMIT 1`,
                   [workspaceId, requestId, providerInstanceId],
