@@ -29,6 +29,7 @@ import { PlatformAdminModule } from './platform-admin/platform-admin.module.js';
 import { PlannedMaintenanceModule } from './platform-admin/planned-maintenance.module.js';
 import { WorkspaceLifecycleModule } from './workspaces/workspace-lifecycle.module.js';
 import { ProviderExecutionHandoffModule } from './providers/provider-execution-handoff.module.js';
+import { LyrionOutputConfigurationModule } from './providers/lyrion-output-configuration.module.js';
 
 @Module({
   imports: [
@@ -36,7 +37,7 @@ import { ProviderExecutionHandoffModule } from './providers/provider-execution-h
     UserPreferencesModule, OverlayScenesModule, AssetsModule, ProviderInstanceModule,
     ProviderCredentialsModule, ProviderOutputAssignmentModule, PlaybackCoordinatorModule,
     PlaybackRecoveryModule, ProviderExecutionQueueModule, SpotifyConnectOAuthModule, RightsComplianceModule,
-    PlatformAdminModule, PlannedMaintenanceModule, WorkspaceLifecycleModule, ProviderExecutionHandoffModule, OutboxModule, RequestsModule, TwitchEventSubModule, TwitchRewardsModule,
+    PlatformAdminModule, PlannedMaintenanceModule, WorkspaceLifecycleModule, ProviderExecutionHandoffModule, LyrionOutputConfigurationModule, OutboxModule, RequestsModule, TwitchEventSubModule, TwitchRewardsModule,
     TwitchIntegrationModule, TwitchWorkspaceRecoveryModule, RealtimeModule, OutboxRecoveryModule,
   ],
   controllers: [HealthController],
