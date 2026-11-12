@@ -97,7 +97,7 @@ function validateBaseUrl(value: string): string {
     url.search ||
     url.hash ||
     (!allowed && !localDevelopmentHost) ||
-    (process.env.NODE_ENV === 'production' && url.protocol !== 'https:' && !allowed)
+    (process.env.NODE_ENV === 'production' && url.protocol !== 'https:')
   ) {
     throw new BadRequestException('Lyrion base URL must use an operator-approved host and secure transport.');
   }
