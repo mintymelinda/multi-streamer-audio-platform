@@ -163,6 +163,7 @@ export class ProviderCredentialsService {
     workspaceId: string;
     providerInstanceId: string;
     actorId: string;
+    providerId?: string;
   }): Promise<Record<string, unknown> | null> {
     this.assertIdentity(input);
     return this.database.transaction(
@@ -182,7 +183,7 @@ export class ProviderCredentialsService {
             );
         const row = result.rows[0];
         if (!row) return null;
-        const providerId = inferProviderId(input.providerInstanceId);
+        const providerId = input.providerId ?? inferProviderId(input.providerInstanceId);
         const plaintext = await this.crypto.decrypt(
           {
             ciphertext: row.ciphertext,
@@ -208,12 +209,13 @@ export class ProviderCredentialsService {
     workspaceId: string;
     providerInstanceId: string;
     actorId: string;
+    providerId?: string;
   }): Promise<void> {
     this.assertIdentity(input);
     const credentials = await this.getCredentials(input);
     if (credentials) {
       const revoked = await this.revoker.revoke({
-        providerId: inferProviderId(input.providerInstanceId),
+        providerId: input.providerId ?? inferProviderId(input.providerInstanceId),
         credentials,
       });
       if (!revoked.revoked)
@@ -251,6 +253,7 @@ export class ProviderCredentialsService {
     workspaceId: string;
     providerInstanceId: string;
     actorId: string;
+    providerId?: string;
   }): Promise<void> {
     await this.disconnect(input);
     if (this.integrationDataStore) {

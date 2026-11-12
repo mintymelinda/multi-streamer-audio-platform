@@ -117,3 +117,57 @@ test('rejects terminal requests and invalid attempt metadata before writing prov
   );
   assert.equal(writes, 0);
 });
+
+test('selects a separate playback output for a YouTube source using workspace routing', async () => {
+  const jobs = [];
+  let routeInput;
+  const service = new ProviderExecutionQueueService({
+    getRequestFromPostgres: async (id) => ({
+      id,
+      status: 'approved',
+      workspaceId: 'workspace-a',
+      sourceProviderId: 'youtube',
+      durationSeconds: 180,
+    }),
+    routeProvider: async (input) => {
+      routeInput = input;
+      return { providerInstanceId: 'lyrion-output' };
+    },
+    assertExecutionEligible: async () => undefined,
+    enqueueProviderExecution: async (job) => jobs.push(job),
+  });
+  const job = await service.enqueue({
+    workspaceId: 'workspace-a',
+    requestId: 'request-a',
+    actorId: 'actor-a',
+  });
+  assert.equal(routeInput.request.sourceProviderId, 'youtube');
+  assert.equal(routeInput.request.mediaType, 'audio');
+  assert.equal(job.providerInstanceId, 'lyrion-output');
+  assert.equal(jobs.length, 1);
+});
+
+test('does not let a caller override the provider selected by workspace routing', async () => {
+  const service = new ProviderExecutionQueueService({
+    getRequestFromPostgres: async (id) => ({
+      id,
+      status: 'approved',
+      workspaceId: 'workspace-a',
+      sourceProviderId: 'youtube',
+      durationSeconds: 180,
+    }),
+    routeProvider: async () => ({ providerInstanceId: 'lyrion-output' }),
+    enqueueProviderExecution: async () => {
+      throw new Error('must not enqueue an unselected provider');
+    },
+  });
+  await assert.rejects(
+    service.enqueue({
+      workspaceId: 'workspace-a',
+      requestId: 'request-a',
+      providerInstanceId: 'youtube-metadata',
+      actorId: 'actor-a',
+    }),
+    /does not match workspace routing policy/,
+  );
+});
