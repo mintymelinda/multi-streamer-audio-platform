@@ -291,6 +291,13 @@ export class PlaybackCoordinatorService {
       operation.status = 'executing';
       operation.updatedAt = this.now().toISOString();
       await this.dependencies.persistOperation(operation);
+      if (leaseLost) {
+        operation.status = 'failed';
+        operation.errorCode = 'PLAYBACK_LEASE_LOST';
+        operation.result = { outcome: 'not_dispatched', reason: 'Playback lease renewal failed before provider dispatch.' };
+        operation.updatedAt = this.now().toISOString();
+        return this.dependencies.persistOperation(operation);
+      }
       const executeCommand = adapter[input.command];
       if (!executeCommand) {
         throw new PlaybackCoordinatorError(
