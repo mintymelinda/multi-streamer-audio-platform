@@ -4,6 +4,8 @@ import { DatabaseService } from '../database/database.service.js';
 import { IdentityModule } from '../identity/identity.module.js';
 import { ProviderExecutionQueueModule } from '../providers/provider-execution-queue.module.js';
 import { ProviderExecutionQueueService } from '../providers/provider-execution-queue.service.js';
+import { PlaybackCoordinatorModule } from './playback-coordinator.module.js';
+import { PlaybackCoordinatorService } from './playback-coordinator.service.js';
 import { WorkspacesModule } from '../workspaces/workspaces.module.js';
 import {
   PlaybackRecoveryController,
@@ -16,13 +18,23 @@ import {
 } from './playback-recovery.service.js';
 
 @Module({
-  imports: [DatabaseModule, IdentityModule, WorkspacesModule, ProviderExecutionQueueModule],
+  imports: [
+    DatabaseModule,
+    IdentityModule,
+    WorkspacesModule,
+    ProviderExecutionQueueModule,
+    PlaybackCoordinatorModule,
+  ],
   controllers: [PlaybackRecoveryController, PlaybackRecoveryPolicyController],
   providers: [
     {
       provide: PlaybackRecoveryService,
-      inject: [DatabaseService, ProviderExecutionQueueService],
-      useFactory: (database: DatabaseService, executionQueue: ProviderExecutionQueueService) =>
+      inject: [DatabaseService, ProviderExecutionQueueService, PlaybackCoordinatorService],
+      useFactory: (
+        database: DatabaseService,
+        executionQueue: ProviderExecutionQueueService,
+        playbackCoordinator: PlaybackCoordinatorService,
+      ) =>
         new PlaybackRecoveryService({
           getPolicy: async (workspaceId, actorId) => {
             const result = await database.transaction(
@@ -122,12 +134,17 @@ import {
                   media_id: string | null;
                   status: string;
                   provider_instance_id: string | null;
+                  provider_execution_state: string | null;
                 }>(
                   `SELECT r.id, r.workspace_id, r.media_id, r.status,
                           (SELECT s.provider_instance_id
                              FROM provider_execution_states s
                             WHERE s.workspace_id = r.workspace_id AND s.request_id = r.id
-                            ORDER BY s.updated_at DESC LIMIT 1) AS provider_instance_id
+                            ORDER BY s.updated_at DESC LIMIT 1) AS provider_instance_id,
+                          (SELECT s.state
+                             FROM provider_execution_states s
+                            WHERE s.workspace_id = r.workspace_id AND s.request_id = r.id
+                            ORDER BY s.updated_at DESC LIMIT 1) AS provider_execution_state
                      FROM media_requests r
                     WHERE r.workspace_id = $1 AND r.id = $2`,
                   [workspaceId, requestId],
@@ -141,6 +158,7 @@ import {
                   mediaId: row.media_id,
                   status: row.status,
                   providerInstanceId: row.provider_instance_id,
+                  providerExecutionState: row.provider_execution_state,
                 }
               : null;
           },
@@ -173,6 +191,51 @@ import {
             });
           },
           skip: async (request: RecoverablePlaybackRequest, actorId: string, reason: string) => {
+            if (request.providerExecutionState === 'resolving') {
+              throw new Error(
+                'Playback outcome is still being reconciled. Resolve the uncertain command before skipping this request.',
+              );
+            }
+            if (request.status === 'playing' || request.providerExecutionState === 'playing') {
+              const providerInstanceId = request.providerInstanceId;
+              if (!providerInstanceId) {
+                throw new Error('The playing request has no provider assignment.');
+              }
+              const result = await database.transaction(
+                { userId: actorId, verifiedWorkspaceId: request.workspaceId as never },
+                (client) =>
+                  client.query<{
+                    output_id: string;
+                    player_id: string;
+                  }>(
+                    `SELECT output_id, player_id
+                       FROM provider_output_assignments
+                      WHERE workspace_id = $1 AND provider_instance_id = $2
+                        AND active = true
+                      ORDER BY output_id
+                      LIMIT 2`,
+                    [request.workspaceId, providerInstanceId],
+                  ),
+              );
+              if (result.rowCount !== 1 || !result.rows[0]) {
+                throw new Error('The playing provider must have exactly one active output assignment.');
+              }
+              const operation = await playbackCoordinator.execute({
+                workspaceId: request.workspaceId,
+                providerInstanceId,
+                outputId: result.rows[0].output_id,
+                playerId: result.rows[0].player_id,
+                requestId: request.id,
+                command: 'skip',
+                idempotencyKey: `playback-recovery-skip:${request.id}`,
+                actorId,
+              });
+              if (operation.status !== 'completed' && operation.status !== 'reconciled') {
+                throw new Error(
+                  'The provider skip did not complete with a confirmed outcome; the request remains unchanged.',
+                );
+              }
+            }
             await closeRequest(database, request, actorId, 'skipped', reason);
           },
           dismiss: async (request: RecoverablePlaybackRequest, actorId: string, reason: string) => {
