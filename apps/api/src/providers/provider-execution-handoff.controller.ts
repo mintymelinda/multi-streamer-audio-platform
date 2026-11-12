@@ -204,6 +204,22 @@ export class ProviderExecutionHandoffController {
         } else if (!['dashboard', 'moderator', 'api'].includes(row.source)) {
           return null;
         }
+        const claimed = await client.query(
+          `UPDATE provider_execution_states
+              SET state = 'resolving', attempt = attempt + 1, updated_at = now()
+            WHERE id = $1 AND workspace_id = $2 AND request_id = $3
+              AND provider_instance_id = $4 AND dispatch_generation = $5
+              AND state IN ('queued', 'retry_wait')
+              AND (next_attempt_at IS NULL OR next_attempt_at <= now())`,
+          [
+            input.executionStateId,
+            input.workspaceId,
+            input.requestId,
+            input.providerInstanceId,
+            input.dispatchGeneration,
+          ],
+        );
+        if (claimed.rowCount !== 1) return null;
         return row;
       },
     );
@@ -232,6 +248,26 @@ export class ProviderExecutionHandoffController {
         sourceProviderId: execution.provider_id,
       },
     });
+    const executionState = operation.status === 'failed'
+      ? 'failed'
+      : operation.status === 'completed' || operation.status === 'reconciled'
+        ? 'playing'
+        : 'resolving';
+    await this.database.transaction(
+      { userId: input.actorUserId, verifiedWorkspaceId: input.workspaceId as never },
+      (client) => client.query(
+        `UPDATE provider_execution_states
+            SET state = $1, last_error_code = $2, updated_at = now()
+          WHERE id = $3 AND workspace_id = $4 AND dispatch_generation = $5`,
+        [
+          executionState,
+          operation.errorCode ?? null,
+          input.executionStateId,
+          input.workspaceId,
+          input.dispatchGeneration,
+        ],
+      ),
+    );
     return { accepted: true, operationId: operation.id ?? null, status: operation.status };
   }
 }
