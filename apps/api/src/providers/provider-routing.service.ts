@@ -34,6 +34,7 @@ export interface RoutableProviderInstance {
     queue: boolean;
     maxDurationSeconds: number | null;
     mediaTypes: ProviderMediaType[];
+    supportedSourceProviderIds?: string[];
   };
 }
 
@@ -191,6 +192,14 @@ export class ProviderRoutingService {
         const providerId = normalizeProviderId(instance.providerId);
         let reason = baseReason(instance, providerId);
         const requiredOperations = sourceProviderId ? outputRequirements : requestedOperations;
+        if (
+          reason === 'eligible' &&
+          sourceProviderId &&
+          instance.capabilities.supportedSourceProviderIds &&
+          !instance.capabilities.supportedSourceProviderIds.includes(sourceProviderId)
+        ) {
+          reason = 'playback output does not support this media source provider';
+        }
         if (
           reason === 'eligible' &&
           !supportsProviderRequest(instance.capabilities, {
