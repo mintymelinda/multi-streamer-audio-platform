@@ -1,6 +1,7 @@
 -- Revalidate both media-source and playback-output restrictions when a worker
 -- redelivers an in-progress execution. The coordinator's idempotency record and
 -- fenced output lease remain the authority for side-effect recovery.
+GRANT SELECT (provider) ON public.media_requests TO platform_provider_execution_owner;
 CREATE OR REPLACE FUNCTION platform_validate_provider_execution_job(
   p_execution_state_id uuid, p_workspace_id uuid, p_request_id uuid,
   p_provider_instance_id uuid, p_dispatch_generation integer
