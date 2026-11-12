@@ -84,15 +84,15 @@ export class LyrionPlaybackAdapter implements PlaybackAdapter {
     const rawMode = result.mode ?? result._mode;
     const mode = typeof rawMode === 'string' ? rawMode : 'stop';
     const status = mode === 'play' ? 'playing' : mode === 'pause' ? 'paused' : 'stopped';
-    const media = await this.resolveSource(input).catch(() => null);
-    const currentUrl = findCurrentStreamUrl(result);
-    const matches = Boolean(media && currentUrl && currentUrl === media.streamUrl);
+    // A matching media URL identifies the track, not the logical request. Since
+    // repeat requests for the same media are allowed, LMS playlist state alone
+    // cannot prove which request generation started it. Never claim request
+    // identity here; the Coordinator must keep ambiguous outcomes uncertain.
     return {
       status,
       ...(typeof result['playlist_cur_index'] === 'string' || typeof result['playlist_cur_index'] === 'number'
         ? { providerPlaybackId: String(result['playlist_cur_index']) }
         : {}),
-      ...(matches ? { requestId: input.requestId } : {}),
     };
   }
 

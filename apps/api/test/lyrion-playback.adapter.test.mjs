@@ -65,7 +65,7 @@ test('plays resolved YouTube media through the separate Lyrion output adapter', 
   ]);
 });
 
-test('reconciles only when the current Lyrion playlist item matches the resolved stream URL', async () => {
+test('does not infer logical request identity from a matching Lyrion stream URL', async () => {
   const adapter = new LyrionPlaybackAdapter({
     baseUrl: 'https://lms.example.test',
     playerId: 'player-a',
@@ -92,7 +92,7 @@ test('reconciles only when the current Lyrion playlist item matches the resolved
     payload: { sourceProviderId: 'youtube', mediaId: 'abcdefghijk' },
   });
   assert.equal(state.status, 'playing');
-  assert.equal(state.requestId, 'request-a');
+  assert.equal(state.requestId, undefined);
   assert.equal(state.providerPlaybackId, '2');
 });
 
