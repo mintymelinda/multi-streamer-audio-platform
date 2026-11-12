@@ -132,8 +132,8 @@ type ExecutionRow = {
             await database.transaction(
               { userId: actorId, verifiedWorkspaceId: workspaceId as never },
               async (client) => {
-                const provider = await client.query<{ provider_id: string; source_provider_id: string | null }>(
-                  `SELECT p.provider_id, r.provider AS source_provider_id
+                const provider = await client.query<{ provider_id: string; source_provider_id: string | null; capabilities: Record<string, unknown> }>(
+                  `SELECT p.provider_id, p.capabilities, r.provider AS source_provider_id
                      FROM provider_instances p
                      JOIN media_requests r ON r.workspace_id = p.workspace_id AND r.id = $3
                     WHERE p.workspace_id = $1 AND p.id = $2`,
@@ -143,6 +143,10 @@ type ExecutionRow = {
                 const sourceProviderId = provider.rows[0]?.source_provider_id;
                 if (!providerId) throw new Error('Provider instance was not found in this workspace.');
                 if (!sourceProviderId) throw new Error('The request has no supported media source provider.');
+                const supportedSources = provider.rows[0]?.capabilities.supportedSourceProviderIds;
+                if (Array.isArray(supportedSources) && !supportedSources.includes(sourceProviderId)) {
+                  throw new Error('The selected playback output does not support this media source provider.');
+                }
                 const sourceProvider = await client.query(
                   `SELECT 1 FROM provider_instances
                     WHERE workspace_id = $1 AND provider_id = $2
