@@ -45,6 +45,7 @@ export interface PlaybackCoordinatorDependencies {
     context?: Record<string, unknown>,
   ): Promise<boolean | { acquired: boolean; ownerId?: string; fencingToken?: number }>;
   releaseLease?(key: string, context?: Record<string, unknown>): Promise<unknown>;
+  renewLease?(key: string, context?: Record<string, unknown>): Promise<boolean>;
   findUnresolvedOperation?(input: {
     workspaceId: string;
     outputId: string;
@@ -68,6 +69,7 @@ export interface PlaybackCoordinatorDependencies {
   appendOutboxEvent?(event: Record<string, unknown>): Promise<unknown>;
   now?: () => Date;
   leaseDurationMs?: number;
+  leaseRenewalIntervalMs?: number;
 }
 
 export interface PlaybackAdapter {
@@ -129,10 +131,13 @@ export class PlaybackCoordinatorService {
   private readonly locks = new Map<string, Promise<void>>();
   private readonly now: () => Date;
   private readonly leaseDurationMs: number;
+  private readonly leaseRenewalIntervalMs: number;
 
   constructor(private readonly dependencies: PlaybackCoordinatorDependencies) {
     this.now = dependencies.now ?? (() => new Date());
     this.leaseDurationMs = dependencies.leaseDurationMs ?? 30_000;
+    this.leaseRenewalIntervalMs =
+      dependencies.leaseRenewalIntervalMs ?? Math.max(250, Math.floor(this.leaseDurationMs / 3));
   }
 
   async execute(input: PlaybackCommandInput): Promise<PlaybackOperation> {
@@ -238,6 +243,31 @@ export class PlaybackCoordinatorService {
         ? { fencingToken: acquired.fencingToken }
         : {}),
     };
+    const leaseContext = { ...operationInput, ownerId };
+    let leaseLost = false;
+    let stoppedRenewal = false;
+    let renewalInFlight: Promise<void> | undefined;
+    let renewalTimer: ReturnType<typeof setTimeout> | undefined;
+    const scheduleRenewal = () => {
+      if (!this.dependencies.renewLease || stoppedRenewal || leaseLost) return;
+      renewalTimer = setTimeout(() => {
+        renewalInFlight = (async () => {
+          try {
+            const renewed = await this.dependencies.renewLease!(lockKey, {
+              ...leaseContext,
+              expiresAt: new Date(this.now().getTime() + this.leaseDurationMs),
+            });
+            if (!renewed) leaseLost = true;
+          } catch {
+            leaseLost = true;
+          } finally {
+            if (!stoppedRenewal && !leaseLost) scheduleRenewal();
+          }
+        })();
+      }, this.leaseRenewalIntervalMs);
+      renewalTimer.unref?.();
+    };
+    scheduleRenewal();
     const timestamp = this.now().toISOString();
     const operation: PlaybackOperation = {
       ...operationInput,
@@ -251,6 +281,12 @@ export class PlaybackCoordinatorService {
 
     try {
       await this.dependencies.persistOperation(operation);
+      if (leaseLost) {
+        throw new PlaybackCoordinatorError(
+          'Playback lease was lost before provider dispatch.',
+          'PLAYBACK_LEASE_LOST',
+        );
+      }
       const adapter = await this.dependencies.getProviderAdapter(input.providerInstanceId, input);
       operation.status = 'executing';
       operation.updatedAt = this.now().toISOString();
@@ -267,6 +303,13 @@ export class PlaybackCoordinatorService {
       try {
         result = await executeCommand.call(adapter, operationInput);
       } catch (error) {
+        if (leaseLost) {
+          operation.status = 'uncertain';
+          operation.errorCode = 'PLAYBACK_LEASE_LOST';
+          operation.result = { outcome: 'unknown', reason: 'Playback lease renewal failed.' };
+          operation.updatedAt = this.now().toISOString();
+          return this.dependencies.persistOperation(operation);
+        }
         if (error instanceof ProviderCommandRejectedError) {
           operation.status = 'failed';
           operation.errorCode = error.code;
@@ -298,7 +341,11 @@ export class PlaybackCoordinatorService {
         return this.dependencies.persistOperation(operation);
       }
 
-      if (result.outcome === 'unknown') {
+      if (leaseLost) {
+        operation.status = 'uncertain';
+        operation.errorCode = 'PLAYBACK_LEASE_LOST';
+        operation.result = { outcome: 'unknown', reason: 'Playback lease renewal failed.' };
+      } else if (result.outcome === 'unknown') {
         let state: { status: string; providerPlaybackId?: string; requestId?: string } | undefined;
         try {
           state = await adapter.getPlaybackState?.(operationInput);
@@ -345,10 +392,10 @@ export class PlaybackCoordinatorService {
       }
       return persisted;
     } finally {
-      await this.dependencies.releaseLease?.(lockKey, {
-        ...operationInput,
-        ownerId,
-      });
+      stoppedRenewal = true;
+      if (renewalTimer) clearTimeout(renewalTimer);
+      if (renewalInFlight) await renewalInFlight;
+      await this.dependencies.releaseLease?.(lockKey, leaseContext);
     }
   }
 
