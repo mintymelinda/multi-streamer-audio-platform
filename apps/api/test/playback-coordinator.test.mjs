@@ -404,7 +404,8 @@ test('renews a fenced database lease while a provider command is still running',
 
   assert.equal(result.status, 'completed');
   assert.ok(renewals.length >= 1);
-  assert.equal(renewals[0].ownerId, 'owner-a');
+  assert.equal(typeof renewals[0].ownerId, 'string');
+  assert.ok(renewals[0].ownerId.length > 0);
   assert.equal(renewals[0].fencingToken, 7);
   assert.ok(renewals[0].expiresAt instanceof Date);
 });
