@@ -118,3 +118,81 @@ test('rejects ambiguous or missing output assignments instead of implicitly mixi
     (error) => error.code === 'OUTPUT_NOT_ASSIGNED',
   );
 });
+
+test('routes YouTube source resolution to a separate Lyrion playback output', async () => {
+  const youtube = provider({
+    providerId: 'youtube',
+    instanceId: 'youtube-source',
+    priority: 5,
+    capabilities: { ...provider().capabilities, playback: false },
+  });
+  const lyrion = provider({
+    providerId: 'lyrion',
+    instanceId: 'lyrion-output',
+    priority: 10,
+    capabilities: {
+      search: false,
+      resolve: false,
+      playback: true,
+      pause: true,
+      resume: true,
+      seek: true,
+      queue: false,
+      maxDurationSeconds: null,
+      mediaTypes: ['audio'],
+    },
+  });
+  const service = new ProviderRoutingService({
+    listProviderInstances: async () => [youtube, lyrion],
+    getWorkspaceRules: async () => ({
+      allowedProviderIds: ['youtube', 'lyrion'],
+      blockedProviderIds: [],
+      preferredProviderIds: ['lyrion'],
+    }),
+    getOutputAssignment: async (_workspaceId, instanceId) => instanceId === 'lyrion-output'
+      ? { outputId: 'output-a', providerInstanceId: instanceId, playerId: 'player-a' }
+      : null,
+  });
+  const result = await service.route({
+    workspaceId: 'workspace-a',
+    request: { ...request, sourceProviderId: 'youtube' },
+  });
+  assert.equal(result.sourceProviderId, 'youtube');
+  assert.equal(result.sourceProviderInstanceId, 'youtube-source');
+  assert.equal(result.providerId, 'lyrion');
+  assert.equal(result.providerInstanceId, 'lyrion-output');
+  assert.equal(result.outputId, 'output-a');
+});
+
+test('blocks routing when the source provider is restricted even if an output is available', async () => {
+  const youtube = provider({
+    providerId: 'youtube',
+    instanceId: 'youtube-source',
+    capabilities: { ...provider().capabilities, playback: false },
+  });
+  const lyrion = provider({
+    providerId: 'lyrion',
+    instanceId: 'lyrion-output',
+    capabilities: { ...provider().capabilities, resolve: false },
+  });
+  const service = new ProviderRoutingService({
+    listProviderInstances: async () => [youtube, lyrion],
+    getWorkspaceRules: async () => ({
+      allowedProviderIds: ['lyrion'],
+      blockedProviderIds: ['youtube'],
+      preferredProviderIds: [],
+    }),
+    getOutputAssignment: async (_workspaceId, instanceId) => ({
+      outputId: 'output-a',
+      providerInstanceId: instanceId,
+      playerId: 'player-a',
+    }),
+  });
+  await assert.rejects(
+    service.route({
+      workspaceId: 'workspace-a',
+      request: { ...request, sourceProviderId: 'youtube' },
+    }),
+    (error) => error.code === 'NO_ELIGIBLE_PROVIDER',
+  );
+});
