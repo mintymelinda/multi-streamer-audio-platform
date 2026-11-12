@@ -159,7 +159,7 @@ export class LyrionPlaybackAdapter implements PlaybackAdapter {
     if (!isRecord(payload) || !isRecord(payload.result)) {
       throw new Error('Lyrion returned an invalid response; the command outcome may be unknown.');
     }
-    if (payload.error) {
+    if (payload.error || (payload.result as Record<string, unknown>).error) {
       throw new ProviderCommandRejectedError('Lyrion rejected the command.', 'LYRION_COMMAND_REJECTED');
     }
     return payload as LyrionResponse;
