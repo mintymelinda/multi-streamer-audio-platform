@@ -368,3 +368,76 @@ test('passes verified workspace and actor context to the output adapter factory'
   assert.equal(received.context.actorId, 'actor-a');
   assert.equal(received.context.outputId, 'output-a');
 });
+
+
+test('renews a fenced database lease while a provider command is still running', async () => {
+  const renewals = [];
+  const service = new PlaybackCoordinatorService({
+    leaseDurationMs: 30,
+    leaseRenewalIntervalMs: 5,
+    acquireLease: async () => ({ acquired: true, ownerId: 'owner-a', fencingToken: 7 }),
+    renewLease: async (_key, context) => {
+      renewals.push(context);
+      return true;
+    },
+    releaseLease: async () => undefined,
+    findOperationByIdempotencyKey: async () => null,
+    persistOperation: async (operation) => operation,
+    getProviderAdapter: async () => ({
+      play: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        return { outcome: 'started' };
+      },
+    }),
+  });
+
+  const result = await service.execute({
+    workspaceId: 'workspace-a',
+    providerInstanceId: 'lyrion-a',
+    playerId: 'player-a',
+    outputId: 'output-a',
+    command: 'play',
+    requestId: 'request-a',
+    idempotencyKey: 'command-long-running',
+    actorId: 'actor-a',
+  });
+
+  assert.equal(result.status, 'completed');
+  assert.ok(renewals.length >= 1);
+  assert.equal(renewals[0].ownerId, 'owner-a');
+  assert.equal(renewals[0].fencingToken, 7);
+  assert.ok(renewals[0].expiresAt instanceof Date);
+});
+
+test('records an uncertain outcome if the database lease is lost during provider execution', async () => {
+  const service = new PlaybackCoordinatorService({
+    leaseDurationMs: 30,
+    leaseRenewalIntervalMs: 5,
+    acquireLease: async () => ({ acquired: true, ownerId: 'owner-a', fencingToken: 7 }),
+    renewLease: async () => false,
+    releaseLease: async () => undefined,
+    findOperationByIdempotencyKey: async () => null,
+    persistOperation: async (operation) => operation,
+    getProviderAdapter: async () => ({
+      play: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        return { outcome: 'started' };
+      },
+    }),
+  });
+
+  const result = await service.execute({
+    workspaceId: 'workspace-a',
+    providerInstanceId: 'lyrion-a',
+    playerId: 'player-a',
+    outputId: 'output-a',
+    command: 'play',
+    requestId: 'request-a',
+    idempotencyKey: 'command-lost-lease',
+    actorId: 'actor-a',
+  });
+
+  assert.equal(result.status, 'uncertain');
+  assert.equal(result.errorCode, 'PLAYBACK_LEASE_LOST');
+  assert.equal(result.result.outcome, 'unknown');
+});
