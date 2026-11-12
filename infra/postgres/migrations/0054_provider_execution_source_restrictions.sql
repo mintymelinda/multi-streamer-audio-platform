@@ -112,7 +112,7 @@ BEGIN
     AND COALESCE((p.capabilities->>'playback')::boolean, false) = true
     AND (
       NOT (p.capabilities ? 'supportedSourceProviderIds')
-      OR (p.capabilities->'supportedSourceProviderIds') ? r.provider
+      OR ((p.capabilities->'supportedSourceProviderIds') ? r.provider)
     )
     AND p.connection_health = 'healthy'
     AND COALESCE((
