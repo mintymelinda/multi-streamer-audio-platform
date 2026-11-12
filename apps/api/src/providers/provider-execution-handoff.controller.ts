@@ -154,7 +154,16 @@ export class ProviderExecutionHandoffController {
               AND s.dispatch_generation = $5
               AND s.state IN ('queued', 'retry_wait', 'resolving')
               AND (s.next_attempt_at IS NULL OR s.next_attempt_at <= now())
-              AND r.status = 'queued' AND p.enabled = true
+              AND r.status = 'queued' AND r.provider IS NOT NULL
+              AND EXISTS (
+                SELECT 1 FROM provider_instances source_provider
+                 WHERE source_provider.workspace_id = r.workspace_id
+                   AND source_provider.provider_id = r.provider
+                   AND source_provider.enabled = true
+                   AND source_provider.connection_health = 'healthy'
+                   AND COALESCE((source_provider.capabilities->>'resolve')::boolean, false) = true
+              )
+              AND p.enabled = true
               AND COALESCE((p.capabilities->>'playback')::boolean, false) = true
               AND p.connection_health = 'healthy'
               AND COALESCE((SELECT policy.enabled FROM workspace_playback_policies policy
