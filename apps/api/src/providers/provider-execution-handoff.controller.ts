@@ -154,6 +154,7 @@ export class ProviderExecutionHandoffController {
               AND s.state IN ('queued', 'retry_wait', 'resolving')
               AND (s.next_attempt_at IS NULL OR s.next_attempt_at <= now())
               AND r.status = 'queued' AND p.enabled = true
+              AND COALESCE((p.capabilities->>'playback')::boolean, false) = true
               AND p.connection_health = 'healthy'
               AND COALESCE((SELECT policy.enabled FROM workspace_playback_policies policy
                              WHERE policy.workspace_id = r.workspace_id), true) = true
