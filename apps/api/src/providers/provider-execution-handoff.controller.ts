@@ -151,7 +151,7 @@ export class ProviderExecutionHandoffController {
             WHERE r.workspace_id = $1 AND r.id = $2
               AND s.id = $3 AND s.provider_instance_id = $4
               AND s.dispatch_generation = $5
-              AND s.state IN ('queued', 'retry_wait')
+              AND s.state IN ('queued', 'retry_wait', 'resolving')
               AND (s.next_attempt_at IS NULL OR s.next_attempt_at <= now())
               AND r.status = 'queued' AND p.enabled = true
               AND p.connection_health = 'healthy'
@@ -204,13 +204,14 @@ export class ProviderExecutionHandoffController {
         } else if (!['dashboard', 'moderator', 'api'].includes(row.source)) {
           return null;
         }
-        const claimed = await client.query(
-          `UPDATE provider_execution_states
-              SET state = 'resolving', attempt = attempt + 1, updated_at = now()
-            WHERE id = $1 AND workspace_id = $2 AND request_id = $3
-              AND provider_instance_id = $4 AND dispatch_generation = $5
-              AND state IN ('queued', 'retry_wait')
-              AND (next_attempt_at IS NULL OR next_attempt_at <= now())`,
+        if (row.execution_state !== 'resolving') {
+          const claimed = await client.query(
+            `UPDATE provider_execution_states
+                SET state = 'resolving', attempt = attempt + 1, updated_at = now()
+              WHERE id = $1 AND workspace_id = $2 AND request_id = $3
+                AND provider_instance_id = $4 AND dispatch_generation = $5
+                AND state IN ('queued', 'retry_wait')
+                AND (next_attempt_at IS NULL OR next_attempt_at <= now())`,
           [
             input.executionStateId,
             input.workspaceId,
@@ -219,7 +220,8 @@ export class ProviderExecutionHandoffController {
             input.dispatchGeneration,
           ],
         );
-        if (claimed.rowCount !== 1) return null;
+          if (claimed.rowCount !== 1) return null;
+        }
         return row;
       },
     );
