@@ -3,6 +3,7 @@ import { DatabaseModule } from '../database/database.module.js';
 import { DatabaseService } from '../database/database.service.js';
 import { ProviderOutputAssignmentModule } from '../providers/provider-output-assignment.module.js';
 import { ProviderOutputAssignmentService } from '../providers/provider-output-assignment.service.js';
+import { PlaybackAdapterRegistry } from '../providers/playback-adapter.registry.js';
 import {
   PlaybackCoordinatorService,
   type PlaybackOperation,
@@ -78,12 +79,14 @@ function mapOperation(row: OperationRow): PlaybackOperation {
 @Module({
   imports: [DatabaseModule, ProviderOutputAssignmentModule],
   providers: [
+    PlaybackAdapterRegistry,
     {
       provide: PlaybackCoordinatorService,
-      inject: [DatabaseService, ProviderOutputAssignmentService],
+      inject: [DatabaseService, ProviderOutputAssignmentService, PlaybackAdapterRegistry],
       useFactory: (
         database: DatabaseService,
         outputAssignments: ProviderOutputAssignmentService,
+        adapters: PlaybackAdapterRegistry,
       ) => {
         return new PlaybackCoordinatorService({
           assertOutputAssignment: async (input) => {
@@ -309,8 +312,36 @@ function mapOperation(row: OperationRow): PlaybackOperation {
               ? { enabled: policy.enabled, ...(policy.reason ? { reason: policy.reason } : {}) }
               : { enabled: true };
           },
-          getProviderAdapter: async () => {
-            throw new Error('No playback adapter is registered for this provider instance.');
+          getProviderAdapter: async (providerInstanceId, context) => {
+            if (!context?.actorId) {
+              throw new Error('An authenticated workspace user is required to select a playback adapter.');
+            }
+            const result = await database.transaction(
+              {
+                userId: context.actorId,
+                verifiedWorkspaceId: context.workspaceId as never,
+              },
+              (client) =>
+                client.query<{
+                  provider_id: string;
+                  capabilities: Record<string, unknown>;
+                  enabled: boolean;
+                  connection_health: string;
+                }>(
+                  `SELECT provider_id, capabilities, enabled, connection_health
+                     FROM provider_instances
+                    WHERE workspace_id = $1 AND id = $2`,
+                  [context.workspaceId, providerInstanceId],
+                ),
+            );
+            const provider = result.rows[0];
+            if (!provider || !provider.enabled || provider.connection_health !== 'healthy') {
+              throw new Error('The assigned playback provider is unavailable or disabled.');
+            }
+            if (provider.capabilities.playback !== true) {
+              throw new Error('The assigned provider does not declare playback capability.');
+            }
+            return adapters.resolve(provider.provider_id, context);
           },
         });
       },
