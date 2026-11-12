@@ -56,7 +56,10 @@ export interface PlaybackCoordinatorDependencies {
     actorId?: string,
   ): Promise<PlaybackOperation | null>;
   persistOperation(operation: PlaybackOperation): Promise<PlaybackOperation>;
-  getProviderAdapter(providerInstanceId: string): Promise<PlaybackAdapter>;
+  getProviderAdapter(
+    providerInstanceId: string,
+    context?: PlaybackCommandInput,
+  ): Promise<PlaybackAdapter>;
   assertOutputAssignment?(input: PlaybackCommandInput): Promise<void>;
   getWorkspacePlaybackPolicy?(
     workspaceId: string,
@@ -248,7 +251,7 @@ export class PlaybackCoordinatorService {
 
     try {
       await this.dependencies.persistOperation(operation);
-      const adapter = await this.dependencies.getProviderAdapter(input.providerInstanceId);
+      const adapter = await this.dependencies.getProviderAdapter(input.providerInstanceId, input);
       operation.status = 'executing';
       operation.updatedAt = this.now().toISOString();
       await this.dependencies.persistOperation(operation);
@@ -355,7 +358,7 @@ export class PlaybackCoordinatorService {
   ): Promise<PlaybackOperation> {
     let state: { status: string; providerPlaybackId?: string; requestId?: string } | undefined;
     try {
-      const adapter = await this.dependencies.getProviderAdapter(input.providerInstanceId);
+      const adapter = await this.dependencies.getProviderAdapter(input.providerInstanceId, input);
       state = await adapter.getPlaybackState?.(input);
     } catch {
       state = undefined;
