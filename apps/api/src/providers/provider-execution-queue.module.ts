@@ -48,6 +48,18 @@ type ExecutionRow = {
                 const providerId = provider.rows[0]?.provider_id;
                 const sourceProviderId = provider.rows[0]?.source_provider_id;
                 if (!providerId) throw new Error('Provider instance was not found in this workspace.');
+                if (!sourceProviderId) throw new Error('The request has no supported media source provider.');
+                const sourceProvider = await client.query(
+                  `SELECT 1 FROM provider_instances
+                    WHERE workspace_id = $1 AND provider_id = $2
+                      AND enabled = true AND connection_health = 'healthy'
+                      AND COALESCE((capabilities->>'resolve')::boolean, false) = true
+                    LIMIT 1`,
+                  [workspaceId, sourceProviderId],
+                );
+                if ((sourceProvider.rowCount ?? 0) !== 1) {
+                  throw new Error('No healthy source resolver is configured for this media provider.');
+                }
                 const restriction = await client.query(
                   `SELECT 1 FROM workspace_provider_path_restrictions
                     WHERE workspace_id = $1 AND provider_id = ANY($2::text[]) AND disabled_at IS NOT NULL
