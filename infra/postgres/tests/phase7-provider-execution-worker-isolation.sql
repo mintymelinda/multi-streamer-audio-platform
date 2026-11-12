@@ -21,7 +21,7 @@ BEGIN
   (workspace_id,user_request_id,0,1),(workspace_id,twitch_request_id,0,2);
  INSERT INTO provider_execution_states (id,workspace_id,request_id,provider_instance_id,state,dispatch_generation) VALUES
   (user_execution_id,workspace_id,user_request_id,provider_id,'queued',3),
-  (twitch_execution_id,workspace_id,twitch_request_id,provider_id,'queued',4);
+  (twitch_execution_id,workspace_id,twitch_request_id,provider_id,'resolving',4);
  INSERT INTO twitch_eventsub_subscriptions (subscription_id,workspace_id,event_type,event_version,status,secret_envelope,service_actor_user_id)
  VALUES ('provider-worker-subscription',workspace_id,'channel.channel_points_custom_reward_redemption.add','1','enabled','{"formatVersion":1}'::jsonb,owner_id);
  INSERT INTO twitch_eventsub_deliveries (id,workspace_id,subscription_id,message_id,message_type,payload,status,service_actor_user_id,processed_at)
@@ -47,7 +47,7 @@ BEGIN
  IF NOT EXISTS (SELECT 1 FROM platform_validate_provider_execution_job(user_execution_id,workspace_id,user_request_id,provider_id,3) v
    WHERE v.actor_user_id=submitter_id AND v.request_source='dashboard') THEN RAISE EXCEPTION 'user request actor path failed'; END IF;
  IF NOT EXISTS (SELECT 1 FROM platform_validate_provider_execution_job(twitch_execution_id,workspace_id,twitch_request_id,provider_id,4) v
-   WHERE v.actor_user_id=owner_id AND v.request_source='twitch_reward') THEN RAISE EXCEPTION 'Twitch service actor path failed'; END IF;
+   WHERE v.actor_user_id=owner_id AND v.request_source='twitch_reward' AND v.state='resolving') THEN RAISE EXCEPTION 'Twitch resolving handoff replay path failed'; END IF;
  IF EXISTS (SELECT 1 FROM platform_validate_provider_execution_job(user_execution_id,workspace_id,user_request_id,provider_id,2))
  THEN RAISE EXCEPTION 'stale dispatch generation was accepted'; END IF;
  IF EXISTS (SELECT 1 FROM platform_validate_provider_execution_job(user_execution_id,gen_random_uuid(),user_request_id,provider_id,3))

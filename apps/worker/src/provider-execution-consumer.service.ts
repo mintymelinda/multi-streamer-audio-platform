@@ -2,6 +2,7 @@ import { Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@ne
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import { Redis } from 'ioredis';
 import { readFileSync } from 'node:fs';
+import { createHmac } from 'node:crypto';
 import { Pool } from 'pg';
 
 export interface ProviderExecutionJob {
@@ -13,7 +14,7 @@ export interface ProviderExecutionJob {
 }
 export interface ValidatedProviderExecution {
   execution_state_id: string; workspace_id: string; request_id: string; provider_instance_id: string;
-  state: 'queued' | 'retry_wait'; attempt: number; dispatch_generation: number;
+  state: 'queued' | 'retry_wait' | 'resolving'; attempt: number; dispatch_generation: number;
   request_source: 'twitch_reward' | 'dashboard' | 'moderator' | 'api'; request_status: 'queued';
   actor_user_id: string; provider_id: string; contract_version: number; capabilities: Record<string, unknown>;
   connection_health: 'healthy'; output_id: string; player_id: string; media_id: string | null;
@@ -48,6 +49,58 @@ export function parseProviderExecutionJob(value: unknown): ProviderExecutionJob 
     dispatchGeneration: Number(input.dispatchGeneration),
   };
 }
+export function createProviderExecutionHandoffSignature(
+  secret: string,
+  timestamp: string,
+  body: unknown,
+): string {
+  return createHmac('sha256', secret).update(`${timestamp}.${JSON.stringify(body)}`).digest('hex');
+}
+
+export async function handoffValidatedProviderExecution(
+  input: ValidatedProviderExecution,
+  options: {
+    url: string;
+    secret: string;
+    fetchImpl?: typeof fetch;
+    now?: () => number;
+  },
+): Promise<{ accepted: true; operationId: string | null; status: string }> {
+  const body = {
+    executionStateId: input.execution_state_id,
+    workspaceId: input.workspace_id,
+    requestId: input.request_id,
+    providerInstanceId: input.provider_instance_id,
+    dispatchGeneration: input.dispatch_generation,
+    actorUserId: input.actor_user_id,
+  };
+  const timestamp = String(Math.floor((options.now?.() ?? Date.now()) / 1000));
+  const signature = createProviderExecutionHandoffSignature(options.secret, timestamp, body);
+  const response = await (options.fetchImpl ?? fetch)(options.url, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-provider-execution-timestamp': timestamp,
+      'x-provider-execution-signature': signature,
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!response.ok) {
+    throw new Error(`provider_execution_handoff_http_${response.status}`);
+  }
+  const result: unknown = await response.json();
+  if (
+    !result ||
+    typeof result !== 'object' ||
+    (result as Record<string, unknown>).accepted !== true ||
+    typeof (result as Record<string, unknown>).status !== 'string'
+  ) {
+    throw new Error('provider_execution_handoff_invalid_response');
+  }
+  return result as { accepted: true; operationId: string | null; status: string };
+}
+
 export async function validateProviderExecutionJob(pool: Pool, value: unknown): Promise<ValidatedProviderExecution | null> {
   const job = parseProviderExecutionJob(value);
   const result = await pool.query<ValidatedProviderExecution>(
@@ -93,8 +146,15 @@ export class ProviderExecutionConsumerService implements OnModuleInit, OnModuleD
       this.logger.warn(`Discarded stale or unauthorized provider execution job ${job.id ?? 'unknown'}.`);
       return;
     }
-    // Playback remains disabled until the Playback Coordinator and concrete
-    // provider adapter are integrated; this consumer establishes the safe gate.
-    this.logger.log(`Validated provider execution ${validated.execution_state_id}; awaiting coordinator handoff.`);
+    const url = process.env.PROVIDER_EXECUTION_HANDOFF_URL?.trim();
+    if (!url) throw new Error('PROVIDER_EXECUTION_HANDOFF_URL is required.');
+    const secret = readRequiredSetting(
+      'PROVIDER_EXECUTION_HANDOFF_SECRET_FILE',
+      'PROVIDER_EXECUTION_HANDOFF_SECRET',
+    );
+    const result = await handoffValidatedProviderExecution(validated, { url, secret });
+    this.logger.log(
+      `Provider execution ${validated.execution_state_id} handed to coordinator: ${result.status}.`,
+    );
   }
 }
