@@ -97,6 +97,16 @@ BEGIN
          AND source_provider.enabled = true
          AND source_provider.connection_health = 'healthy'
          AND COALESCE((source_provider.capabilities->>'resolve')::boolean, false) = true
+         AND (
+           source_provider.provider_id <> 'spotify'
+           OR EXISTS (
+             SELECT 1 FROM public.provider_credentials source_credential
+              WHERE source_credential.workspace_id = r.workspace_id
+                AND source_credential.provider_instance_id = source_provider.id
+                AND source_credential.status = 'connected'
+                AND (source_credential.expires_at IS NULL OR source_credential.expires_at > now())
+           )
+         )
     )
     AND p.enabled = true
     AND COALESCE((p.capabilities->>'playback')::boolean, false) = true
