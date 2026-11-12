@@ -26,7 +26,9 @@ test('configures a workspace-scoped Lyrion output and stores no credentials by d
   };
   const previousNodeEnv = process.env.NODE_ENV;
   const previousFetch = globalThis.fetch;
+  const previousInvidiousUrl = process.env.INVIDIOUS_INSTANCE_URL;
   process.env.NODE_ENV = 'test';
+  process.env.INVIDIOUS_INSTANCE_URL = 'http://localhost:8080';
   globalThis.fetch = async () => new Response(JSON.stringify({ id: 1, result: { _mode: 'stop' } }), {
     status: 200,
     headers: { 'content-type': 'application/json' },
@@ -51,6 +53,8 @@ test('configures a workspace-scoped Lyrion output and stores no credentials by d
     assert.equal(queries[2].values[1], JSON.stringify({ baseUrl: 'http://localhost:9000' }));
   } finally {
     globalThis.fetch = previousFetch;
+    if (previousInvidiousUrl === undefined) delete process.env.INVIDIOUS_INSTANCE_URL;
+    else process.env.INVIDIOUS_INSTANCE_URL = previousInvidiousUrl;
     if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
     else process.env.NODE_ENV = previousNodeEnv;
   }
