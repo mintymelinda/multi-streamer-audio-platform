@@ -3,7 +3,13 @@ import { DatabaseModule } from '../database/database.module.js';
 import { DatabaseService } from '../database/database.service.js';
 import { ProviderOutputAssignmentModule } from '../providers/provider-output-assignment.module.js';
 import { ProviderOutputAssignmentService } from '../providers/provider-output-assignment.service.js';
+import { ProviderCredentialsModule } from '../providers/provider-credentials.module.js';
+import { ProviderCredentialsService } from '../providers/provider-credentials.service.js';
+import { ProviderInstanceModule } from '../providers/provider-instance.module.js';
+import { InvidiousResolverService } from '../providers/invidious-resolver.service.js';
 import { PlaybackAdapterRegistry } from '../providers/playback-adapter.registry.js';
+import { YouTubeInvidiousMediaResolver } from '../providers/playback-media-source.resolver.js';
+import { LyrionPlaybackAdapter } from '../providers/lyrion-playback.adapter.js';
 import {
   PlaybackCoordinatorService,
   type PlaybackOperation,
@@ -77,9 +83,69 @@ function mapOperation(row: OperationRow): PlaybackOperation {
 }
 
 @Module({
-  imports: [DatabaseModule, ProviderOutputAssignmentModule],
+  imports: [DatabaseModule, ProviderOutputAssignmentModule, ProviderCredentialsModule, ProviderInstanceModule],
   providers: [
-    PlaybackAdapterRegistry,
+    {
+      provide: PlaybackAdapterRegistry,
+      inject: [DatabaseService, ProviderCredentialsService, InvidiousResolverService],
+      useFactory: (
+        database: DatabaseService,
+        credentials: ProviderCredentialsService,
+        invidious: InvidiousResolverService,
+      ) => {
+        const registry = new PlaybackAdapterRegistry();
+        registry.register('lyrion', async (input) => {
+          if (!input.actorId) {
+            throw new Error('An authenticated workspace user is required for Lyrion playback.');
+          }
+          const result = await database.transaction(
+            {
+              userId: input.actorId,
+              verifiedWorkspaceId: input.workspaceId as never,
+            },
+            (client) =>
+              client.query<{ configuration: Record<string, unknown> }>(
+                `SELECT configuration
+                   FROM provider_instances
+                  WHERE workspace_id = $1 AND id = $2 AND provider_id = 'lyrion'
+                    AND enabled = true AND connection_health = 'healthy'`,
+                [input.workspaceId, input.providerInstanceId],
+              ),
+          );
+          const configuration = result.rows[0]?.configuration;
+          if (!configuration || typeof configuration.baseUrl !== 'string') {
+            throw new Error('Lyrion output configuration is missing.');
+          }
+          const savedCredentials = await credentials.getCredentials({
+            workspaceId: input.workspaceId,
+            providerInstanceId: input.providerInstanceId,
+            actorId: input.actorId,
+            providerId: 'lyrion',
+          });
+          const username = savedCredentials?.username;
+          const password = savedCredentials?.password;
+          if (
+            (username !== undefined && typeof username !== 'string') ||
+            (password !== undefined && typeof password !== 'string')
+          ) {
+            throw new Error('Stored Lyrion credentials are invalid.');
+          }
+          return new LyrionPlaybackAdapter({
+            baseUrl: configuration.baseUrl,
+            playerId: input.playerId,
+            ...(typeof username === 'string' && typeof password === 'string'
+              ? { username, password }
+              : {}),
+            mediaResolver: new YouTubeInvidiousMediaResolver(invidious),
+            allowedHosts: (process.env.LYRION_ALLOWED_HOSTS ?? '')
+              .split(',')
+              .map((item) => item.trim())
+              .filter(Boolean),
+          });
+        });
+        return registry;
+      },
+    },
     {
       provide: PlaybackCoordinatorService,
       inject: [DatabaseService, ProviderOutputAssignmentService, PlaybackAdapterRegistry],

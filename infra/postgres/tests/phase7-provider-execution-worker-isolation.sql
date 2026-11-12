@@ -14,9 +14,9 @@ BEGIN
  VALUES (provider_id,workspace_id,'youtube','worker-validation',1,'{"resolve":true,"playback":true}'::jsonb,'healthy');
  INSERT INTO provider_output_assignments (workspace_id,provider_instance_id,output_id,player_id,assigned_by)
  VALUES (workspace_id,provider_id,'output-1','player-1',owner_id);
- INSERT INTO media_requests (id,workspace_id,source,submitted_by_user_id,media_id,title,status,source_event_id) VALUES
-  (user_request_id,workspace_id,'dashboard',submitter_id,'media-user','User request','queued',NULL),
-  (twitch_request_id,workspace_id,'twitch_reward',NULL,'media-twitch','Twitch request','queued','twitch-redemption-1');
+ INSERT INTO media_requests (id,workspace_id,source,submitted_by_user_id,provider,media_id,title,status,source_event_id) VALUES
+  (user_request_id,workspace_id,'dashboard',submitter_id,'youtube','media-user','User request','queued',NULL),
+  (twitch_request_id,workspace_id,'twitch_reward',NULL,'youtube','media-twitch','Twitch request','queued','twitch-redemption-1');
  INSERT INTO logical_queue_entries (workspace_id,request_id,priority,sequence) VALUES
   (workspace_id,user_request_id,0,1),(workspace_id,twitch_request_id,0,2);
  INSERT INTO provider_execution_states (id,workspace_id,request_id,provider_instance_id,state,dispatch_generation) VALUES
