@@ -77,11 +77,12 @@ export interface ProviderRoutingResult extends ProviderOutputAssignment {
 }
 
 export interface ProviderRoutingDependencies {
-  listProviderInstances(workspaceId: string): Promise<RoutableProviderInstance[]>;
-  getWorkspaceRules(workspaceId: string): Promise<ProviderWorkspaceRoutingRules>;
+  listProviderInstances(workspaceId: string, actorId?: string): Promise<RoutableProviderInstance[]>;
+  getWorkspaceRules(workspaceId: string, actorId?: string): Promise<ProviderWorkspaceRoutingRules>;
   getOutputAssignment(
     workspaceId: string,
     providerInstanceId: string,
+    actorId?: string,
   ): Promise<ProviderOutputAssignment | ProviderOutputAssignment[] | null>;
 }
 
@@ -91,6 +92,7 @@ export class ProviderRoutingService {
 
   async route(input: {
     workspaceId: string;
+    actorId?: string;
     request: ProviderRoutingRequest;
   }): Promise<ProviderRoutingResult> {
     const workspaceId = input.workspaceId.trim();
@@ -101,8 +103,8 @@ export class ProviderRoutingService {
     if (!input.request.id.trim()) throw new TypeError('request.id is required.');
 
     const [instances, rules] = await Promise.all([
-      this.dependencies.listProviderInstances(workspaceId),
-      this.dependencies.getWorkspaceRules(workspaceId),
+      this.dependencies.listProviderInstances(workspaceId, input.actorId),
+      this.dependencies.getWorkspaceRules(workspaceId, input.actorId),
     ]);
     const allowed = new Set(rules.allowedProviderIds.map(normalizeProviderId));
     const blocked = new Set(rules.blockedProviderIds.map(normalizeProviderId));
@@ -227,6 +229,7 @@ export class ProviderRoutingService {
       const assignment = await this.dependencies.getOutputAssignment(
         workspaceId,
         candidate.instance.instanceId,
+        input.actorId,
       );
       if (!assignment || (Array.isArray(assignment) && assignment.length === 0)) {
         missingOutput = true;
