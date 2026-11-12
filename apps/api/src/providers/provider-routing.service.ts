@@ -118,6 +118,13 @@ export class ProviderRoutingService {
     const sourceProviderId = input.request.sourceProviderId
       ? normalizeProviderId(input.request.sourceProviderId)
       : null;
+    if (!sourceProviderId) {
+      throw new ProviderRoutingError(
+        'The request has no declared media source provider.',
+        'NO_ELIGIBLE_PROVIDER',
+        considered,
+      );
+    }
     const requestedOperations = input.request.requiredOperations ?? ['resolve', 'playback'];
     const sourceOperations = requestedOperations.filter((operation) =>
       operation === 'search' || operation === 'resolve',
