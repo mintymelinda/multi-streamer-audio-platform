@@ -28,6 +28,7 @@ import { AssetsModule } from './assets/assets.module.js';
 import { PlatformAdminModule } from './platform-admin/platform-admin.module.js';
 import { PlannedMaintenanceModule } from './platform-admin/planned-maintenance.module.js';
 import { WorkspaceLifecycleModule } from './workspaces/workspace-lifecycle.module.js';
+import { ProviderExecutionHandoffModule } from './providers/provider-execution-handoff.module.js';
 
 @Module({
   imports: [
@@ -35,7 +36,7 @@ import { WorkspaceLifecycleModule } from './workspaces/workspace-lifecycle.modul
     UserPreferencesModule, OverlayScenesModule, AssetsModule, ProviderInstanceModule,
     ProviderCredentialsModule, ProviderOutputAssignmentModule, PlaybackCoordinatorModule,
     PlaybackRecoveryModule, ProviderExecutionQueueModule, SpotifyConnectOAuthModule, RightsComplianceModule,
-    PlatformAdminModule, PlannedMaintenanceModule, WorkspaceLifecycleModule, OutboxModule, RequestsModule, TwitchEventSubModule, TwitchRewardsModule,
+    PlatformAdminModule, PlannedMaintenanceModule, WorkspaceLifecycleModule, ProviderExecutionHandoffModule, OutboxModule, RequestsModule, TwitchEventSubModule, TwitchRewardsModule,
     TwitchIntegrationModule, TwitchWorkspaceRecoveryModule, RealtimeModule, OutboxRecoveryModule,
   ],
   controllers: [HealthController],
