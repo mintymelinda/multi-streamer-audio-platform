@@ -89,6 +89,7 @@ BEGIN
     AND r.source = v_source
     AND r.status = 'queued'
     AND p.enabled = true
+    AND COALESCE((p.capabilities->>'playback')::boolean, false) = true
     AND p.connection_health = 'healthy'
     AND COALESCE((
       SELECT policy.enabled
