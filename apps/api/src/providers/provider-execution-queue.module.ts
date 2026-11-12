@@ -47,17 +47,7 @@ type ExecutionRow = {
                     provider_id: string;
                     enabled: boolean;
                     connection_health: 'healthy' | 'degraded' | 'unavailable' | 'authorization_expired' | 'unconfigured';
-                    capabilities: {
-                      search: boolean;
-                      resolve: boolean;
-                      playback: boolean;
-                      pause: boolean;
-                      resume: boolean;
-                      seek: boolean;
-                      queue: boolean;
-                      maxDurationSeconds: number | null;
-                      mediaTypes: Array<'audio' | 'video' | 'live_stream'>;
-                    };
+                    capabilities: Record<string, unknown>;
                   }>(
                     `SELECT id, provider_id, enabled, connection_health, capabilities
                        FROM provider_instances WHERE workspace_id = $1`,
@@ -70,7 +60,24 @@ type ExecutionRow = {
                   enabled: row.enabled,
                   health: row.connection_health,
                   priority: 0,
-                  capabilities: row.capabilities,
+                  capabilities: {
+                    search: row.capabilities.search === true,
+                    resolve: row.capabilities.resolve === true,
+                    playback: row.capabilities.playback === true,
+                    pause: row.capabilities.pause === true,
+                    resume: row.capabilities.resume === true,
+                    seek: row.capabilities.seek === true,
+                    queue: row.capabilities.queue === true,
+                    maxDurationSeconds: typeof row.capabilities.maxDurationSeconds === 'number'
+                      ? row.capabilities.maxDurationSeconds
+                      : null,
+                    mediaTypes: Array.isArray(row.capabilities.mediaTypes)
+                      ? row.capabilities.mediaTypes.filter(
+                          (value): value is 'audio' | 'video' | 'live_stream' =>
+                            value === 'audio' || value === 'video' || value === 'live_stream',
+                        )
+                      : [],
+                  },
                 }));
               },
               getWorkspaceRules: async (tenantId, userId) => {
