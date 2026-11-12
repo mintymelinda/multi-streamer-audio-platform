@@ -32,6 +32,7 @@ type LyrionConfiguration = {
   playerId: string;
   username?: string;
   password?: string;
+  removeCredentials: boolean;
 };
 
 function record(value: unknown): Record<string, unknown> {
@@ -55,6 +56,10 @@ function parseConfiguration(value: unknown): LyrionConfiguration {
   }
   const username = body.username === undefined || body.username === '' ? undefined : requiredString(body.username, 'username', 256);
   const password = body.password === undefined || body.password === '' ? undefined : requiredString(body.password, 'password', 256);
+  const removeCredentials = body.removeCredentials === true;
+  if (removeCredentials && (username || password)) {
+    throw new BadRequestException('New credentials and removeCredentials cannot be supplied together.');
+  }
   if (Boolean(username) !== Boolean(password)) {
     throw new BadRequestException('Lyrion username and password must be supplied together.');
   }
@@ -64,6 +69,7 @@ function parseConfiguration(value: unknown): LyrionConfiguration {
     outputId: requiredString(body.outputId, 'outputId', 200),
     playerId: requiredString(body.playerId, 'playerId', 200),
     ...(username && password ? { username, password } : {}),
+    removeCredentials,
   };
 }
 
@@ -157,6 +163,12 @@ export class LyrionOutputConfigurationController {
     );
     if (!identity) throw new ServiceUnavailableException('Lyrion provider instance could not be created.');
 
+    const existingCredentials = await this.credentials.getCredentials({
+      workspaceId: tenantId,
+      providerInstanceId: identity,
+      actorId,
+      providerId: 'lyrion',
+    });
     if (input.username && input.password) {
       await this.credentials.connect({
         workspaceId: tenantId,
@@ -167,7 +179,7 @@ export class LyrionOutputConfigurationController {
         requestedScopes: [],
         grantedScopes: [],
       });
-    } else {
+    } else if (input.removeCredentials) {
       await this.credentials.disconnect({
         workspaceId: tenantId,
         providerInstanceId: identity,
@@ -175,12 +187,17 @@ export class LyrionOutputConfigurationController {
         providerId: 'lyrion',
       });
     }
+    const activeCredentials = input.removeCredentials
+      ? null
+      : input.username && input.password
+        ? { username: input.username, password: input.password }
+        : existingCredentials;
 
     const adapter = new LyrionPlaybackAdapter({
       baseUrl: input.baseUrl,
       playerId: input.playerId,
-      ...(input.username && input.password
-        ? { username: input.username, password: input.password }
+      ...(typeof activeCredentials?.username === 'string' && typeof activeCredentials.password === 'string'
+        ? { username: activeCredentials.username, password: activeCredentials.password }
         : {}),
       mediaResolver: new YouTubeInvidiousMediaResolver(this.invidious),
       allowedHosts: (process.env.LYRION_ALLOWED_HOSTS ?? '').split(',').map((item) => item.trim()).filter(Boolean),
@@ -235,7 +252,7 @@ export class LyrionOutputConfigurationController {
       outputId: input.outputId,
       playerId: input.playerId,
       connectionHealth: 'healthy',
-      credentialsStored: Boolean(input.username && input.password),
+      credentialsStored: Boolean(activeCredentials?.username && activeCredentials.password),
     };
   }
 
