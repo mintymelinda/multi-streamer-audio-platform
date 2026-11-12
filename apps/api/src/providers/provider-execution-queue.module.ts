@@ -3,6 +3,7 @@ import { DatabaseModule } from '../database/database.module.js';
 import { DatabaseService } from '../database/database.service.js';
 import { RightsComplianceModule } from '../compliance/rights-compliance.module.js';
 import { RightsComplianceService } from '../compliance/rights-compliance.service.js';
+import { ProviderRoutingService } from './provider-routing.service.js';
 import {
   ProviderExecutionQueueService,
   type ProviderExecutionJob,
@@ -13,6 +14,8 @@ type RequestRow = {
   id: string;
   workspace_id: string;
   status: string;
+  provider: string | null;
+  duration_ms: number | string | null;
 };
 
 type ExecutionRow = {
@@ -33,6 +36,83 @@ type ExecutionRow = {
       inject: [DatabaseService, RightsComplianceService],
       useFactory: (database: DatabaseService, rightsCompliance: RightsComplianceService) =>
         new ProviderExecutionQueueService({
+          routeProvider: async ({ workspaceId, actorId, request }) => {
+            const routing = new ProviderRoutingService({
+              listProviderInstances: async (tenantId, userId) => {
+                if (!userId) throw new Error('Authenticated workspace user is required for routing.');
+                const result = await database.transaction(
+                  { userId, verifiedWorkspaceId: tenantId as never },
+                  (client) => client.query<{
+                    id: string;
+                    provider_id: string;
+                    enabled: boolean;
+                    connection_health: 'healthy' | 'degraded' | 'unavailable' | 'authorization_expired' | 'unconfigured';
+                    capabilities: {
+                      search: boolean;
+                      resolve: boolean;
+                      playback: boolean;
+                      pause: boolean;
+                      resume: boolean;
+                      seek: boolean;
+                      queue: boolean;
+                      maxDurationSeconds: number | null;
+                      mediaTypes: Array<'audio' | 'video' | 'live_stream'>;
+                    };
+                  }>(
+                    `SELECT id, provider_id, enabled, connection_health, capabilities
+                       FROM provider_instances WHERE workspace_id = $1`,
+                    [tenantId],
+                  ),
+                );
+                return result.rows.map((row) => ({
+                  providerId: row.provider_id,
+                  instanceId: row.id,
+                  enabled: row.enabled,
+                  health: row.connection_health,
+                  priority: 0,
+                  capabilities: row.capabilities,
+                }));
+              },
+              getWorkspaceRules: async (tenantId, userId) => {
+                if (!userId) throw new Error('Authenticated workspace user is required for routing.');
+                const result = await database.transaction(
+                  { userId, verifiedWorkspaceId: tenantId as never },
+                  (client) => client.query<{ provider_id: string }>(
+                    `SELECT provider_id FROM workspace_provider_path_restrictions
+                      WHERE workspace_id = $1 AND disabled_at IS NOT NULL`,
+                    [tenantId],
+                  ),
+                );
+                return {
+                  allowedProviderIds: [],
+                  blockedProviderIds: result.rows.map((row) => row.provider_id),
+                  preferredProviderIds: [],
+                };
+              },
+              getOutputAssignment: async (tenantId, providerInstanceId, userId) => {
+                if (!userId) throw new Error('Authenticated workspace user is required for routing.');
+                const result = await database.transaction(
+                  { userId, verifiedWorkspaceId: tenantId as never },
+                  (client) => client.query<{
+                    output_id: string;
+                    provider_instance_id: string;
+                    player_id: string;
+                  }>(
+                    `SELECT output_id, provider_instance_id, player_id
+                       FROM provider_output_assignments
+                      WHERE workspace_id = $1 AND provider_instance_id = $2 AND active = true`,
+                    [tenantId, providerInstanceId],
+                  ),
+                );
+                return result.rows.map((row) => ({
+                  outputId: row.output_id,
+                  providerInstanceId: row.provider_instance_id,
+                  playerId: row.player_id,
+                }));
+              },
+            });
+            return routing.route({ workspaceId, actorId, request });
+          },
           assertExecutionEligible: async ({ workspaceId, requestId, providerInstanceId, actorId }) => {
             await rightsCompliance.assertWorkspacePlaybackEligible({ workspaceId, actorId });
             await database.transaction(
@@ -115,14 +195,22 @@ type ExecutionRow = {
               { userId: actorId, verifiedWorkspaceId: workspaceId as never },
               (client) =>
                 client.query<RequestRow>(
-                  `SELECT id, workspace_id, status
+                  `SELECT id, workspace_id, status, provider, duration_ms
                      FROM media_requests
                     WHERE workspace_id = $1 AND id = $2`,
                   [workspaceId, requestId],
                 ),
             );
             const row = result.rows[0];
-            return row ? { id: row.id, workspaceId: row.workspace_id, status: row.status } : null;
+            return row
+              ? {
+                  id: row.id,
+                  workspaceId: row.workspace_id,
+                  status: row.status,
+                  sourceProviderId: row.provider,
+                  durationSeconds: row.duration_ms === null ? null : Number(row.duration_ms) / 1000,
+                }
+              : null;
           },
           enqueueProviderExecution: async (job: ProviderExecutionJob) => {
             const actorId = job.actorId ?? '';
