@@ -163,3 +163,55 @@ test('does not dispatch a command when source resolution is unsupported', async 
   );
   assert.equal(calls, 0);
 });
+
+test('uses explicit pause, resume, skip, and seek commands', async () => {
+  const commands = [];
+  const adapter = new LyrionPlaybackAdapter({
+    baseUrl: 'https://lms.example.test',
+    playerId: 'player-a',
+    mediaResolver: sourceResolver,
+    allowedHosts: ['lms.example.test'],
+    request: async (_url, options) => {
+      commands.push(JSON.parse(options.body).params[1]);
+      return response({});
+    },
+  });
+  const input = {
+    workspaceId: 'workspace-a',
+    providerInstanceId: 'lyrion-a',
+    playerId: 'player-a',
+    outputId: 'output-a',
+    requestId: 'request-a',
+    idempotencyKey: 'control-a',
+    actorId: 'actor-a',
+  };
+  await adapter.pause({ ...input, command: 'pause' });
+  await adapter.resume({ ...input, command: 'resume' });
+  await adapter.skip({ ...input, command: 'skip' });
+  await adapter.seek({ ...input, command: 'seek', payload: { positionMs: 12500 } });
+  assert.deepEqual(commands, [
+    ['pause', '1'],
+    ['pause', '0'],
+    ['playlist', 'index', '+1'],
+    ['time', '12.5'],
+  ]);
+});
+
+test('requires HTTPS for production even when an endpoint hostname is allowlisted', () => {
+  const previous = process.env.NODE_ENV;
+  process.env.NODE_ENV = 'production';
+  try {
+    assert.throws(
+      () => new LyrionPlaybackAdapter({
+        baseUrl: 'http://lms.example.test:9000',
+        playerId: 'player-a',
+        mediaResolver: sourceResolver,
+        allowedHosts: ['lms.example.test'],
+      }),
+      /secure transport/,
+    );
+  } finally {
+    if (previous === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previous;
+  }
+});
