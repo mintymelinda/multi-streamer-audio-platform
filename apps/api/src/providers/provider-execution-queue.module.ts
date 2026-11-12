@@ -77,6 +77,13 @@ type ExecutionRow = {
                             value === 'audio' || value === 'video' || value === 'live_stream',
                         )
                       : [],
+                    ...(Array.isArray(row.capabilities.supportedSourceProviderIds)
+                      ? {
+                          supportedSourceProviderIds: row.capabilities.supportedSourceProviderIds.filter(
+                            (value): value is string => typeof value === 'string',
+                          ),
+                        }
+                      : {}),
                   },
                 }));
               },
