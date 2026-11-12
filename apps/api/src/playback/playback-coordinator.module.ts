@@ -22,6 +22,7 @@ type LeaseContext = {
   actorId?: string;
   ownerId: string;
   expiresAt: Date;
+  fencingToken?: number;
 };
 
 type OperationRow = {
@@ -213,6 +214,37 @@ function mapOperation(row: OperationRow): PlaybackOperation {
               ...(result.rows[0] ? { fencingToken: result.rows[0].fencing_token } : {}),
             };
           },
+          renewLease: async (key, context) => {
+            const identity = decodeLeaseKey(key);
+            const input = { ...identity, ...(context as LeaseContext) };
+            if (!input.actorId || input.fencingToken === undefined) {
+              throw new Error('Authenticated playback lease identity and fencing token are required.');
+            }
+            const result = await database.transaction(
+              {
+                userId: input.actorId,
+                verifiedWorkspaceId: input.workspaceId as never,
+              },
+              (client) =>
+                client.query(
+                  `UPDATE playback_leases
+                      SET expires_at = $6, updated_at = now()
+                    WHERE workspace_id = $1 AND provider_instance_id = $2
+                      AND player_id = $3 AND lease_owner_id = $4
+                      AND fencing_token = $5 AND expires_at > now()
+                    RETURNING fencing_token`,
+                  [
+                    input.workspaceId,
+                    input.providerInstanceId,
+                    input.playerId,
+                    input.ownerId,
+                    input.fencingToken,
+                    input.expiresAt,
+                  ],
+                ),
+            );
+            return result.rowCount === 1;
+          },
           releaseLease: async (key, context) => {
             const identity = decodeLeaseKey(key);
             const input = { ...identity, ...(context as LeaseContext) };
@@ -228,8 +260,15 @@ function mapOperation(row: OperationRow): PlaybackOperation {
                 client.query(
                   `UPDATE playback_leases SET expires_at = now(), updated_at = now()
                     WHERE workspace_id = $1 AND provider_instance_id = $2
-                      AND player_id = $3 AND lease_owner_id = $4`,
-                  [input.workspaceId, input.providerInstanceId, input.playerId, input.ownerId],
+                      AND player_id = $3 AND lease_owner_id = $4
+                      AND ($5::bigint IS NULL OR fencing_token = $5)`,
+                  [
+                    input.workspaceId,
+                    input.providerInstanceId,
+                    input.playerId,
+                    input.ownerId,
+                    input.fencingToken ?? null,
+                  ],
                 ),
             );
           },
