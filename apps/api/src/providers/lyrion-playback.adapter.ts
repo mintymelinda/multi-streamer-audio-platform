@@ -74,7 +74,7 @@ export class LyrionPlaybackAdapter implements PlaybackAdapter {
     return { outcome: 'completed' };
   }
 
-  async getPlaybackState(input: PlaybackCommandInput): Promise<{
+  async getPlaybackState(_input: PlaybackCommandInput): Promise<{
     status: string;
     providerPlaybackId?: string;
     requestId?: string;
