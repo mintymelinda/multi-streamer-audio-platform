@@ -14,7 +14,7 @@ export interface ProviderExecutionJob {
 }
 export interface ValidatedProviderExecution {
   execution_state_id: string; workspace_id: string; request_id: string; provider_instance_id: string;
-  state: 'queued' | 'retry_wait'; attempt: number; dispatch_generation: number;
+  state: 'queued' | 'retry_wait' | 'resolving'; attempt: number; dispatch_generation: number;
   request_source: 'twitch_reward' | 'dashboard' | 'moderator' | 'api'; request_status: 'queued';
   actor_user_id: string; provider_id: string; contract_version: number; capabilities: Record<string, unknown>;
   connection_health: 'healthy'; output_id: string; player_id: string; media_id: string | null;
