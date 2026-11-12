@@ -47,8 +47,8 @@ test('configures a workspace-scoped Lyrion output and stores no credentials by d
       connectionHealth: 'healthy',
       credentialsStored: false,
     });
-    assert.equal(queries.length, 3);
-    assert.equal(queries[1].values[1], JSON.stringify({ baseUrl: 'http://localhost:9000' }));
+    assert.equal(queries.length, 5);
+    assert.equal(queries[3].values[1], JSON.stringify({ baseUrl: 'http://localhost:9000' }));
   } finally {
     globalThis.fetch = previousFetch;
     if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
