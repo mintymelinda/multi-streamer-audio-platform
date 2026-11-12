@@ -61,11 +61,16 @@ export interface ProviderOutputAssignment {
 export interface ProviderRoutingConsideration {
   providerId: string;
   providerInstanceId: string;
+  role: 'source' | 'output';
   eligible: boolean;
   reason: string;
 }
 
 export interface ProviderRoutingResult extends ProviderOutputAssignment {
+  /** Provider that resolves the submitted media; it is not the playback output. */
+  sourceProviderId: string | null;
+  sourceProviderInstanceId: string | null;
+  /** Provider that owns the explicitly assigned playback output. */
   providerId: string;
   reason: string;
   considered: ProviderRoutingConsideration[];
@@ -108,27 +113,89 @@ export class ProviderRoutingService {
       ]),
     );
     const considered: ProviderRoutingConsideration[] = [];
+    const sourceProviderId = input.request.sourceProviderId
+      ? normalizeProviderId(input.request.sourceProviderId)
+      : null;
+    const requestedOperations = input.request.requiredOperations ?? ['resolve', 'playback'];
+    const sourceOperations = requestedOperations.filter((operation) =>
+      operation === 'search' || operation === 'resolve',
+    );
+    const outputOperations = requestedOperations.filter((operation) =>
+      operation !== 'search' && operation !== 'resolve',
+    );
+    const sourceRequirements = sourceOperations.length > 0 ? sourceOperations : ['resolve'];
+    const outputRequirements = outputOperations.length > 0 ? outputOperations : ['playback'];
+
+    const baseReason = (instance: RoutableProviderInstance, providerId: string): string => {
+      if (!instance.enabled) return 'provider instance is disabled';
+      if (instance.health !== 'healthy') return `provider health is ${instance.health}`;
+      if (blocked.has(providerId)) return 'provider is blocked by workspace policy';
+      if (allowed.size > 0 && !allowed.has(providerId)) {
+        return 'provider is not allowed by workspace policy';
+      }
+      return 'eligible';
+    };
+
+    const sourceCandidates = sourceProviderId
+      ? instances
+          .filter((instance) => normalizeProviderId(instance.providerId) === sourceProviderId)
+          .map((instance) => {
+            const providerId = normalizeProviderId(instance.providerId);
+            let reason = baseReason(instance, providerId);
+            if (
+              reason === 'eligible' &&
+              !supportsProviderRequest(instance.capabilities, {
+                mediaType: input.request.mediaType,
+                durationSeconds: input.request.durationSeconds,
+                requiredOperations: sourceRequirements,
+              })
+            ) {
+              reason = 'source provider capabilities do not satisfy media resolution';
+            }
+            const item: ProviderRoutingConsideration = {
+              providerId,
+              providerInstanceId: instance.instanceId,
+              role: 'source',
+              eligible: reason === 'eligible',
+              reason,
+            };
+            considered.push(item);
+            return { instance, item };
+          })
+          .filter(({ item }) => item.eligible)
+          .sort((left, right) =>
+            right.instance.priority - left.instance.priority ||
+            compareStable(left.item.providerInstanceId, right.item.providerInstanceId),
+          )
+      : [];
+
+    if (sourceProviderId && sourceCandidates.length === 0) {
+      throw new ProviderRoutingError(
+        'No enabled, healthy source provider can resolve the requested media.',
+        'NO_ELIGIBLE_PROVIDER',
+        considered,
+      );
+    }
+
     const eligible = instances
       .map((instance) => {
         const providerId = normalizeProviderId(instance.providerId);
-        let reason = 'eligible';
-        if (!instance.enabled) reason = 'provider instance is disabled';
-        else if (instance.health !== 'healthy') reason = `provider health is ${instance.health}`;
-        else if (blocked.has(providerId)) reason = 'provider is blocked by workspace policy';
-        else if (allowed.size > 0 && !allowed.has(providerId))
-          reason = 'provider is not allowed by workspace policy';
-        else if (
+        let reason = baseReason(instance, providerId);
+        const requiredOperations = sourceProviderId ? outputRequirements : requestedOperations;
+        if (
+          reason === 'eligible' &&
           !supportsProviderRequest(instance.capabilities, {
             mediaType: input.request.mediaType,
             durationSeconds: input.request.durationSeconds,
-            requiredOperations: input.request.requiredOperations ?? ['resolve', 'playback'],
+            requiredOperations,
           })
         ) {
-          reason = 'provider capabilities do not satisfy the request';
+          reason = 'provider output capabilities do not satisfy the request';
         }
-        const item = {
+        const item: ProviderRoutingConsideration = {
           providerId,
           providerInstanceId: instance.instanceId,
+          role: 'output',
           eligible: reason === 'eligible',
           reason,
         };
@@ -149,7 +216,7 @@ export class ProviderRoutingService {
 
     if (eligible.length === 0) {
       throw new ProviderRoutingError(
-        'No enabled, healthy provider satisfies the request and workspace routing policy.',
+        'No enabled, healthy playback output satisfies the request and workspace routing policy.',
         'NO_ELIGIBLE_PROVIDER',
         considered,
       );
@@ -167,17 +234,14 @@ export class ProviderRoutingService {
         candidate.item.reason = 'no explicit output assignment exists';
         continue;
       }
-      if (Array.isArray(assignment)) {
-        if (assignment.length !== 1) {
-          candidate.item.eligible = false;
-          candidate.item.reason = 'multiple output assignments are ambiguous';
-          continue;
-        }
+      if (Array.isArray(assignment) && assignment.length !== 1) {
+        candidate.item.eligible = false;
+        candidate.item.reason = 'multiple output assignments are ambiguous';
+        continue;
       }
       const output = Array.isArray(assignment) ? assignment.at(0) : assignment;
-      if (!output) continue;
       if (
-        !output.outputId?.trim() ||
+        !output?.outputId?.trim() ||
         !output.playerId?.trim() ||
         output.providerInstanceId !== candidate.instance.instanceId
       ) {
@@ -187,6 +251,8 @@ export class ProviderRoutingService {
         continue;
       }
       return {
+        sourceProviderId,
+        sourceProviderInstanceId: sourceCandidates[0]?.instance.instanceId ?? null,
         providerId: candidate.item.providerId,
         providerInstanceId: output.providerInstanceId,
         outputId: output.outputId,
@@ -222,7 +288,7 @@ function buildRoutingReason(
   const preference = preferred.has(providerId)
     ? `workspace preference rank ${(preferred.get(providerId) ?? 0) + 1}`
     : 'no explicit workspace preference';
-  return `Selected ${providerId}: ${preference}; provider priority ${priority}; request capabilities and health requirements satisfied.`;
+  return `Selected ${providerId}: ${preference}; provider priority ${priority}; output capabilities and health requirements satisfied.`;
 }
 
 function compareStable(left: string, right: string): number {
