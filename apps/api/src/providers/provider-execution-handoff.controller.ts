@@ -25,6 +25,7 @@ type ExecutionRow = {
   source: 'twitch_reward' | 'dashboard' | 'moderator' | 'api';
   submitted_by_user_id: string | null;
   source_event_id: string | null;
+  source_provider_id: string | null;
   owner_user_id: string;
   request_status: string;
   execution_state: string;
@@ -134,7 +135,7 @@ export class ProviderExecutionHandoffController {
       { userId: input.actorUserId, verifiedWorkspaceId: input.workspaceId as never },
       async (client) => {
         const result = await client.query<ExecutionRow>(
-          `SELECT r.source, r.submitted_by_user_id, r.source_event_id,
+          `SELECT r.source, r.submitted_by_user_id, r.source_event_id, r.provider AS source_provider_id,
                   w.owner_user_id, r.status AS request_status,
                   s.state AS execution_state, s.dispatch_generation, s.next_attempt_at,
                   p.provider_id, p.capabilities, o.output_id, o.player_id,
@@ -248,7 +249,7 @@ export class ProviderExecutionHandoffController {
         artist: execution.artist,
         durationMs: execution.duration_ms,
         metadata: execution.metadata,
-        sourceProviderId: execution.provider_id,
+        sourceProviderId: execution.source_provider_id,
       },
     });
     const executionState = operation.status === 'failed'
