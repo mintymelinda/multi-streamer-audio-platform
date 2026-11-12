@@ -162,13 +162,13 @@ export class ProviderExecutionHandoffController {
               AND NOT EXISTS (
                 SELECT 1 FROM workspace_provider_path_restrictions restriction
                  WHERE restriction.workspace_id = r.workspace_id
-                   AND restriction.provider_id = p.provider_id
+                   AND restriction.provider_id IN (p.provider_id, r.provider)
                    AND restriction.disabled_at IS NOT NULL
               )
               AND NOT EXISTS (
                 SELECT 1 FROM rights_content_blocks block
                  WHERE block.workspace_id = r.workspace_id
-                   AND block.content_id IN (r.media_id, p.provider_id || ':' || r.media_id)
+                   AND block.content_id IN (r.media_id, p.provider_id || ':' || r.media_id, r.provider || ':' || r.media_id)
               )
               AND EXISTS (
                 SELECT 1 FROM logical_queue_entries q
