@@ -347,6 +347,6 @@ function mapOperation(row: OperationRow): PlaybackOperation {
       },
     },
   ],
-  exports: [PlaybackCoordinatorService],
+  exports: [PlaybackCoordinatorService, PlaybackAdapterRegistry],
 })
 export class PlaybackCoordinatorModule {}
