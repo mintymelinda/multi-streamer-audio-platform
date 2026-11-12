@@ -143,6 +143,7 @@ export class LyrionOutputConfigurationController {
       queue: false,
       maxDurationSeconds: null,
       mediaTypes: ['audio'],
+      supportedSourceProviderIds: ['youtube'],
     };
     const sourceAdapter = new YouTubeInvidiousAdapter({
       instances: process.env.INVIDIOUS_INSTANCE_URL ? [process.env.INVIDIOUS_INSTANCE_URL] : [],
