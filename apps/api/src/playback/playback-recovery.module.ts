@@ -191,7 +191,7 @@ import {
             });
           },
           skip: async (request: RecoverablePlaybackRequest, actorId: string, reason: string) => {
-            if (request.providerExecutionState === 'resolving') {
+            if (request.status === 'resolving' || request.providerExecutionState === 'resolving') {
               throw new Error(
                 'Playback outcome is still being reconciled. Resolve the uncertain command before skipping this request.',
               );
