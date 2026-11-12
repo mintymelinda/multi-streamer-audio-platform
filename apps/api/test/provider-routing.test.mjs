@@ -196,3 +196,47 @@ test('blocks routing when the source provider is restricted even if an output is
     (error) => error.code === 'NO_ELIGIBLE_PROVIDER',
   );
 });
+
+test('does not route Spotify source media to a YouTube-only Lyrion output', async () => {
+  const spotify = provider({
+    providerId: 'spotify',
+    instanceId: 'spotify-source',
+    capabilities: { ...provider().capabilities, playback: false },
+  });
+  const lyrion = provider({
+    providerId: 'lyrion',
+    instanceId: 'lyrion-output',
+    capabilities: {
+      search: false,
+      resolve: false,
+      playback: true,
+      pause: true,
+      resume: true,
+      seek: true,
+      queue: false,
+      maxDurationSeconds: null,
+      mediaTypes: ['audio'],
+      supportedSourceProviderIds: ['youtube'],
+    },
+  });
+  const service = new ProviderRoutingService({
+    listProviderInstances: async () => [spotify, lyrion],
+    getWorkspaceRules: async () => ({
+      allowedProviderIds: ['spotify', 'lyrion'],
+      blockedProviderIds: [],
+      preferredProviderIds: [],
+    }),
+    getOutputAssignment: async () => ({
+      outputId: 'output-a',
+      providerInstanceId: 'lyrion-output',
+      playerId: 'player-a',
+    }),
+  });
+  await assert.rejects(
+    service.route({
+      workspaceId: 'workspace-a',
+      request: { ...request, sourceProviderId: 'spotify' },
+    }),
+    (error) => error.code === 'NO_ELIGIBLE_PROVIDER',
+  );
+});
