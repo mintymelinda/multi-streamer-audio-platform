@@ -109,8 +109,8 @@ export class LyrionPlaybackAdapter implements PlaybackAdapter {
 
   private async resolveSource(input: PlaybackCommandInput): Promise<ResolvedPlaybackMedia> {
     const sourceProviderId = input.payload?.sourceProviderId;
-    if (typeof sourceProviderId !== 'string' || !sourceProviderId.trim()) {
-      throw new ProviderCommandRejectedError('The request has no supported media source.', 'UNSUPPORTED_MEDIA_SOURCE');
+    if (sourceProviderId !== 'youtube') {
+      throw new ProviderCommandRejectedError('Lyrion output currently supports YouTube/Invidious source media only.', 'UNSUPPORTED_MEDIA_SOURCE');
     }
     try {
       return await this.options.mediaResolver.resolve({
