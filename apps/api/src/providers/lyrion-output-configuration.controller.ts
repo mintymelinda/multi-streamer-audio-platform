@@ -24,6 +24,7 @@ import { ProviderCredentialsService } from './provider-credentials.service.js';
 import { InvidiousResolverService } from './invidious-resolver.service.js';
 import { YouTubeInvidiousMediaResolver } from './playback-media-source.resolver.js';
 import { LyrionPlaybackAdapter } from './lyrion-playback.adapter.js';
+import { YouTubeInvidiousAdapter } from './youtube-invidious.adapter.js';
 
 type LyrionConfiguration = {
   instanceKey: string;
@@ -143,10 +144,28 @@ export class LyrionOutputConfigurationController {
       maxDurationSeconds: null,
       mediaTypes: ['audio'],
     };
+    const sourceAdapter = new YouTubeInvidiousAdapter({
+      instances: process.env.INVIDIOUS_INSTANCE_URL ? [process.env.INVIDIOUS_INSTANCE_URL] : [],
+    });
+    const sourceHealth = await sourceAdapter.healthCheck();
+    if (sourceHealth.status !== 'healthy') {
+      throw new ServiceUnavailableException('A healthy Invidious source resolver must be configured before enabling Lyrion playback.');
+    }
 
     const identity = await this.database.transaction(
       { userId: actorId, verifiedWorkspaceId: tenantId as never },
       async (client) => {
+        await client.query(
+          `INSERT INTO provider_instances (
+             workspace_id, provider_id, instance_key, contract_version,
+             capabilities, connection_health, enabled
+           )
+           VALUES ($1, 'youtube', 'invidious-default', 1, $2::jsonb, 'healthy', true)
+           ON CONFLICT (workspace_id, provider_id, instance_key)
+           DO UPDATE SET capabilities = EXCLUDED.capabilities,
+                         connection_health = 'healthy', enabled = true, updated_at = now()`,
+          [tenantId, JSON.stringify(sourceAdapter.capabilities)],
+        );
         const result = await client.query<{ id: string }>(
           `INSERT INTO provider_instances (
              workspace_id, provider_id, instance_key, contract_version,
