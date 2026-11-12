@@ -186,7 +186,7 @@ function validateEndpoint(value: string, allowedHosts: string[]): URL {
     url.search ||
     url.hash ||
     (!allowed && !localDevelopmentHost) ||
-    (process.env.NODE_ENV === 'production' && url.protocol !== 'https:' && !allowed)
+    (process.env.NODE_ENV === 'production' && url.protocol !== 'https:')
   ) {
     throw new TypeError('Lyrion endpoint must use an operator-approved host and secure transport.');
   }
