@@ -14,7 +14,13 @@ import { ProviderSecretRedactionService } from './provider-secret-redaction.serv
       provide: ProviderCredentialsService,
       inject: [DatabaseService, ProviderScopePolicyService],
       useFactory: (database: DatabaseService, scopes: ProviderScopePolicyService) =>
-        new ProviderCredentialsService(database, undefined, undefined, undefined, scopes),
+        new ProviderCredentialsService(
+          database,
+          undefined,
+          { revoke: async ({ providerId }) => ({ revoked: providerId === 'lyrion' }) },
+          undefined,
+          scopes,
+        ),
     },
   ],
   exports: [ProviderCredentialsService, ProviderScopePolicyService, ProviderSecretRedactionService],

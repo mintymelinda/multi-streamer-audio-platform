@@ -14,6 +14,8 @@ export interface ProviderExecutionRequest {
   id: string;
   workspaceId: string;
   status: string;
+  sourceProviderId: string | null;
+  durationSeconds: number | null;
 }
 
 export interface ProviderExecutionJob {
@@ -46,6 +48,17 @@ export interface ProviderExecutionQueueDependencies {
   enqueueProviderExecution(job: ProviderExecutionJob): Promise<unknown>;
   updateProviderExecutionState?(state: ProviderExecutionStateInput): Promise<unknown>;
   assertExecutionEligible?(input: { workspaceId: string; requestId: string; providerInstanceId: string; actorId: string }): Promise<void>;
+  routeProvider?(input: {
+    workspaceId: string;
+    actorId: string;
+    request: {
+      id: string;
+      workspaceId: string;
+      mediaType: 'audio';
+      durationSeconds: number | null;
+      sourceProviderId: string | null;
+    };
+  }): Promise<{ providerInstanceId: string }>;
 }
 
 const terminalRequestStatuses = new Set([
@@ -75,13 +88,38 @@ export class ProviderExecutionQueueService {
   async enqueue(input: {
     workspaceId: string;
     requestId: string;
-    providerInstanceId: string;
+    providerInstanceId?: string;
     actorId?: string;
   }): Promise<ProviderExecutionJob> {
     const workspaceId = required(input.workspaceId, 'workspaceId');
     const requestId = required(input.requestId, 'requestId');
-    const providerInstanceId = required(input.providerInstanceId, 'providerInstanceId');
     const request = await this.requireActiveRequest(workspaceId, requestId, input.actorId);
+    let providerInstanceId = input.providerInstanceId
+      ? required(input.providerInstanceId, 'providerInstanceId')
+      : '';
+    if (this.dependencies.routeProvider) {
+      if (!input.actorId) {
+        throw new Error('Authenticated workspace user is required for provider routing.');
+      }
+      const routed = await this.dependencies.routeProvider({
+        workspaceId,
+        actorId: input.actorId,
+        request: {
+          id: request.id,
+          workspaceId,
+          mediaType: 'audio',
+          durationSeconds: request.durationSeconds,
+          sourceProviderId: request.sourceProviderId,
+        },
+      });
+      if (providerInstanceId && providerInstanceId !== routed.providerInstanceId) {
+        throw new Error('The requested provider instance does not match workspace routing policy.');
+      }
+      providerInstanceId = routed.providerInstanceId;
+    }
+    if (!providerInstanceId) {
+      throw new Error('No playback output provider was selected by workspace routing.');
+    }
     if (input.actorId) {
       await this.dependencies.assertExecutionEligible?.({ workspaceId, requestId, providerInstanceId, actorId: input.actorId });
     }

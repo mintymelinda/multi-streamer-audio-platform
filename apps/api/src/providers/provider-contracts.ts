@@ -12,6 +12,7 @@ export interface ProviderCapabilities {
   queue: boolean;
   maxDurationSeconds: number | null;
   mediaTypes: ProviderMediaType[];
+  supportedSourceProviderIds?: string[];
 }
 
 export interface ProviderHealth {
@@ -87,6 +88,17 @@ export function validateProviderAdapter(
     mediaTypes.some((item) => !MEDIA_TYPES.includes(item as ProviderMediaType))
   ) {
     throw new TypeError('Provider mediaTypes must contain at least one supported media type.');
+  }
+  const supportedSources = value.capabilities.supportedSourceProviderIds;
+  if (
+    supportedSources !== undefined &&
+    (!Array.isArray(supportedSources) ||
+      supportedSources.length === 0 ||
+      supportedSources.some((item) =>
+        typeof item !== 'string' || !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(item),
+      ))
+  ) {
+    throw new TypeError('Provider supportedSourceProviderIds must contain valid provider IDs.');
   }
   if (
     !isRecord(value.health) ||
