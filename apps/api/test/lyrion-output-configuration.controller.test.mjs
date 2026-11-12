@@ -28,7 +28,7 @@ test('configures a workspace-scoped Lyrion output and stores no credentials by d
   const previousFetch = globalThis.fetch;
   const previousInvidiousUrl = process.env.INVIDIOUS_INSTANCE_URL;
   process.env.NODE_ENV = 'test';
-  process.env.INVIDIOUS_INSTANCE_URL = 'http://localhost:8080';
+  process.env.INVIDIOUS_INSTANCE_URL = 'https://invidious.example.test';
   globalThis.fetch = async () => new Response(JSON.stringify({ id: 1, result: { _mode: 'stop' } }), {
     status: 200,
     headers: { 'content-type': 'application/json' },
