@@ -4,7 +4,7 @@ Lyrion is an output provider. YouTube/Invidious remains a separate media-source 
 
 ## Configure an output
 
-An owner or workspace admin can configure an output with:
+An owner or workspace admin can configure an output with. Set `INVIDIOUS_INSTANCE_URL` in the API environment first; configuration verifies the instance and provisions a workspace-scoped YouTube source instance with metadata/resolution capability only:
 
 `POST /workspaces/{workspaceId}/providers/lyrion`
 
