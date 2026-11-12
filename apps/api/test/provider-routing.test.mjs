@@ -7,7 +7,7 @@ const request = {
   workspaceId: 'workspace-a',
   mediaType: 'audio',
   durationSeconds: 210,
-  sourceProviderId: null,
+  sourceProviderId: 'youtube',
 };
 
 const provider = (overrides = {}) => ({
