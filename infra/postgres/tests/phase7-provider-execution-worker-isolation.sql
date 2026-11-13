@@ -48,6 +48,8 @@ BEGIN
    WHERE v.actor_user_id=submitter_id AND v.request_source='dashboard') THEN RAISE EXCEPTION 'user request actor path failed'; END IF;
  IF EXISTS (SELECT 1 FROM platform_validate_provider_execution_job(twitch_execution_id,workspace_id,twitch_request_id,provider_id,4))
  THEN RAISE EXCEPTION 'a later logical queue item was accepted before the queue head'; END IF;
+ IF NOT platform_defer_provider_execution_job(twitch_execution_id,workspace_id,twitch_request_id,provider_id,4)
+ THEN RAISE EXCEPTION 'a blocked queued job was not deferred for Queue Manager rescheduling'; END IF;
 END $$;
 
 -- Simulate queue removal while the old output is still playing. The output
@@ -75,8 +77,6 @@ UPDATE public.provider_execution_states SET state='completed'
 UPDATE public.media_requests SET status='skipped'
  WHERE id=current_setting('test.user_request_id')::uuid
    AND workspace_id=current_setting('test.workspace_id')::uuid;
-UPDATE public.provider_execution_states SET state='resolving'
- WHERE id=current_setting('test.twitch_execution_id')::uuid;
 SET LOCAL SESSION AUTHORIZATION platform_provider_worker;
 DO $$
 DECLARE workspace_id uuid:=current_setting('test.workspace_id')::uuid; provider_id uuid:=current_setting('test.provider_id')::uuid;
