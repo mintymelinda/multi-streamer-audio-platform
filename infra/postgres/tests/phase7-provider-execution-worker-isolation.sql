@@ -46,8 +46,12 @@ BEGIN
    OR has_table_privilege(session_user,'provider_execution_states','UPDATE') THEN RAISE EXCEPTION 'worker has direct tenant-table access'; END IF;
  IF NOT EXISTS (SELECT 1 FROM platform_validate_provider_execution_job(user_execution_id,workspace_id,user_request_id,provider_id,3) v
    WHERE v.actor_user_id=submitter_id AND v.request_source='dashboard') THEN RAISE EXCEPTION 'user request actor path failed'; END IF;
+ IF EXISTS (SELECT 1 FROM platform_validate_provider_execution_job(twitch_execution_id,workspace_id,twitch_request_id,provider_id,4))
+ THEN RAISE EXCEPTION 'a later logical queue item was accepted before the queue head'; END IF;
+ UPDATE public.media_requests SET status='skipped' WHERE id=user_request_id AND workspace_id=workspace_id;
+ DELETE FROM public.logical_queue_entries WHERE workspace_id=workspace_id AND request_id=user_request_id;
  IF NOT EXISTS (SELECT 1 FROM platform_validate_provider_execution_job(twitch_execution_id,workspace_id,twitch_request_id,provider_id,4) v
-   WHERE v.actor_user_id=owner_id AND v.request_source='twitch_reward' AND v.state='resolving') THEN RAISE EXCEPTION 'Twitch resolving handoff replay path failed'; END IF;
+   WHERE v.actor_user_id=owner_id AND v.request_source='twitch_reward' AND v.state='resolving') THEN RAISE EXCEPTION 'Twitch resolving handoff replay path failed after queue advancement'; END IF;
  IF EXISTS (SELECT 1 FROM platform_validate_provider_execution_job(user_execution_id,workspace_id,user_request_id,provider_id,2))
  THEN RAISE EXCEPTION 'stale dispatch generation was accepted'; END IF;
  IF EXISTS (SELECT 1 FROM platform_validate_provider_execution_job(user_execution_id,gen_random_uuid(),user_request_id,provider_id,3))
