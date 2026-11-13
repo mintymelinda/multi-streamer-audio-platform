@@ -25,7 +25,7 @@ test('manual recovery closes active durable playback sessions atomically with re
   const close=statements.find(({sql})=>sql.includes('UPDATE playback_sessions'));
   assert.ok(close);
   assert.match(close.sql,/status = 'interrupted'/);
-  assert.ok(close.sql.includes(\"AND status IN ('playing', 'paused', 'uncertain')\"));
+  assert.ok(close.sql.includes("AND status IN ('playing', 'paused', 'uncertain')"));
   assert.deepEqual(close.values,['workspace-a','request-a']);
   const history=statements.findIndex(({sql})=>sql.includes('INSERT INTO request_state_history'));
   const sessionClose=statements.indexOf(close);
