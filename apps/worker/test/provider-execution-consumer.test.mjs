@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createProviderExecutionHandoffSignature, handoffValidatedProviderExecution, parseProviderExecutionJob, validateProviderExecutionJob, deferProviderExecutionJob } from '../dist/provider-execution-consumer.service.js';
+import { createProviderExecutionHandoffSignature, handoffValidatedProviderExecution, parseProviderExecutionJob, validateProviderExecutionJob, deferProviderExecutionJob, listActivePlaybackSessions, monitorPlaybackSession } from '../dist/provider-execution-consumer.service.js';
 const job={executionStateId:'10000000-0000-4000-8000-000000000001',workspaceId:'20000000-0000-4000-8000-000000000002',requestId:'30000000-0000-4000-8000-000000000003',providerInstanceId:'40000000-0000-4000-8000-000000000004',dispatchGeneration:7};
 test('parses complete UUID-bound jobs with a positive generation',()=>{
  assert.deepEqual(parseProviderExecutionJob(job),job);
@@ -65,4 +65,45 @@ test('does not acknowledge a failed API handoff', async () => {
   }),
   /provider_execution_handoff_http_503/,
  );
+});
+
+
+test('lists only durable playback sessions through the provider-worker function',async()=>{
+ const row={
+  playback_session_id:'60000000-0000-4000-8000-000000000006',
+  execution_state_id:job.executionStateId,workspace_id:job.workspaceId,request_id:job.requestId,
+  provider_instance_id:job.providerInstanceId,dispatch_generation:job.dispatchGeneration,
+  actor_user_id:'50000000-0000-4000-8000-000000000005',
+ };
+ const calls=[];
+ const rows=await listActivePlaybackSessions({query:async(sql)=>{calls.push(sql);return {rows:[row]};}});
+ assert.deepEqual(rows,[row]);
+ assert.match(calls[0],/platform_list_active_playback_sessions/);
+});
+
+test('signs a monitor payload with the durable session id and dispatch generation',async()=>{
+ const input={
+  playback_session_id:'60000000-0000-4000-8000-000000000006',
+  execution_state_id:job.executionStateId,workspace_id:job.workspaceId,request_id:job.requestId,
+  provider_instance_id:job.providerInstanceId,dispatch_generation:job.dispatchGeneration,
+  actor_user_id:'50000000-0000-4000-8000-000000000005',
+ };
+ let request;
+ const result=await monitorPlaybackSession(input,{
+  url:'https://api.example.test/internal/provider-executions/monitor',
+  secret:'test-provider-execution-handoff-secret-at-least-32-bytes',
+  now:()=>1794500001000,
+  fetchImpl:async(url,options)=>{
+   request={url,options};
+   return {ok:true,json:async()=>({accepted:true,status:'completed'})};
+  },
+ });
+ assert.deepEqual(result,{accepted:true,status:'completed'});
+ const body=JSON.parse(request.options.body);
+ assert.equal(body.playbackSessionId,input.playback_session_id);
+ assert.equal(body.dispatchGeneration,input.dispatch_generation);
+ assert.equal('providerPlaybackId' in body,false);
+ assert.equal(request.options.headers['x-provider-execution-signature'],
+  createProviderExecutionHandoffSignature(
+   'test-provider-execution-handoff-secret-at-least-32-bytes','1794500001',body));
 });

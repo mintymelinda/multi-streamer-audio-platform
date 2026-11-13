@@ -368,3 +368,40 @@ test('passes verified workspace and actor context to the output adapter factory'
   assert.equal(received.context.actorId, 'actor-a');
   assert.equal(received.context.outputId, 'output-a');
 });
+
+
+test('observes playback under the DB-backed output lease and releases the lease', async () => {
+  const events=[];
+  const state={status:'playing',positionMs:12_000,durationMs:180_000};
+  const {service}=createCoordinator({
+    acquireLease:async(key,context)=>{events.push(['acquire',key,context]);return {acquired:true,fencingToken:17};},
+    releaseLease:async(key,context)=>{events.push(['release',key,context]);return true;},
+    getProviderAdapter:async(_provider,input)=>({
+      getPlaybackState:async(observationInput)=>{events.push(['observe',input,observationInput]);return state;},
+    }),
+  });
+  const result=await service.observePlaybackState({
+    workspaceId:'workspace-a',providerInstanceId:'lyrion-a',playerId:'player-a',
+    outputId:'output-a',requestId:'request-a',command:'play',
+    idempotencyKey:'playback-monitor-session-a',actorId:'owner-a',
+  });
+  assert.deepEqual(result,state);
+  assert.equal(events[0][0],'acquire');
+  assert.equal(events[1][0],'observe');
+  assert.equal(events[1][2].fencingToken,17);
+  assert.equal(events[2][0],'release');
+});
+
+test('does not observe a provider while an output lease is held by another command', async () => {
+  let observed=false;
+  const {service}=createCoordinator({
+    acquireLease:async()=>({acquired:false}),
+    getProviderAdapter:async()=>({getPlaybackState:async()=>{observed=true;return {status:'playing'};}}),
+  });
+  const result=await service.observePlaybackState({
+    workspaceId:'workspace-a',providerInstanceId:'lyrion-a',playerId:'player-a',
+    requestId:'request-a',command:'play',idempotencyKey:'playback-monitor-session-b',actorId:'owner-a',
+  });
+  assert.equal(result,null);
+  assert.equal(observed,false);
+});
