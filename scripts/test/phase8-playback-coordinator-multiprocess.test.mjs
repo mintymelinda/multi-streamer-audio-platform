@@ -108,8 +108,8 @@ function createProviderFixtures() {
       adaptiveFormats: [
         {
           type: 'audio/webm; codecs=opus',
-        url: 'https://media.example.test/fixture.webm',
-        bitrate: 128000,
+          url: 'https://media.example.test/fixture.webm',
+          bitrate: 128000,
         },
       ],
     });
