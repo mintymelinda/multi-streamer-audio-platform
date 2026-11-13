@@ -208,7 +208,7 @@ export class ProviderExecutionHandoffController {
                    AND current_queue.request_id = r.id
                  WHERE earlier_queue.workspace_id = r.workspace_id
                    AND earlier_queue.request_id <> r.id
-                   AND earlier_request.status IN ('queued', 'resolving', 'ready', 'playing')
+                   AND earlier_request.status IN ('queued', 'resolving', 'ready')
                    AND (
                      earlier_queue.priority > current_queue.priority
                      OR (
