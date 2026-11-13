@@ -31,7 +31,7 @@ BEGIN
   UPDATE public.provider_execution_states s
      SET state = 'retry_wait',
          next_attempt_at = NULL,
-         last_error_code = 'DISPATCH_DEFERRED',
+         last_error_code = 'dispatch_deferred',
          updated_at = now()
     FROM public.media_requests r
    WHERE s.id = p_execution_state_id
