@@ -336,7 +336,7 @@ export class RequestsService {
     actor: AuthenticatedUser,
     requestIds: string[],
   ) {
-    return this.database.transaction(
+    const result = await this.database.transaction(
       { userId: actor.id, verifiedWorkspaceId: workspace.id },
       async (client) => {
         await this.lockQueueSettings(client, workspace.id);
@@ -354,6 +354,8 @@ export class RequestsService {
         return { requestIds };
       },
     );
+    await this.queueManager.dispatchNext({ workspaceId: workspace.id, actorId: actor.id });
+    return result;
   }
 
   async promoteQueueRequest(
@@ -361,7 +363,7 @@ export class RequestsService {
     actor: AuthenticatedUser,
     requestId: string,
   ) {
-    return this.database.transaction(
+    const result = await this.database.transaction(
       { userId: actor.id, verifiedWorkspaceId: workspace.id },
       async (client) => {
         await this.lockQueueSettings(client, workspace.id);
@@ -382,6 +384,8 @@ export class RequestsService {
         return { requestId, position: 1 };
       },
     );
+    await this.queueManager.dispatchNext({ workspaceId: workspace.id, actorId: actor.id });
+    return result;
   }
 
   async specialInsertQueueRequest(
@@ -390,7 +394,7 @@ export class RequestsService {
     requestId: string,
     position: 'front' | 'back',
   ) {
-    return this.database.transaction(
+    const result = await this.database.transaction(
       { userId: actor.id, verifiedWorkspaceId: workspace.id },
       async (client) => {
         await this.lockQueueSettings(client, workspace.id);
@@ -416,6 +420,8 @@ export class RequestsService {
         return { requestId, position };
       },
     );
+    await this.queueManager.dispatchNext({ workspaceId: workspace.id, actorId: actor.id });
+    return result;
   }
 
   private async lockQueueSettings(client: PoolClient, workspaceId: VerifiedWorkspaceId) {
