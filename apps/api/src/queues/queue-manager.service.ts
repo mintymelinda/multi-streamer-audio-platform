@@ -117,6 +117,19 @@ export class QueueManagerService {
               reason: error.code.toLowerCase(),
             };
           }
+          if (
+            typeof error === 'object' &&
+            error !== null &&
+            'code' in error &&
+            typeof error.code === 'string' &&
+            ['RIGHTS_ATTESTATION_REQUIRED', 'PROVIDER_PATH_DISABLED', 'RIGHTS_CONTENT_BLOCKED'].includes(error.code)
+          ) {
+            return {
+              status: 'blocked',
+              requestId: candidate.id,
+              reason: error.code.toLowerCase(),
+            };
+          }
           throw error;
         }
       },
