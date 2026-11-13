@@ -46,6 +46,7 @@ export class LyrionPlaybackAdapter implements PlaybackAdapter {
     await this.command(['power', '1']);
     await this.command(['playlist', 'clear']);
     await this.command(['playlist', 'add', media.streamUrl]);
+    await this.command(['playlist', 'repeat', '0']);
     await this.command(['play']);
     const state = await this.getPlaybackState(input);
     return {
