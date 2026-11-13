@@ -48,7 +48,7 @@ export class QueueManagerService {
         );
 
         const selected = await client.query<QueueCandidate>(
-          `SELECT r.id, r.source, r.submitted_by_user_id, w.owner_user_id
+          `SELECT r.id, r.status, r.source, r.submitted_by_user_id, w.owner_user_id
              FROM logical_queue_entries q
              JOIN media_requests r
                ON r.workspace_id = q.workspace_id AND r.id = q.request_id
