@@ -219,6 +219,14 @@ export class ProviderExecutionHandoffController {
               )
               AND NOT EXISTS (
                 SELECT 1
+                  FROM provider_execution_states other_execution
+                 WHERE other_execution.workspace_id = r.workspace_id
+                   AND other_execution.request_id = r.id
+                   AND other_execution.id <> s.id
+                   AND other_execution.state IN ('resolving', 'ready', 'playing')
+              )
+              AND NOT EXISTS (
+                SELECT 1
                   FROM provider_execution_states active_execution
                   JOIN provider_output_assignments active_output
                     ON active_output.workspace_id = active_execution.workspace_id
