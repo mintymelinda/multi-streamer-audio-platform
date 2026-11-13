@@ -5,7 +5,7 @@ import { createAdapter } from '@socket.io/redis-adapter';
 import { Redis } from 'ioredis';
 
 export class RedisIoAdapter extends IoAdapter {
-  private readonly logger = new Logger(RedisIoAdapter.name);
+  private readonly redisLogger = new Logger(RedisIoAdapter.name);
   private pubClient: Redis | undefined;
   private subClient: Redis | undefined;
 
@@ -31,7 +31,7 @@ export class RedisIoAdapter extends IoAdapter {
     const pubClient = new Redis(redisUrl, options);
     const subClient = new Redis(redisUrl, options);
     pubClient.on('error', (error: Error) =>
-      this.logger.error('Socket.IO Redis publisher error', error.stack),
+      this.redisLogger.error('Socket.IO Redis publisher error', error.stack),
     );
     subClient.on('error', (error: Error) =>
       this.logger.error('Socket.IO Redis subscriber error', error.stack),
@@ -68,14 +68,11 @@ export class RedisIoAdapter extends IoAdapter {
     return server;
   }
 
-  override close(server: Parameters<IoAdapter['close']>[0]): void {
-    super.close(server);
-    for (const client of [this.pubClient, this.subClient]) {
-      if (client) {
-        void client.quit().catch(() => client.disconnect());
-      }
-    }
+  override async close(server: Parameters<IoAdapter['close']>[0]): Promise<void> {
+    await super.close(server);
+    const clients = [this.pubClient, this.subClient].filter((client): client is Redis => Boolean(client));
     this.pubClient = undefined;
     this.subClient = undefined;
+    await Promise.allSettled(clients.map((client) => client.quit()));
   }
 }
