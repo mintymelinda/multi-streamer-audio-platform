@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
 import { createServer } from 'node:http';
@@ -362,6 +362,157 @@ test('restores and validates a PostgreSQL base archive before generating PITR co
       assert.match(recoveryConfig, /recovery_target_action = 'promote'/);
       assert.equal(JSON.parse(restore.stdout).status, 'verified');
     } finally {
+      await mock.close();
+    }
+  });
+});
+
+
+function findPostgresServiceContainer() {
+  const result = spawnSync(
+    'docker',
+    ['ps', '--filter', 'ancestor=postgres:18.6', '--format', '{{.ID}}'],
+    { encoding: 'utf8' },
+  );
+  if (result.status !== 0) return null;
+  return result.stdout.trim().split('\n').find(Boolean) ?? null;
+}
+
+function runDocker(args) {
+  const result = spawnSync('docker', args, { encoding: 'utf8' });
+  if (result.status !== 0) {
+    throw new Error('Docker PostgreSQL restore fixture failed: ' + result.stderr.trim());
+  }
+  return result.stdout.trim();
+}
+
+test('restores a real PostgreSQL base backup archive with the server pg_verifybackup binary', async (t) => {
+  if (process.env.CI !== 'true' && process.env.GITHUB_ACTIONS !== 'true') {
+    t.skip('Runs in CI against the PostgreSQL service container; local tests do not require Docker.');
+    return;
+  }
+
+  const containerId = findPostgresServiceContainer();
+  if (!containerId) {
+    t.skip('No PostgreSQL 18.6 CI service container is available.');
+    return;
+  }
+
+  await withTemporaryDirectory(async (directory) => {
+    const mock = createMockS3();
+    const endpoint = await mock.listen();
+    const backupId = randomUUID();
+    const key = randomBytes(32);
+    const keyFile = join(directory, 'keyring.json');
+    const sourceDirectory = '/tmp/phase8-pgbase-' + backupId;
+    const containerArchive = '/tmp/phase8-pgbase-' + backupId + '.tar.gz';
+    const verificationDirectory = '/tmp/phase8-pgverify-' + backupId;
+    const hostArchive = join(directory, 'postgres-base.tar.gz');
+    const encryptedPath = hostArchive + '.msapbk';
+    const archiveKey = backupPrefix + '/postgres/' + backupId + '/base.tar.gz.msapbk';
+    const manifestKey = backupPrefix + '/postgres/' + backupId + '/manifest.json';
+    let postgresTempCreated = false;
+
+    try {
+      await writeKeyRing(keyFile, key);
+      runDocker(['exec', containerId, 'mkdir', '-p', sourceDirectory]);
+      postgresTempCreated = true;
+
+      runDocker([
+        'exec',
+        '-e',
+        'PGPASSWORD=ci-bootstrap-only',
+        containerId,
+        'pg_basebackup',
+        '--host=127.0.0.1',
+        '--port=5432',
+        '--username=platform_bootstrap',
+        '--pgdata=' + sourceDirectory,
+        '--format=plain',
+        '--wal-method=stream',
+        '--checkpoint=fast',
+        '--no-password',
+      ]);
+      runDocker([
+        'exec',
+        containerId,
+        'tar',
+        '--create',
+        '--gzip',
+        '--file=' + containerArchive,
+        '--directory=' + sourceDirectory,
+        '.',
+      ]);
+      runDocker(['cp', containerId + ':' + containerArchive, hostArchive]);
+
+      const encrypted = await encryptBackupFile({
+        sourcePath: hostArchive,
+        destinationPath: encryptedPath,
+        key,
+        keyId: 'backup-test',
+        context: 'postgres:' + backupId,
+      });
+      mock.put(backupBucket, archiveKey, await readFile(encryptedPath));
+      mock.put(
+        backupBucket,
+        manifestKey,
+        Buffer.from(JSON.stringify({
+          format: 'multi-streamer-audio-platform.postgres-backup',
+          version: 1,
+          backupId,
+          createdAt: new Date().toISOString(),
+          pgBaseBackupVersion: 'pg_basebackup (PostgreSQL) 18',
+          keyId: 'backup-test',
+          walMethod: 'stream',
+          manifestChecksums: 'SHA256',
+          archive: archiveKey,
+          archiveSha256: encrypted.sha256,
+          plaintextBytes: encrypted.plaintextBytes,
+        })),
+        'application/json',
+      );
+
+      const binDirectory = join(directory, 'bin');
+      await mkdir(binDirectory);
+      const verifier = join(binDirectory, 'pg_verifybackup');
+      const verifierScript = [
+        '#!/bin/sh',
+        'set -eu',
+        'source_dir="$1"',
+        'container=' + containerId,
+        'verify_dir=' + verificationDirectory,
+        'docker exec "$container" mkdir -p "$verify_dir"',
+        'docker cp "$source_dir/." "$container:$verify_dir/"',
+        'docker exec "$container" chown -R postgres:postgres "$verify_dir"',
+        'docker exec --user postgres "$container" pg_verifybackup "$verify_dir"',
+        'docker exec "$container" rm -rf "$verify_dir"',
+      ].join('\n') + '\n';
+      await writeFile(verifier, verifierScript, { mode: 0o700 });
+      await chmod(verifier, 0o700);
+
+      const targetDirectory = join(directory, 'restored-postgres');
+      const restoreTargetTime = new Date(Date.now() + 60_000).toISOString();
+      const env = backupEnvironment(endpoint, keyFile, binDirectory + delimiter + (process.env.PATH ?? ''));
+      const restore = await runCli(
+        ['restore-postgres', backupId, targetDirectory, restoreTargetTime],
+        env,
+      );
+      assert.equal(restore.code, 0, restore.stderr);
+      assert.equal(JSON.parse(restore.stdout).status, 'verified');
+      assert.ok((await readFile(join(targetDirectory, 'backup_manifest'))).length > 0);
+      assert.ok((await readFile(join(targetDirectory, 'PG_VERSION'), 'utf8')).startsWith('18'));
+      assert.equal(await readFile(join(targetDirectory, 'recovery.signal'), 'utf8'), '');
+      const recoveryConfig = await readFile(join(targetDirectory, 'postgresql.auto.conf'), 'utf8');
+      assert.match(recoveryConfig, /restore-wal "%f" "%p"/);
+      assert.match(recoveryConfig, /recovery_target_time = '/);
+    } finally {
+      if (postgresTempCreated) {
+        spawnSync(
+          'docker',
+          ['exec', containerId, 'rm', '-rf', sourceDirectory, containerArchive, verificationDirectory],
+          { encoding: 'utf8' },
+        );
+      }
       await mock.close();
     }
   });
