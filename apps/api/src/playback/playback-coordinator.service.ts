@@ -146,6 +146,13 @@ export class PlaybackCoordinatorService {
   }
 
   async observePlaybackState(input: PlaybackCommandInput): Promise<PlaybackState | null> {
+    return this.withPlaybackState(input, async (state) => state);
+  }
+
+  async withPlaybackState<T>(
+    input: PlaybackCommandInput,
+    action: (state: PlaybackState | null) => Promise<T>,
+  ): Promise<T | null> {
     const command = validateCommand({ ...input, command: 'play' });
     const lockKey = leaseKey(command);
     return this.withLocalLock(lockKey, async () => {
@@ -168,7 +175,8 @@ export class PlaybackCoordinatorService {
           command.providerInstanceId,
           observationInput,
         );
-        return (await adapter.getPlaybackState?.(observationInput)) ?? null;
+        const state = (await adapter.getPlaybackState?.(observationInput)) ?? null;
+        return await action(state);
       } finally {
         await this.dependencies.releaseLease?.(lockKey, {
           ...observationInput,
