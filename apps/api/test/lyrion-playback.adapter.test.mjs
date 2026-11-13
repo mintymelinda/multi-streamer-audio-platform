@@ -74,6 +74,8 @@ test('does not infer logical request identity from a matching Lyrion stream URL'
     request: async () => response({
       mode: 'play',
       playlist_cur_index: '2',
+      time: '42.25',
+      duration: 180,
       playlist_loop: [
         { 'playlist index': 1, url: 'https://other.example.test/audio' },
         { 'playlist index': 2, url: streamUrl },
@@ -94,6 +96,31 @@ test('does not infer logical request identity from a matching Lyrion stream URL'
   assert.equal(state.status, 'playing');
   assert.equal(state.requestId, undefined);
   assert.equal(state.providerPlaybackId, '2');
+  assert.equal(state.positionMs, 42_250);
+  assert.equal(state.durationMs, 180_000);
+});
+
+test('omits invalid Lyrion playback timing instead of inventing progress', async () => {
+  const adapter = new LyrionPlaybackAdapter({
+    baseUrl: 'https://lms.example.test',
+    playerId: 'player-a',
+    mediaResolver: sourceResolver,
+    allowedHosts: ['lms.example.test'],
+    request: async () => response({ mode: 'pause', time: 'unknown', duration: -1 }),
+  });
+  const state = await adapter.getPlaybackState({
+    workspaceId: 'workspace-a',
+    providerInstanceId: 'lyrion-a',
+    playerId: 'player-a',
+    outputId: 'output-a',
+    requestId: 'request-a',
+    command: 'play',
+    idempotencyKey: 'play-a',
+    actorId: 'actor-a',
+  });
+  assert.equal(state.status, 'paused');
+  assert.equal(state.positionMs, undefined);
+  assert.equal(state.durationMs, undefined);
 });
 
 test('does not claim a matching request when Lyrion is playing another stream', async () => {
