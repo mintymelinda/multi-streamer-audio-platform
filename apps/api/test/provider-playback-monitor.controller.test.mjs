@@ -121,7 +121,8 @@ test('uses a recent near-end observation from the same durable session when stop
  };
  assert.deepEqual(await invoke(h.controller),{accepted:true,status:'completed'});
  assert.equal(h.queries.some(({sql,values})=>
-  sql?.includes("observed_status = 'stopped'") && values?.[0]===179000),true);
+  sql?.includes("SET status = 'completed'") &&
+  values?.[0]===179000 && values?.[1]===180000),true);
 });
 
 test('does not infer completion from a stale previously observed near-end sample',async()=>{
