@@ -74,7 +74,7 @@ export class LyrionPlaybackAdapter implements PlaybackAdapter {
     return { outcome: 'completed' };
   }
 
-  async getPlaybackState(input: PlaybackCommandInput): Promise<{
+  async getPlaybackState(_input: PlaybackCommandInput): Promise<{
     status: string;
     providerPlaybackId?: string;
     requestId?: string;
@@ -84,15 +84,15 @@ export class LyrionPlaybackAdapter implements PlaybackAdapter {
     const rawMode = result.mode ?? result._mode;
     const mode = typeof rawMode === 'string' ? rawMode : 'stop';
     const status = mode === 'play' ? 'playing' : mode === 'pause' ? 'paused' : 'stopped';
-    const media = await this.resolveSource(input).catch(() => null);
-    const currentUrl = findCurrentStreamUrl(result);
-    const matches = Boolean(media && currentUrl && currentUrl === media.streamUrl);
+    // A matching media URL identifies the track, not the logical request. Since
+    // repeat requests for the same media are allowed, LMS playlist state alone
+    // cannot prove which request generation started it. Never claim request
+    // identity here; the Coordinator must keep ambiguous outcomes uncertain.
     return {
       status,
       ...(typeof result['playlist_cur_index'] === 'string' || typeof result['playlist_cur_index'] === 'number'
         ? { providerPlaybackId: String(result['playlist_cur_index']) }
         : {}),
-      ...(matches ? { requestId: input.requestId } : {}),
     };
   }
 
@@ -195,23 +195,6 @@ function validateEndpoint(value: string, allowedHosts: string[]): URL {
   }
   url.pathname = `${url.pathname.replace(/\/+$/, '')}/jsonrpc.js`;
   return url;
-}
-
-function findCurrentStreamUrl(result: Record<string, unknown>): string | null {
-  const loop = result.playlist_loop;
-  if (!Array.isArray(loop)) return null;
-  const currentIndex = String(result.playlist_cur_index ?? '0');
-  const current = loop.find((entry) =>
-    isRecord(entry) && String(entry['playlist index'] ?? '') === currentIndex,
-  );
-  const item = isRecord(current)
-    ? current
-    : loop.find(isRecord);
-  if (!item) return null;
-  for (const key of ['url', 'path', 'file']) {
-    if (typeof item[key] === 'string') return item[key] as string;
-  }
-  return null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

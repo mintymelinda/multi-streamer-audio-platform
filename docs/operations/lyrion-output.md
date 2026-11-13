@@ -4,7 +4,7 @@ Lyrion is an output provider. YouTube/Invidious remains a separate media-source 
 
 ## Configure an output
 
-An owner or workspace admin can configure an output with. Set `INVIDIOUS_INSTANCE_URL` in the API environment first; configuration verifies the instance and provisions a workspace-scoped YouTube source instance with metadata/resolution capability only:
+An owner or workspace admin can configure an output. Set `INVIDIOUS_INSTANCE_URL` in the API environment first; configuration verifies the instance and provisions a workspace-scoped YouTube source instance with metadata/resolution capability only:
 
 `POST /workspaces/{workspaceId}/providers/lyrion`
 
@@ -33,6 +33,6 @@ The base URL may include a reverse-proxy path prefix; the adapter appends `/json
 
 The Lyrion adapter resolves YouTube media through the configured Invidious resolver, then replaces the Lyrion player's provider playlist with the resolved audio stream and starts it. Pause, resume, skip, and seek are sent as LMS commands. The platform's PostgreSQL logical request queue remains authoritative.
 
-Reconciliation reports a request as matching only when the current LMS playlist item's stream URL exactly matches the freshly resolved stream URL. If LMS does not expose a matching URL, the operation remains uncertain rather than risking a duplicate start.
+A matching LMS stream URL confirms only the media identity, not the logical request identity. Because repeat requests for the same media are allowed, the adapter never treats a URL match alone as proof that a particular request generation started. If the outcome of a command is ambiguous, the Coordinator keeps it uncertain rather than risking a duplicate start.
 
 This first output adapter supports YouTube/Invidious source media. It does not enable Spotify catalog playback, and it does not change either metadata adapter's declared playback capability.
