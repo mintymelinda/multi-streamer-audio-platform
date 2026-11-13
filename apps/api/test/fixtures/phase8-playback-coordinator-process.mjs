@@ -4,12 +4,33 @@ function send(value) {
   process.stdout.write(JSON.stringify(value) + '\n');
 }
 
+process.on('uncaughtException', (error) => {
+  const message = error instanceof Error ? error.message : 'unknown-error';
+  process.stderr.write((error instanceof Error ? error.stack : message) + '\n');
+  send({ type: 'uncaught-exception', message });
+  process.exitCode = 1;
+});
+
+process.on('unhandledRejection', (reason) => {
+  const message = reason instanceof Error ? reason.message : 'unknown-error';
+  process.stderr.write((reason instanceof Error ? reason.stack : message) + '\n');
+  send({ type: 'unhandled-rejection', message });
+  process.exitCode = 1;
+});
+
+process.on('exit', (code) => {
+  send({ type: 'process-exit', code });
+});
+
 async function main() {
-  send({ type: 'booting', pid: process.pid });
+  send({ type: 'booting', stage: 'reflect-metadata', pid: process.pid });
   await import('reflect-metadata');
+  send({ type: 'booting', stage: 'nestjs-core', pid: process.pid });
   const { NestFactory } = await import('@nestjs/core');
+  send({ type: 'booting', stage: 'api-modules', pid: process.pid });
   const { PlaybackCoordinatorModule } = await import('../../dist/playback/playback-coordinator.module.js');
   const { PlaybackCoordinatorService } = await import('../../dist/playback/playback-coordinator.service.js');
+  send({ type: 'booting', stage: 'nest-context', pid: process.pid });
 
   const app = await NestFactory.createApplicationContext(PlaybackCoordinatorModule, {
     logger: false,
