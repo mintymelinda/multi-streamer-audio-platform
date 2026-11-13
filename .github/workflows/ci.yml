@@ -74,6 +74,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Check formatting of multi-process integration tests
+        run: >-
+          pnpm exec biome format
+          apps/api/test/fixtures/phase8-playback-coordinator-process.mjs
+          scripts/test/phase8-playback-coordinator-multiprocess.test.mjs
+
       - name: Validate deletion-ledger recovery tooling
         run: |
           node --check scripts/deletion-ledger.mjs
