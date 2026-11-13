@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, randomInt, randomUUID } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
@@ -14,7 +14,7 @@ const dashboardUrl = 'http://127.0.0.1:3100';
 const apiUrl = 'http://127.0.0.1:3300';
 const postgresUrl = 'postgresql://platform_runtime:local-runtime-only@127.0.0.1:5432/platform';
 const actorId = randomUUID();
-const twitchUserId = String(Date.now()) + String(Math.floor(Math.random() * 1_000_000));
+const twitchUserId = String(Date.now()) + String(randomInt(1_000_000));
 const sessionToken = randomUUID() + randomUUID();
 const csrfToken = randomUUID() + randomUUID();
 const sessionHash = createHash('sha256').update(sessionToken).digest('hex');
