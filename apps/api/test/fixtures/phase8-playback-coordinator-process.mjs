@@ -30,10 +30,16 @@ async function main() {
   const { Module } = await import('@nestjs/common');
   const { FastifyAdapter } = await import('@nestjs/platform-fastify');
   send({ type: 'booting', stage: 'api-modules', pid: process.pid });
-  const { PlaybackCoordinatorModule } = await import('../../dist/playback/playback-coordinator.module.js');
-  const { PlaybackCoordinatorService } = await import('../../dist/playback/playback-coordinator.service.js');
+  const { PlaybackCoordinatorModule } = await import(
+    '../../dist/playback/playback-coordinator.module.js'
+  );
+  const { PlaybackCoordinatorService } = await import(
+    '../../dist/playback/playback-coordinator.service.js'
+  );
   const { DatabaseModule } = await import('../../dist/database/database.module.js');
-  const { WorkspaceRealtimeGateway } = await import('../../dist/realtime/workspace-realtime.gateway.js');
+  const { WorkspaceRealtimeGateway } = await import(
+    '../../dist/realtime/workspace-realtime.gateway.js'
+  );
   const { AuthService } = await import('../../dist/identity/auth.service.js');
   const { RedisIoAdapter } = await import('../../dist/realtime/redis-io.adapter.js');
 
@@ -52,10 +58,7 @@ async function main() {
   class Phase8RealtimeModule {}
   Module({
     imports: [PlaybackCoordinatorModule, DatabaseModule],
-    providers: [
-      WorkspaceRealtimeGateway,
-      { provide: AuthService, useValue: auth },
-    ],
+    providers: [WorkspaceRealtimeGateway, { provide: AuthService, useValue: auth }],
   })(Phase8RealtimeModule);
 
   send({ type: 'booting', stage: 'nest-context', pid: process.pid });
