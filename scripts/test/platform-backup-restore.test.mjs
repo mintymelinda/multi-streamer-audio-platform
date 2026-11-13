@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash, randomBytes } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
+import { once } from 'node:events';
 import { createServer } from 'node:http';
 import {
   chmod,
