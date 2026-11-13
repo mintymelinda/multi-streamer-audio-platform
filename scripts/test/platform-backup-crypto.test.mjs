@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -144,6 +144,7 @@ test('requires a private 32-byte key file and an explicit versioned key ID', asy
       /permissions must be 0600/,
     );
 
+    await chmod(keyFile, 0o600);
     await writeFile(keyFile, randomBytes(32), { mode: 0o600 });
     await assert.rejects(
       loadBackupKey({ keyFile, keyId: 'key with spaces' }),
