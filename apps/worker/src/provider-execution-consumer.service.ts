@@ -171,6 +171,12 @@ export class ProviderExecutionConsumerService implements OnModuleInit, OnModuleD
       'PROVIDER_EXECUTION_HANDOFF_SECRET',
     );
     const result = await handoffValidatedProviderExecution(validated, { url, secret });
+    if (result.status === 'stale_or_unauthorized') {
+      const deferred = await deferProviderExecutionJob(this.pool, job.data);
+      if (deferred) {
+        this.logger.log(`Deferred stale provider execution ${job.id ?? 'unknown'} for Queue Manager rescheduling.`);
+      }
+    }
     this.logger.log(
       `Provider execution ${validated.execution_state_id} handed to coordinator: ${result.status}.`,
     );
