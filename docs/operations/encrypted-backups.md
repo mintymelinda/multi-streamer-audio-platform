@@ -168,6 +168,12 @@ Perform restoration in an isolated recovery environment. Do not point these comm
 
 A base backup alone does not guarantee PITR. Missing, expired, or inaccessible WAL segments must be treated as a failed recovery, not silently skipped.
 
+## Automated restore regression coverage
+
+The repository test suite includes `scripts/test/platform-backup-restore.test.mjs`. It exercises the object snapshot/restore CLI against an isolated local S3-compatible fixture, including recovery with a key-ring file copied to a separate recovery location. It also exercises the PostgreSQL restore command's authenticated archive extraction, `pg_verifybackup` invocation, and PITR configuration generation using a synthetic archive and a verifier test double.
+
+These are command-level regression tests, not evidence of a live PostgreSQL server starting, WAL replay reaching a target timestamp, recovery from an independently operated secret store, or a production S3 provider behaving correctly. The operator-run restore drills below remain mandatory.
+
 ## Restore drills and evidence
 
 At least quarterly, and after any change to backup code, keys, PostgreSQL major version, or object-storage provider:

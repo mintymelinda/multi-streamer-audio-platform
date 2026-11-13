@@ -71,6 +71,7 @@ function createObjectStorageClient(bucket, purpose = 'backup-read') {
     secretKey: requiredEnv(credentialPrefix + '_SECRET_KEY'),
     region: process.env.OBJECT_STORAGE_REGION || 'us-east-1',
     allowInsecureHttp: process.env.OBJECT_STORAGE_ALLOW_INSECURE_HTTP === 'true',
+    allowPlaintextRestore: purpose === 'restore',
   });
 }
 
@@ -625,9 +626,8 @@ async function restoreObjects(snapshotId, targetBucket) {
       if (header.sha256 !== entry.sha256 || header.plaintextBytes !== entry.bytes) {
         throw new Error('Restored object failed its snapshot manifest integrity check.');
       }
-      await target.putFile(entry.key, restoredPath, {
+      await target.putRestoredFile(entry.key, restoredPath, {
         contentType: entry.contentType || 'application/octet-stream',
-        immutable: false,
       });
       await rm(encryptedPath, { force: true });
       await rm(restoredPath, { force: true });
