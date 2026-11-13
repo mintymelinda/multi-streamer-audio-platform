@@ -230,6 +230,18 @@ test('two API processes broadcast one PostgreSQL outbox notification to their lo
       ['api-a', 'api-b'],
       'each independent API process must emit the outbox event to its local socket room',
     );
+
+    // A second delivery would indicate that cross-instance fan-out multiplied the event.
+    await Promise.all([
+      assert.rejects(
+        first.waitFor((message) => message.type === 'event' && message.payload?.id === eventId, 250),
+        /Timed out waiting for API realtime process/,
+      ),
+      assert.rejects(
+        second.waitFor((message) => message.type === 'event' && message.payload?.id === eventId, 250),
+        /Timed out waiting for API realtime process/,
+      ),
+    ]);
   } finally {
     await Promise.all(children.map((child) => child.close().catch(() => undefined)));
     if (seeded) {
