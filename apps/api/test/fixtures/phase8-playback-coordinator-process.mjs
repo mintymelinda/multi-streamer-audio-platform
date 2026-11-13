@@ -51,6 +51,14 @@ async function main() {
   const adapter = new RedisIoAdapter({ getHttpServer: () => null });
   await adapter.connect(process.env.REDIS_URL);
   const io = adapter.createIOServer(0, { transports: ['websocket'] });
+  await new Promise((resolve, reject) => {
+    if (io.httpServer.listening) {
+      resolve();
+      return;
+    }
+    io.httpServer.once('listening', resolve);
+    io.httpServer.once('error', reject);
+  });
   const namespace = io.of('/workspace');
   const auth = {
     async resolveSession(token) {
