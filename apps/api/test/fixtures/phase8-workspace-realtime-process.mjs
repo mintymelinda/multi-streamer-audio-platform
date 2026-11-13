@@ -39,7 +39,8 @@ async function main() {
   };
   const gateway = new WorkspaceRealtimeGateway(database, auth);
   gateway.server = {
-    in(room) {
+    local: {
+      in(room) {
       return {
         async fetchSockets() {
           return rooms.has(room) ? [socket] : [];
