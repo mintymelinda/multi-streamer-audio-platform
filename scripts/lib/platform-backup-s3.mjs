@@ -230,6 +230,7 @@ export function createPlatformBackupS3Client(options) {
     return {
       contentLength: Number(response.headers.get('content-length') ?? 0),
       plaintextSha256: response.headers.get('x-amz-meta-plaintext-sha256'),
+      contentType: response.headers.get('content-type'),
     };
   }
 
