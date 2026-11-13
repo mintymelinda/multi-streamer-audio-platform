@@ -4,13 +4,13 @@ This guide separates automated checks, operator-run staging checks, and capabili
 
 ## Automated CI evidence
 
-The existing repository test command already includes all files matching `scripts/test/*.test.mjs`; no workflow change is needed for the new tests.
+The existing repository test command includes all files matching `scripts/test/*.test.mjs`. CI provides PostgreSQL 18.6 and Redis 7.4 services for the multi-process acceptance test.
 
 | Check | Automated evidence | What it proves | What it does not prove |
 |---|---|---|---|
 | Database readiness | `apps/api/test/health.controller.test.mjs` | Liveness stays independent of PostgreSQL; readiness returns 200 after `SELECT 1` and a sanitized 503 on DB failure | Redis, object storage, worker, provider, or end-to-end readiness |
 | Two-process lease contention | `scripts/test/phase8-postgres-multiprocess-lease.test.mjs` | Two independent `psql` processes using `platform_runtime` cannot steal the same live workspace/provider/player lease; the row/fencing token remains owned by the first session | Two actual API/worker deployments coordinating a full playback request across processes |
-| Two API coordinator processes | `scripts/test/phase8-playback-coordinator-multiprocess.test.mjs` | Two independently booted NestJS playback-coordinator module processes share PostgreSQL; a delayed duplicate Lyrion observation cannot downgrade the first process's completed operation or issue a second play | BullMQ worker handoff, Redis Socket.IO cross-instance fan-out, browser journeys, or a live Lyrion device |
+| Two API processes with playback and real-time fan-out | `scripts/test/phase8-playback-coordinator-multiprocess.test.mjs` | Boots two independent NestJS playback-coordinator processes, each with the production Redis Socket.IO adapter and workspace gateway, against shared PostgreSQL/Redis. Two real WebSocket clients subscribe to the same workspace. A Redis room broadcast and one PostgreSQL outbox notification each arrive exactly once per client, while concurrent duplicate play commands produce exactly one Lyrion `play` | BullMQ worker handoff in this same test, browser journeys, Twitch OAuth/session issuance, or a live Lyrion device |
 | PostgreSQL outbox realtime fan-out | `scripts/test/phase8-workspace-realtime-multiprocess.test.mjs` | Two independent API gateway processes each subscribe to `platform_outbox_event`, authorize a workspace socket, and emit the same committed notification to their local room | Direct Socket.IO remote-room operations, cross-node socket enumeration, browser transport E2E, or the BullMQ provider-worker test |
 | HTTP load runner | `scripts/test/load-http-workload.test.mjs` | Weighted scenario execution, authorization header handling, per-request identity templates, latency reporting, and failure-budget exit behavior | Platform capacity or SLO targets; tests use a local mock HTTP server |
 | Backup CLI / crypto / S3 / WAL | `scripts/test/platform-backup-*.test.mjs` | Streaming archive primitives, immutable object transport, artifact context, WAL retry idempotency and tamper rejection | Real storage provider behavior, full PostgreSQL PITR, or independent-key restore drill |
@@ -79,7 +79,15 @@ The remaining full multi-instance acceptance run must add at least two BullMQ pr
 
 ### Socket.IO and real-time fan-out
 
-The current workspace and overlay gateways use the transactional-outbox notification path for persisted events: every API process maintains its own PostgreSQL `LISTEN` subscription to `platform_outbox_event`, then emits the event to sockets local to that process. The new two-process regression test verifies this PostgreSQL fan-out path through the real gateway authorization and membership checks. The default Socket.IO adapter still does not provide remote socket enumeration, room mutations, acknowledgements, or direct cross-node broadcasts; those operations remain local. Add the Redis adapter before introducing a feature that needs those remote Socket.IO operations. Item 70 remains open until the two-process worker test, workspace/overlay browser reconnect and missed-event recovery tests, direct cross-node Socket.IO requirements are either satisfied or explicitly ruled out, and multi-instance failure/rejoin behavior is validated. Do not claim the full gate is passed based solely on this notification regression.
+The multi-process acceptance test starts two independent playback-coordinator Nest application processes. Each process creates the production `RedisIoAdapter`, a real Socket.IO `/workspace` namespace, and the production `WorkspaceRealtimeGateway` against shared PostgreSQL and Redis. Two real WebSocket clients subscribe to the same workspace.
+
+The test verifies both delivery paths:
+- A room broadcast initiated by API process A reaches clients connected to both API processes through Redis, exactly once per client.
+- One PostgreSQL outbox notification is delivered independently to both API processes; each gateway enumerates local sockets only, so each client receives exactly one copy rather than every process re-emitting to every socket.
+
+The same two API processes concurrently execute the same idempotent playback command while a deterministic Lyrion fixture delays the first play and the duplicate's status reconciliation. The test verifies the operation remains completed and the provider receives exactly one `play`.
+
+This closes the automated cross-instance Redis/outbox/playback regression gate for the tested application modules. It does not replace browser OBS/streamer journeys, actual Twitch OAuth session issuance, disconnect/reconnect and missed-event recovery tests, or a live Lyrion device. Do not infer those broader release gates from this test.
 
 ### Worker and scheduler coordination
 
