@@ -276,7 +276,7 @@ async function requeueFailedRequest(
   );
 }
 
-async function closeRequest(
+export async function closeRequest(
   database: DatabaseService,
   request: RecoverablePlaybackRequest,
   actorId: string,
@@ -316,6 +316,20 @@ async function closeRequest(
         `UPDATE provider_execution_states SET state = 'cancelled', updated_at = now()
           WHERE workspace_id = $1 AND request_id = $2
             AND state NOT IN ('completed', 'failed', 'cancelled')`,
+        [request.workspaceId, request.id],
+      );
+      // An operator skip is the explicit recovery decision for a stuck playing,
+      // paused, or uncertain session. Close its durable identity in the same
+      // transaction so the provider monitor cannot later complete it or dispatch
+      // the already-recovered request a second time.
+      await client.query(
+        `UPDATE playback_sessions
+            SET status = 'interrupted',
+                ended_at = COALESCE(ended_at, now()),
+                updated_at = now()
+          WHERE workspace_id = $1
+            AND request_id = $2
+            AND status IN ('playing', 'paused', 'uncertain')`,
         [request.workspaceId, request.id],
       );
       await client.query(
