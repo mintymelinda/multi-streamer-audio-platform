@@ -47,6 +47,7 @@ async function main() {
           },
         };
       },
+    },
   };
   await gateway.onModuleInit();
   const subscription = await gateway.subscribe(socket, { workspaceId });
