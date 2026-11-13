@@ -217,7 +217,6 @@ export function createPlatformBackupS3Client(options) {
     const signed = signedRequest(config, method, key, options);
     // This outbound file transfer is intentional: putFile validates a private AES-GCM archive
     // before it reaches this transport, and this client rejects redirects and non-TLS endpoints.
-    // lgtm[js/file-access-to-http]
     return fetchImpl(signed.url, {
       method,
       redirect: 'error',
