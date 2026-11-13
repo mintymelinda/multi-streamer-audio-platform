@@ -34,7 +34,7 @@ export class RedisIoAdapter extends IoAdapter {
       this.redisLogger.error('Socket.IO Redis publisher error', error.stack),
     );
     subClient.on('error', (error: Error) =>
-      this.logger.error('Socket.IO Redis subscriber error', error.stack),
+      this.redisLogger.error('Socket.IO Redis subscriber error', error.stack),
     );
 
     try {
