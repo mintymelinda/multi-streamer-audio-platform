@@ -8,6 +8,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import type { PoolClient } from 'pg';
 import { readFileSync } from 'node:fs';
 import { DatabaseService } from '../database/database.service.js';
 import { PlaybackCoordinatorService } from '../playback/playback-coordinator.service.js';
@@ -85,7 +86,7 @@ export function verifyProviderExecutionHandoffSignature(input: {
 }
 
 async function transitionRequestStatus(
-  client: import('pg').PoolClient,
+  client: PoolClient,
   input: {
     workspaceId: string;
     requestId: string;
@@ -330,14 +331,14 @@ export class ProviderExecutionHandoffController {
                 AND provider_instance_id = $4 AND dispatch_generation = $5
                 AND state IN ('queued', 'retry_wait')
                 AND (next_attempt_at IS NULL OR next_attempt_at <= now())`,
-          [
-            input.executionStateId,
-            input.workspaceId,
-            input.requestId,
-            input.providerInstanceId,
-            input.dispatchGeneration,
-          ],
-        );
+            [
+              input.executionStateId,
+              input.workspaceId,
+              input.requestId,
+              input.providerInstanceId,
+              input.dispatchGeneration,
+            ],
+          );
           if (claimed.rowCount !== 1) return null;
         }
         return row;
