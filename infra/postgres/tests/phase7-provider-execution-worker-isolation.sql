@@ -43,7 +43,11 @@ DECLARE workspace_id uuid:=current_setting('test.workspace_id')::uuid; provider_
 BEGIN
  IF (SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname=session_user) THEN RAISE EXCEPTION 'provider worker login must not bypass RLS'; END IF;
  IF has_table_privilege(session_user,'media_requests','SELECT') OR has_table_privilege(session_user,'provider_credentials','SELECT')
-   OR has_table_privilege(session_user,'provider_execution_states','UPDATE') THEN RAISE EXCEPTION 'worker has direct tenant-table access'; END IF;
+   OR has_table_privilege(session_user,'provider_execution_states','UPDATE')
+   OR has_table_privilege(session_user,'playback_sessions','SELECT') THEN RAISE EXCEPTION 'worker has direct tenant-table access'; END IF;
+ IF NOT has_table_privilege('platform_provider_execution_owner','playback_sessions','SELECT') THEN
+   RAISE EXCEPTION 'security definer owner cannot enumerate durable playback sessions';
+ END IF;
  IF NOT has_function_privilege(session_user, 'public.platform_defer_provider_execution_job(uuid,uuid,uuid,uuid,integer)', 'EXECUTE')
    OR has_function_privilege('platform_runtime', 'public.platform_defer_provider_execution_job(uuid,uuid,uuid,uuid,integer)', 'EXECUTE')
  THEN RAISE EXCEPTION 'provider job deferral function grants are incorrect'; END IF;

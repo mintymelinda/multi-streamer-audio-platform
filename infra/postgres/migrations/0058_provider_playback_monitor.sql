@@ -3,6 +3,11 @@
 ALTER TABLE public.playback_sessions
   ADD COLUMN queue_advance_dispatched_at timestamptz;
 
+-- The SECURITY DEFINER owner is BYPASSRLS but still needs explicit table
+-- privileges; the restricted worker login receives execute-only access.
+GRANT SELECT ON public.playback_sessions TO platform_provider_execution_owner;
+
+
 DROP INDEX public.playback_sessions_monitor;
 CREATE INDEX playback_sessions_monitor
   ON public.playback_sessions (status, queue_advance_dispatched_at, observed_at, started_at)
