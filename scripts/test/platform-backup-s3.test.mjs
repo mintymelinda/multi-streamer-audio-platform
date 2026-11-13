@@ -23,11 +23,30 @@ async function withTemporaryDirectory(action) {
   }
 }
 
-test('streams immutable file uploads and signs the plaintext integrity metadata', async () => {
+function encryptedArchiveFixture(plainText = 'encrypted archive payload') {
+  const plaintext = Buffer.from(plainText);
+  const header = Buffer.from(JSON.stringify({
+    format: 'multi-streamer-audio-platform.backup',
+    version: 1,
+    algorithm: 'aes-256-gcm',
+    keyId: 'test-key',
+    context: 'test:fixture',
+    nonce: '0'.repeat(24),
+    tag: '0'.repeat(32),
+    sha256: createHash('sha256').update(plaintext).digest('hex'),
+    plaintextBytes: plaintext.length,
+  }));
+  const prefix = Buffer.alloc(12);
+  Buffer.from('MSAPBK01').copy(prefix);
+  prefix.writeUInt32BE(header.length, 8);
+  return Buffer.concat([prefix, header, Buffer.from('ciphertext-fixture')]);
+}
+
+test('streams only private encrypted backup archives to immutable S3 objects', async () => {
   await withTemporaryDirectory(async (directory) => {
     const sourcePath = join(directory, 'archive.msapbk');
-    const body = Buffer.from('encrypted archive payload');
-    await writeFile(sourcePath, body);
+    const body = encryptedArchiveFixture();
+    await writeFile(sourcePath, body, { mode: 0o600 });
     let captured;
     const client = createPlatformBackupS3Client({
       ...baseOptions,
@@ -48,6 +67,7 @@ test('streams immutable file uploads and signs the plaintext integrity metadata'
     assert.deepEqual(captured.body, body);
     assert.equal(captured.options.method, 'PUT');
     assert.equal(captured.options.duplex, 'half');
+    assert.equal(captured.options.redirect, 'error');
     assert.equal(captured.options.headers['if-none-match'], '*');
     assert.equal(captured.options.headers['x-amz-meta-content-sha256'], result.sha256);
     assert.equal(captured.options.headers['x-amz-meta-backup-id'], 'backup-001');
@@ -55,6 +75,37 @@ test('streams immutable file uploads and signs the plaintext integrity metadata'
     assert.equal(captured.url.includes('test-secret'), false);
   });
 });
+
+test('refuses to send a local file that is not a platform-encrypted archive', async () => {
+  await withTemporaryDirectory(async (directory) => {
+    const sourcePath = join(directory, 'secrets.msapbk');
+    await writeFile(sourcePath, Buffer.from('raw credential data'), { mode: 0o600 });
+    let requests = 0;
+    const client = createPlatformBackupS3Client({
+      ...baseOptions,
+      fetchImpl: async () => {
+        requests += 1;
+        return new Response(null, { status: 200 });
+      },
+    });
+    await assert.rejects(
+      client.putFile('postgres/archive.msapbk', sourcePath),
+      /Only platform-encrypted backup archives may be uploaded/,
+    );
+    assert.equal(requests, 0);
+  });
+});
+
+test('rejects credentials embedded in the S3 endpoint URL', () => {
+  assert.throws(
+    () => createPlatformBackupS3Client({
+      ...baseOptions,
+      endpoint: 'https://access:secret@objects.example.test',
+    }),
+    /must not contain credentials/,
+  );
+});
+
 
 test('treats identical ciphertext as a successful retry even when plaintext metadata differs, but rejects collisions', async () => {
   const body = Buffer.from('wal segment');
