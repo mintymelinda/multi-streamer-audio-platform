@@ -48,13 +48,44 @@ BEGIN
    WHERE v.actor_user_id=submitter_id AND v.request_source='dashboard') THEN RAISE EXCEPTION 'user request actor path failed'; END IF;
  IF EXISTS (SELECT 1 FROM platform_validate_provider_execution_job(twitch_execution_id,workspace_id,twitch_request_id,provider_id,4))
  THEN RAISE EXCEPTION 'a later logical queue item was accepted before the queue head'; END IF;
- UPDATE public.media_requests SET status='skipped' WHERE id=user_request_id AND workspace_id=workspace_id;
- DELETE FROM public.logical_queue_entries WHERE workspace_id=workspace_id AND request_id=user_request_id;
+END $$;
+
+-- Simulate queue removal while the old output is still playing. The output
+-- occupancy guard must continue to block the next request.
+RESET SESSION AUTHORIZATION;
+UPDATE public.provider_execution_states SET state='playing'
+ WHERE id=current_setting('test.user_execution_id')::uuid;
+DELETE FROM public.logical_queue_entries
+ WHERE workspace_id=current_setting('test.workspace_id')::uuid
+   AND request_id=current_setting('test.user_request_id')::uuid;
+SET LOCAL SESSION AUTHORIZATION platform_provider_worker;
+DO $$
+DECLARE workspace_id uuid:=current_setting('test.workspace_id')::uuid; provider_id uuid:=current_setting('test.provider_id')::uuid;
+ twitch_request_id uuid:=current_setting('test.twitch_request_id')::uuid; twitch_execution_id uuid:=current_setting('test.twitch_execution_id')::uuid;
+BEGIN
+ IF EXISTS (SELECT 1 FROM platform_validate_provider_execution_job(twitch_execution_id,workspace_id,twitch_request_id,provider_id,4))
+ THEN RAISE EXCEPTION 'an occupied output accepted another request after queue-row removal'; END IF;
+END $$;
+
+-- Only after the old request reaches a terminal state may the next logical
+-- queue item be validated and handed off.
+RESET SESSION AUTHORIZATION;
+UPDATE public.provider_execution_states SET state='completed'
+ WHERE id=current_setting('test.user_execution_id')::uuid;
+UPDATE public.media_requests SET status='skipped'
+ WHERE id=current_setting('test.user_request_id')::uuid
+   AND workspace_id=current_setting('test.workspace_id')::uuid;
+SET LOCAL SESSION AUTHORIZATION platform_provider_worker;
+DO $$
+DECLARE workspace_id uuid:=current_setting('test.workspace_id')::uuid; provider_id uuid:=current_setting('test.provider_id')::uuid;
+ twitch_request_id uuid:=current_setting('test.twitch_request_id')::uuid; twitch_execution_id uuid:=current_setting('test.twitch_execution_id')::uuid;
+BEGIN
  IF NOT EXISTS (SELECT 1 FROM platform_validate_provider_execution_job(twitch_execution_id,workspace_id,twitch_request_id,provider_id,4) v
-   WHERE v.actor_user_id=owner_id AND v.request_source='twitch_reward' AND v.state='resolving') THEN RAISE EXCEPTION 'Twitch resolving handoff replay path failed after queue advancement'; END IF;
- IF EXISTS (SELECT 1 FROM platform_validate_provider_execution_job(user_execution_id,workspace_id,user_request_id,provider_id,2))
+   WHERE v.actor_user_id=current_setting('test.owner_id')::uuid AND v.request_source='twitch_reward' AND v.state='resolving')
+ THEN RAISE EXCEPTION 'Twitch resolving handoff replay path failed after safe queue advancement'; END IF;
+ IF EXISTS (SELECT 1 FROM platform_validate_provider_execution_job(twitch_execution_id,workspace_id,twitch_request_id,provider_id,2))
  THEN RAISE EXCEPTION 'stale dispatch generation was accepted'; END IF;
- IF EXISTS (SELECT 1 FROM platform_validate_provider_execution_job(user_execution_id,gen_random_uuid(),user_request_id,provider_id,3))
+ IF EXISTS (SELECT 1 FROM platform_validate_provider_execution_job(twitch_execution_id,gen_random_uuid(),twitch_request_id,provider_id,4))
  THEN RAISE EXCEPTION 'mismatched workspace was accepted'; END IF;
 END $$;
 ROLLBACK;
