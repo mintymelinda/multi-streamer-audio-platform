@@ -53,7 +53,8 @@ export class QueueManagerService {
              JOIN media_requests r
                ON r.workspace_id = q.workspace_id AND r.id = q.request_id
              JOIN workspaces w ON w.id = r.workspace_id
-            WHERE q.workspace_id = $1 AND r.status IN ('queued', 'resolving', 'ready')
+            WHERE q.workspace_id = $1 AND w.status = 'active'
+              AND r.status IN ('queued', 'resolving', 'ready')
             ORDER BY q.priority DESC, q.sequence ASC
             LIMIT 1`,
           [workspaceId],
