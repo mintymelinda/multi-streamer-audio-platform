@@ -313,7 +313,7 @@ export class PlaybackCoordinatorService {
           throw error;
         }
 
-        let state: { status: string; providerPlaybackId?: string; requestId?: string } | undefined;
+        let state: PlaybackState | null | undefined;
         try {
           state = await adapter.getPlaybackState?.(operationInput);
         } catch {
@@ -336,7 +336,7 @@ export class PlaybackCoordinatorService {
       }
 
       if (result.outcome === 'unknown') {
-        let state: { status: string; providerPlaybackId?: string; requestId?: string } | undefined;
+        let state: PlaybackState | null | undefined;
         try {
           state = await adapter.getPlaybackState?.(operationInput);
         } catch {
@@ -393,7 +393,7 @@ export class PlaybackCoordinatorService {
     existing: PlaybackOperation,
     input: PlaybackCommandInput,
   ): Promise<PlaybackOperation> {
-    let state: { status: string; providerPlaybackId?: string; requestId?: string } | undefined;
+    let state: PlaybackState | null | undefined;
     try {
       const adapter = await this.dependencies.getProviderAdapter(input.providerInstanceId, input);
       state = await adapter.getPlaybackState?.(input);
