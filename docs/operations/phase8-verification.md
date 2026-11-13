@@ -67,7 +67,9 @@ The new two-connection test proves the conflict behavior at the database layer: 
 
 The new API coordinator regression test boots two independent NestJS `PlaybackCoordinatorModule` processes against shared PostgreSQL and deterministic local Invidious/Lyrion HTTP fixtures. It deliberately pauses the second process's stale Lyrion status observation until the first process has persisted `completed`, then verifies the duplicate reconciliation cannot downgrade that terminal row and no second `play` is issued. This tests the real API coordinator module and database repository across process boundaries, but it does not run BullMQ consumers or real provider hardware.
 
-The remaining full multi-instance acceptance run must add at least two BullMQ provider consumers sharing PostgreSQL and Redis, with a single configured Lyrion test output (or a deterministic fake provider output). It must verify:
+The merged Phase 8 worker-to-live-API acceptance test boots two independent BullMQ provider consumers sharing PostgreSQL and Redis and routes them through the real Fastify handoff controller, Playback Coordinator, Invidious resolver, and Lyrion adapter using deterministic local HTTP fixtures. Five independent workspaces prove the second worker consumes from the shared queue; duplicate delivery does not create an extra handoff. It verifies all five requests reach `playing` with one durable operation and one play per assigned output.
+
+The broader restart/fencing/reconciliation acceptance criteria remain:
 - concurrent play requests against one output issue at most one provider start;
 - a second instance cannot steal an unexpired lease;
 - an expired lease is reclaimed with a higher fencing token;
@@ -107,7 +109,18 @@ The script uses a unique Compose project, starts PostgreSQL, Redis, MinIO, and t
 
 ## Browser-level E2E gap
 
-There is no browser E2E harness in the current repository baseline. The HTTP workload runner and API tests do not cover a Twitch OAuth browser journey, dashboard interaction, moderator invite/accept flow, overlay editor publish flow, OBS browser-source rendering, or a complete user playback journey.
+The first browser harness lives in `scripts/e2e/browser-smoke.mjs`. CI builds the dashboard and overlay, installs an isolated pinned Playwright runtime and Chromium, starts both production Next.js servers, and drives them in headless Chromium.
+
+The initial browser smoke suite covers:
+- the unauthenticated dashboard sign-in boundary and Twitch sign-in link;
+- published overlay rendering through the actual overlay page/client, with a stubbed snapshot HTTP response;
+- bearer-token handling (the token is read from the URL fragment, scrubbed from browser history, and sent in the Authorization header);
+- the overlay Socket.IO namespace handshake; and
+- invalid/missing overlay-token rejection.
+
+The test intentionally stubs API HTTP responses and the Socket.IO server. It proves the real built frontend and browser code, but does **not** yet prove PostgreSQL-backed authentication, actual Twitch OAuth, real API/Redis integration, reconnect/missed-event recovery, moderator workflows, editor publish isolation, OBS rendering, or playback. The Playwright package is installed into the runner's temporary directory and is not added to the application dependency graph or lockfile.
+
+The HTTP workload runner and API tests still do not cover a complete user playback journey.
 
 Before Phase 8 item 68 can close, add and run browser-level E2E tests in a disposable non-production environment for at least:
 - Twitch sign-in, explicit workspace creation, workspace selection, and membership/role authorization;
