@@ -1,4 +1,4 @@
-import { ProviderCommandRejectedError, type PlaybackAdapter, type PlaybackCommandInput, type ProviderCommandResult } from '../playback/playback-coordinator.service.js';
+import { ProviderCommandRejectedError, type PlaybackAdapter, type PlaybackCommandInput, type PlaybackState, type ProviderCommandResult } from '../playback/playback-coordinator.service.js';
 import type { PlaybackMediaSourceResolver, ResolvedPlaybackMedia } from './playback-media-source.resolver.js';
 
 export interface LyrionPlaybackAdapterOptions {
@@ -47,7 +47,11 @@ export class LyrionPlaybackAdapter implements PlaybackAdapter {
     await this.command(['playlist', 'clear']);
     await this.command(['playlist', 'add', media.streamUrl]);
     await this.command(['play']);
-    return { outcome: 'started' };
+    const state = await this.getPlaybackState(input);
+    return {
+      outcome: state.status === 'playing' ? 'started' : 'unknown',
+      ...(state.providerPlaybackId ? { providerPlaybackId: state.providerPlaybackId } : {}),
+    };
   }
 
   async pause(): Promise<ProviderCommandResult> {
@@ -74,25 +78,23 @@ export class LyrionPlaybackAdapter implements PlaybackAdapter {
     return { outcome: 'completed' };
   }
 
-  async getPlaybackState(_input: PlaybackCommandInput): Promise<{
-    status: string;
-    providerPlaybackId?: string;
-    requestId?: string;
-  }> {
+  async getPlaybackState(_input: PlaybackCommandInput): Promise<PlaybackState> {
     const response = await this.command(['status', '-', '1', 'tags:adKlur']);
     const result = response.result ?? {};
     const rawMode = result.mode ?? result._mode;
     const mode = typeof rawMode === 'string' ? rawMode : 'stop';
     const status = mode === 'play' ? 'playing' : mode === 'pause' ? 'paused' : 'stopped';
-    // A matching media URL identifies the track, not the logical request. Since
-    // repeat requests for the same media are allowed, LMS playlist state alone
-    // cannot prove which request generation started it. Never claim request
-    // identity here; the Coordinator must keep ambiguous outcomes uncertain.
+    // playlist_timestamp changes when LMS mutates the current playlist. It is a
+    // provider session marker, not a logical request ID; never infer request
+    // identity from the playlist index or media URL.
+    const providerPlaybackId = parseProviderPlaybackId(result.playlist_timestamp);
+    const progressMs = parseSecondsToMilliseconds(result.time);
+    const durationMs = parseSecondsToMilliseconds(result.duration);
     return {
       status,
-      ...(typeof result['playlist_cur_index'] === 'string' || typeof result['playlist_cur_index'] === 'number'
-        ? { providerPlaybackId: String(result['playlist_cur_index']) }
-        : {}),
+      ...(providerPlaybackId ? { providerPlaybackId } : {}),
+      ...(progressMs !== undefined ? { progressMs } : {}),
+      ...(durationMs !== undefined ? { durationMs } : {}),
     };
   }
 
@@ -164,6 +166,19 @@ export class LyrionPlaybackAdapter implements PlaybackAdapter {
     }
     return payload as LyrionResponse;
   }
+}
+
+
+function parseProviderPlaybackId(value: unknown): string | undefined {
+  if (typeof value === 'string' && value.trim()) return value.trim();
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  return undefined;
+}
+
+function parseSecondsToMilliseconds(value: unknown): number | undefined {
+  const seconds = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : Number.NaN;
+  if (!Number.isFinite(seconds) || seconds < 0) return undefined;
+  return Math.round(seconds * 1000);
 }
 
 function validateEndpoint(value: string, allowedHosts: string[]): URL {
