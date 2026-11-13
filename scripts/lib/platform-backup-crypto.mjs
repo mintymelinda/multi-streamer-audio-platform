@@ -32,11 +32,11 @@ async function readProtectedKeyFile(filePath, { encoding, expectedBytes, maximum
     if (!before.isFile() || before.nlink !== 1n || (before.mode & 0o077n) !== 0n) {
       throw new Error('Backup key file permissions must be 0600 or stricter; the file must also be regular and singly linked.');
     }
-    if (
-      (expectedBytes !== undefined && before.size !== BigInt(expectedBytes)) ||
-      (maximumBytes !== undefined && before.size > BigInt(maximumBytes))
-    ) {
-      throw new Error('Backup key file size is invalid.');
+    if (expectedBytes !== undefined && before.size !== BigInt(expectedBytes)) {
+      throw new Error('Backup encryption key must contain exactly 32 raw bytes.');
+    }
+    if (maximumBytes !== undefined && before.size > BigInt(maximumBytes)) {
+      throw new Error('Backup key-ring file exceeds the maximum allowed size.');
     }
 
     const contents = await file.readFile(encoding ? { encoding } : undefined);
