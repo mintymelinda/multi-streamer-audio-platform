@@ -112,9 +112,33 @@ type ExecutionRow = {
                     provider_instance_id: string;
                     player_id: string;
                   }>(
-                    `SELECT output_id, provider_instance_id, player_id
-                       FROM provider_output_assignments
-                      WHERE workspace_id = $1 AND provider_instance_id = $2 AND active = true`,
+                    `SELECT assignment.output_id, assignment.provider_instance_id, assignment.player_id
+                       FROM provider_output_assignments assignment
+                      WHERE assignment.workspace_id = $1
+                        AND assignment.provider_instance_id = $2
+                        AND assignment.active = true
+                        AND NOT EXISTS (
+                          SELECT 1
+                            FROM provider_execution_states active_execution
+                            JOIN provider_output_assignments active_assignment
+                              ON active_assignment.workspace_id = active_execution.workspace_id
+                             AND active_assignment.provider_instance_id = active_execution.provider_instance_id
+                             AND active_assignment.active = true
+                            JOIN media_requests active_request
+                              ON active_request.workspace_id = active_execution.workspace_id
+                             AND active_request.id = active_execution.request_id
+                           WHERE active_assignment.workspace_id = assignment.workspace_id
+                             AND active_assignment.output_id = assignment.output_id
+                             AND active_execution.state IN ('resolving', 'ready', 'playing')
+                             AND active_request.status IN ('queued', 'resolving', 'ready', 'playing')
+                        )
+                        AND NOT EXISTS (
+                          SELECT 1
+                            FROM playback_operations active_operation
+                           WHERE active_operation.workspace_id = assignment.workspace_id
+                             AND active_operation.output_id = assignment.output_id
+                             AND active_operation.status IN ('pending', 'executing', 'uncertain')
+                        )`,
                     [tenantId, providerInstanceId],
                   ),
                 );
