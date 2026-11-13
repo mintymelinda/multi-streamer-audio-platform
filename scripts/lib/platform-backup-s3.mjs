@@ -1,6 +1,6 @@
 import { createHash, createHmac } from 'node:crypto';
-import { createReadStream, createWriteStream } from 'node:fs';
-import { stat } from 'node:fs/promises';
+import { constants, createReadStream, createWriteStream } from 'node:fs';
+import { open } from 'node:fs/promises';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
@@ -20,6 +20,61 @@ function signingKey(secret, date, region) {
 
 function hashEmpty() {
   return createHash('sha256').update(Buffer.alloc(0)).digest('hex');
+}
+
+function sameFileSnapshot(before, after) {
+  return before.isFile() &&
+    after.isFile() &&
+    before.dev === after.dev &&
+    before.ino === after.ino &&
+    before.nlink === after.nlink &&
+    before.size === after.size &&
+    before.mode === after.mode &&
+    before.mtimeNs === after.mtimeNs &&
+    before.ctimeNs === after.ctimeNs;
+}
+
+async function readEncryptedArchiveHeader(file, fileStat) {
+  const prefix = Buffer.alloc(12);
+  const prefixRead = await file.read(prefix, 0, prefix.length, 0);
+  if (
+    prefixRead.bytesRead !== prefix.length ||
+    !prefix.subarray(0, 8).equals(Buffer.from('MSAPBK01'))
+  ) {
+    throw new Error('Only platform-encrypted backup archives may be uploaded.');
+  }
+  const headerLength = prefix.readUInt32BE(8);
+  if (headerLength < 2 || headerLength > 16 * 1024 || fileStat.size < 12 + headerLength) {
+    throw new Error('Encrypted backup archive header is invalid.');
+  }
+  const headerBytes = Buffer.alloc(headerLength);
+  const headerRead = await file.read(headerBytes, 0, headerLength, 12);
+  if (headerRead.bytesRead !== headerLength) {
+    throw new Error('Encrypted backup archive header is truncated.');
+  }
+  let header;
+  try {
+    header = JSON.parse(headerBytes.toString('utf8'));
+  } catch {
+    throw new Error('Encrypted backup archive metadata is invalid.');
+  }
+  if (
+    header?.format !== 'multi-streamer-audio-platform.backup' ||
+    header.version !== 1 ||
+    header.algorithm !== 'aes-256-gcm' ||
+    typeof header.keyId !== 'string' ||
+    !/^[a-zA-Z0-9._-]{1,64}$/.test(header.keyId) ||
+    typeof header.context !== 'string' ||
+    !header.context.trim() ||
+    header.context.length > 1024 ||
+    !/^[a-f0-9]{24}$/i.test(header.nonce ?? '') ||
+    !/^[a-f0-9]{32}$/i.test(header.tag ?? '') ||
+    !/^[a-f0-9]{64}$/i.test(header.sha256 ?? '') ||
+    !Number.isSafeInteger(header.plaintextBytes) ||
+    header.plaintextBytes < 0
+  ) {
+    throw new Error('Encrypted backup archive metadata is invalid.');
+  }
 }
 
 function hashQuery(query = {}) {
@@ -163,12 +218,16 @@ export function createPlatformBackupS3Client(options) {
     && !(allowInsecureHttp && nodeEnv !== 'production')) {
     throw new Error('Backup S3 storage must use HTTPS outside local development.');
   }
+  if (parsed.username || parsed.password || parsed.search || parsed.hash) {
+    throw new Error('Backup S3 endpoint must not contain credentials, a query, or a fragment.');
+  }
   const config = { endpoint: parsed.origin + parsed.pathname, bucket, accessKey, secretKey, region };
 
   async function request(method, key, options = {}) {
     const signed = signedRequest(config, method, key, options);
     return fetchImpl(signed.url, {
       method,
+      redirect: 'error',
       headers: signed.headers,
       ...(options.body !== undefined ? { body: options.body, duplex: 'half' } : {}),
     });
@@ -188,27 +247,57 @@ export function createPlatformBackupS3Client(options) {
   }
 
   async function putFile(key, filePath, options = {}) {
-    const details = await fileDigest(filePath);
-    const metadata = {
-      ...(options.metadata ?? {}),
-      'x-amz-meta-content-sha256': details.sha256,
-    };
-    const fileStat = await stat(filePath);
-    const response = await request('PUT', key, {
-      payloadHash: details.sha256,
-      contentType: options.contentType ?? 'application/octet-stream',
-      contentLength: fileStat.size,
-      ifNoneMatch: options.immutable === false ? undefined : '*',
-      metadata,
-      body: createReadStream(filePath),
-    });
-    if (response.status === 412 || response.status === 409) {
-      const existing = await headObject(key);
-      if (existing?.contentSha256 === details.sha256) return { ...details, alreadyPresent: true };
-      throw new Error('Backup object already exists with different content; refusing to overwrite it.');
+    if (typeof constants.O_NOFOLLOW !== 'number') {
+      throw new Error('Secure no-follow archive opening is unavailable on this platform.');
     }
-    if (!response.ok) throw new Error('Backup S3 upload failed (' + response.status + ').');
-    return { ...details, alreadyPresent: false };
+    const file = await open(filePath, constants.O_RDONLY | constants.O_NOFOLLOW);
+    try {
+      const before = await file.stat({ bigint: true });
+      if (!before.isFile() || before.nlink !== 1n || (before.mode & 0o077n) !== 0n) {
+        throw new Error('Backup archives must be regular, singly linked private files.');
+      }
+      await readEncryptedArchiveHeader(file, before);
+
+      const hash = createHash('sha256');
+      let bytes = 0;
+      for await (const chunk of file.createReadStream({ start: 0, autoClose: false })) {
+        hash.update(chunk);
+        bytes += chunk.length;
+      }
+      const details = { sha256: hash.digest('hex'), bytes };
+      const afterDigest = await file.stat({ bigint: true });
+      if (!sameFileSnapshot(before, afterDigest) || bytes !== Number(before.size)) {
+        throw new Error('Encrypted backup archive changed while its upload digest was being calculated.');
+      }
+
+      const metadata = {
+        ...(options.metadata ?? {}),
+        'x-amz-meta-content-sha256': details.sha256,
+      };
+      // This is the intentional off-site backup transfer: only the encrypted archive format above
+      // is sent, to the operator-configured S3 endpoint, with redirects disabled.
+      const response = await request('PUT', key, {
+        payloadHash: details.sha256,
+        contentType: options.contentType ?? 'application/octet-stream',
+        contentLength: Number(before.size),
+        ifNoneMatch: options.immutable === false ? undefined : '*',
+        metadata,
+        body: file.createReadStream({ start: 0, autoClose: false }),
+      });
+      const afterUpload = await file.stat({ bigint: true });
+      if (!sameFileSnapshot(before, afterUpload)) {
+        throw new Error('Encrypted backup archive changed while it was being uploaded.');
+      }
+      if (response.status === 412 || response.status === 409) {
+        const existing = await headObject(key);
+        if (existing?.contentSha256 === details.sha256) return { ...details, alreadyPresent: true };
+        throw new Error('Backup object already exists with different content; refusing to overwrite it.');
+      }
+      if (!response.ok) throw new Error('Backup S3 upload failed (' + response.status + ').');
+      return { ...details, alreadyPresent: false };
+    } finally {
+      await file.close();
+    }
   }
 
   async function putObject(key, value, options = {}) {
