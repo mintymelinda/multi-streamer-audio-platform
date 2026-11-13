@@ -308,7 +308,7 @@ function connectWorkspaceSocket(port, workspaceId) {
     }
     if (packet.startsWith('40/workspace,')) {
       socket.send('42/workspace,' + JSON.stringify([
-        'workspace:subscribe',
+        'phase8:subscribe',
         { workspaceId },
       ]));
       return;
