@@ -255,6 +255,57 @@ try {
   await overlayPage.getByText('Now Playing', { exact: true }).first().waitFor();
   assert.equal(new URL(overlayPage.url()).hash, '', 'The overlay must scrub the bearer token from browser history.');
 
+  const draftOnlyState = {
+    version: 1,
+    canvas: { mode: 'responsive', width: 1920, height: 1080, snap: true, snapSize: 2 },
+    transition: { type: 'none', durationMs: 0 },
+    reducedMotion: true,
+    elements: [{
+      id: 'e2e-draft-only-now-playing',
+      type: 'now-playing',
+      name: 'Now Playing',
+      text: 'Draft Must Stay Private',
+      x: 5,
+      y: 5,
+      width: 58,
+      height: 18,
+      locked: false,
+      animation: { enter: 'none', exit: 'none', durationMs: 0, delayMs: 0, trigger: 'always' },
+    }],
+  };
+  const cookieHeader = `platform_session=${sessionToken}; platform_csrf=${csrfToken}`;
+  const draftOnlyResponse = await fetch(
+    `${apiUrl}/workspaces/${workspace.id}/scenes/${starter.body.scene.id}/draft`,
+    {
+      method: 'PUT',
+      headers: {
+        cookie: cookieHeader,
+        'content-type': 'application/json',
+        'x-csrf-token': csrfToken,
+      },
+      body: JSON.stringify({ state: draftOnlyState, expectedRevision: 0 }),
+    },
+  );
+  assert.equal(draftOnlyResponse.status, 200);
+  await delay(500);
+  assert.equal(await overlayPage.getByText('Draft Must Stay Private', { exact: true }).count(), 0);
+  assert.equal(await overlayPage.getByText('Now Playing', { exact: true }).count(), 1);
+
+  const publishDraftResponse = await fetch(
+    `${apiUrl}/workspaces/${workspace.id}/scenes/${starter.body.scene.id}/publish`,
+    {
+      method: 'POST',
+      headers: {
+        cookie: cookieHeader,
+        'content-type': 'application/json',
+        'x-csrf-token': csrfToken,
+      },
+      body: JSON.stringify({ expectedRevision: 1 }),
+    },
+  );
+  assert.equal(publishDraftResponse.status, 201);
+  await overlayPage.getByText('Draft Must Stay Private', { exact: true }).waitFor({ timeout: 10_000 });
+
   const connection = await context.newCDPSession(overlayPage);
   await connection.send('Network.enable');
   await connection.send('Network.emulateNetworkConditions', {
@@ -265,7 +316,6 @@ try {
   });
   await delay(500);
 
-  const cookieHeader = `platform_session=${sessionToken}; platform_csrf=${csrfToken}`;
   const recoveredState = {
     version: 1,
     canvas: { mode: 'responsive', width: 1920, height: 1080, snap: true, snapSize: 2 },
@@ -293,7 +343,7 @@ try {
         'content-type': 'application/json',
         'x-csrf-token': csrfToken,
       },
-      body: JSON.stringify({ state: recoveredState, expectedRevision: 0 }),
+      body: JSON.stringify({ state: recoveredState, expectedRevision: 2 }),
     },
   );
   assert.equal(draftResponse.status, 200, 'The API must accept a scene draft while the overlay browser is offline.');
@@ -306,7 +356,7 @@ try {
         'content-type': 'application/json',
         'x-csrf-token': csrfToken,
       },
-      body: JSON.stringify({ expectedRevision: 1 }),
+      body: JSON.stringify({ expectedRevision: 3 }),
     },
   );
   assert.equal(publishResponse.status, 201, 'The API must publish the new scene while the overlay browser is offline.');
