@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { randomUUID } from 'node:crypto';
-import { readFile, stat } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { open } from 'node:fs/promises';
 
 const options = parseArguments(process.argv.slice(2));
 const usage = 'Usage: node scripts/load/http-workload.mjs --base-url <https://staging.example> --scenario-file <private.json> --duration-seconds <n> --concurrency <n> --i-confirm-non-production';
@@ -57,14 +58,60 @@ function expandBody(body, runId, sequence) {
     .replaceAll('{{uuid}}', randomUUID());
 }
 
-async function loadScenarios(filePath, baseUrl) {
-  const details = await stat(filePath);
-  if ((details.mode & 0o077) !== 0) {
-    throw new Error('Scenario file permissions must be 0600 or stricter because headers may contain credentials.');
+async function readPrivateScenarioFile(filePath) {
+  if (typeof constants.O_NOFOLLOW !== 'number') {
+    throw new Error('Secure no-follow scenario-file opening is unavailable on this platform.');
   }
-  let document;
+
+  let file;
   try {
-    document = JSON.parse(await readFile(filePath, 'utf8'));
+    file = await open(filePath, constants.O_RDONLY | constants.O_NOFOLLOW);
+  } catch (error) {
+    if (error?.code === 'ELOOP') {
+      throw new Error('Scenario file must not be a symbolic link.');
+    }
+    throw new Error('Scenario file could not be opened securely.');
+  }
+
+  try {
+    const before = await file.stat({ bigint: true });
+    if (!before.isFile() || before.nlink !== 1n || (before.mode & 0o077n) !== 0n) {
+      throw new Error('Scenario file must be a private regular file with no hard links (0600 or stricter).');
+    }
+    if (before.size > 1024n * 1024n) {
+      throw new Error('Scenario file must not exceed 1 MiB.');
+    }
+
+    const contents = await file.readFile({ encoding: 'utf8' });
+    const after = await file.stat({ bigint: true });
+    if (
+      !after.isFile() ||
+      after.dev !== before.dev ||
+      after.ino !== before.ino ||
+      after.nlink !== before.nlink ||
+      after.size !== before.size ||
+      after.mode !== before.mode ||
+      after.mtimeNs !== before.mtimeNs ||
+      after.ctimeNs !== before.ctimeNs
+    ) {
+      throw new Error('Scenario file changed while it was being read.');
+    }
+    return contents;
+  } finally {
+    await file.close();
+  }
+}
+
+async function loadScenarios(filePath, baseUrl) {
+  let document;
+  let contents;
+  try {
+    contents = await readPrivateScenarioFile(filePath);
+  } catch (error) {
+    throw error instanceof Error ? error : new Error('Scenario file could not be read securely.');
+  }
+  try {
+    document = JSON.parse(contents);
   } catch {
     throw new Error('Scenario file is not valid JSON.');
   }
