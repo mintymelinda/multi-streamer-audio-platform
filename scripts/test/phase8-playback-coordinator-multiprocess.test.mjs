@@ -254,7 +254,86 @@ function startApiProcess(environment) {
   };
 }
 
-test('two API coordinator processes preserve a completed playback operation against stale reconciliation', async (t) => {
+function connectWorkspaceSocket(port, workspaceId) {
+  const socket = new WebSocket(
+    'ws://127.0.0.1:' + port + '/socket.io/?EIO=4&transport=websocket',
+  );
+  const received = [];
+  const waiters = [];
+
+  function deliver(name, payload) {
+    const index = waiters.findIndex(
+      (waiter) => waiter.name === name && waiter.predicate(payload),
+    );
+    if (index >= 0) {
+      const waiter = waiters.splice(index, 1)[0];
+      clearTimeout(waiter.timer);
+      waiter.resolve(payload);
+    } else {
+      received.push({ name, payload });
+    }
+  }
+
+  socket.addEventListener('open', () => {
+    socket.send('40/workspace,');
+  });
+  socket.addEventListener('message', (event) => {
+    const packet = String(event.data);
+    if (packet === '2') {
+      socket.send('3');
+      return;
+    }
+    if (packet.startsWith('40/workspace,')) {
+      socket.send('42/workspace,' + JSON.stringify([
+        'workspace:subscribe',
+        { workspaceId },
+      ]));
+      return;
+    }
+    if (packet.startsWith('42/workspace,')) {
+      try {
+        const [name, payload] = JSON.parse(packet.slice('42/workspace,'.length));
+        if (typeof name === 'string') deliver(name, payload);
+      } catch {
+        deliver('phase8:protocol-error', packet);
+      }
+      return;
+    }
+    if (packet.startsWith('44/workspace,')) {
+      deliver('phase8:connect-error', packet);
+    }
+  });
+
+  return {
+    waitForEvent(name, predicate = () => true, timeoutMs = 15000) {
+      const index = received.findIndex(
+        (event) => event.name === name && predicate(event.payload),
+      );
+      if (index >= 0) return Promise.resolve(received.splice(index, 1)[0].payload);
+      return new Promise((resolve, reject) => {
+        const waiter = {
+          name,
+          predicate,
+          resolve,
+          reject,
+          timer: setTimeout(() => {
+            const current = waiters.indexOf(waiter);
+            if (current >= 0) waiters.splice(current, 1);
+            reject(new Error('Timed out waiting for Socket.IO event ' + name));
+          }, timeoutMs),
+        };
+        waiters.push(waiter);
+      });
+    },
+    async close() {
+      if (socket.readyState === WebSocket.CLOSED) return;
+      socket.close();
+      await new Promise((resolve) => socket.addEventListener('close', resolve, { once: true }));
+    },
+  };
+}
+
+test('two API processes coordinate one playback start and deliver Redis and outbox events once', async (t) => {
   if (process.env.CI !== 'true' && process.env.GITHUB_ACTIONS !== 'true') {
     t.skip('Runs in CI against the PostgreSQL service container; local tests do not require Docker.');
     return;
@@ -265,6 +344,7 @@ test('two API coordinator processes preserve a completed playback operation agai
     return;
   }
 
+  assert.ok(process.env.REDIS_URL, 'CI must provide the Redis service URL.');
   const actorId = randomUUID();
   const workspaceId = randomUUID();
   const providerId = randomUUID();
@@ -272,9 +352,11 @@ test('two API coordinator processes preserve a completed playback operation agai
   const playerId = 'phase8-player-' + randomUUID();
   const outputId = 'phase8-output-' + randomUUID();
   const idempotencyKey = 'phase8-play-' + randomUUID();
+  const sessionToken = 'phase8-session-' + randomUUID();
   const twitchId = String(Date.now()) + String(Math.floor(Math.random() * 1_000_000));
   const fixtures = createProviderFixtures();
   const processes = [];
+  const sockets = [];
   let seeded = false;
 
   try {
@@ -298,6 +380,10 @@ test('two API coordinator processes preserve a completed playback operation agai
       DATABASE_URL: 'postgresql://platform_runtime:local-runtime-only@127.0.0.1:5432/platform',
       INVIDIOUS_INSTANCE_URL: endpoints.invidiousUrl,
       LYRION_ALLOWED_HOSTS: '127.0.0.1',
+      REDIS_URL: process.env.REDIS_URL,
+      PHASE8_REALTIME_USER_ID: actorId,
+      PHASE8_REALTIME_WORKSPACE_ID: workspaceId,
+      PHASE8_REALTIME_SESSION_TOKEN: sessionToken,
     };
     const processA = startApiProcess(environment);
     const processB = startApiProcess(environment);
@@ -308,6 +394,18 @@ test('two API coordinator processes preserve a completed playback operation agai
     ]);
     assert.equal(readyA.type, 'ready', readyA.message);
     assert.equal(readyB.type, 'ready', readyB.message);
+    assert.ok(Number.isInteger(readyA.port) && readyA.port > 0);
+    assert.ok(Number.isInteger(readyB.port) && readyB.port > 0);
+
+    const socketA = connectWorkspaceSocket(readyA.port, workspaceId);
+    const socketB = connectWorkspaceSocket(readyB.port, workspaceId);
+    sockets.push(socketA, socketB);
+    const [subscriptionA, subscriptionB] = await Promise.all([
+      socketA.waitForEvent('phase8:ready'),
+      socketB.waitForEvent('phase8:ready'),
+    ]);
+    assert.equal(subscriptionA.workspaceId, workspaceId);
+    assert.equal(subscriptionB.workspaceId, workspaceId);
 
     const input = {
       workspaceId,
@@ -360,9 +458,65 @@ test('two API coordinator processes preserve a completed playback operation agai
     assert.match(finalState, /^completed:started:\d+$/);
     assert.equal(fixtures.commands.filter((command) => command[0] === 'play').length, 1);
     assert.equal(fixtures.commands.filter((command) => command[0] === 'status').length, 1);
+
+    const redisProbeId = randomUUID();
+    processA.send({ type: 'broadcast', eventId: redisProbeId });
+    await processA.waitFor(
+      (message) => message.type === 'broadcasted' && message.eventId === redisProbeId,
+    );
+    const [redisProbeA, redisProbeB] = await Promise.all([
+      socketA.waitForEvent('phase8:redis-probe', (payload) => payload?.id === redisProbeId),
+      socketB.waitForEvent('phase8:redis-probe', (payload) => payload?.id === redisProbeId),
+    ]);
+    assert.equal(redisProbeA.id, redisProbeId);
+    assert.equal(redisProbeB.id, redisProbeId);
+    await Promise.all([
+      assert.rejects(
+        socketA.waitForEvent('phase8:redis-probe', (payload) => payload?.id === redisProbeId, 250),
+        /Timed out waiting for Socket.IO event/,
+      ),
+      assert.rejects(
+        socketB.waitForEvent('phase8:redis-probe', (payload) => payload?.id === redisProbeId, 250),
+        /Timed out waiting for Socket.IO event/,
+      ),
+    ]);
+
+    const outboxEventId = randomUUID();
+    const outboxPayload = JSON.stringify({
+      id: outboxEventId,
+      workspaceId,
+      type: 'request.status.changed',
+      payload: { requestId, from: 'playing', to: 'completed' },
+    }).replaceAll("'", "''");
+    runSql(
+      containerId,
+      'platform_bootstrap',
+      'ci-bootstrap-only',
+      "SELECT pg_notify('platform_outbox_event', '" + outboxPayload + "')",
+    );
+    const [outboxA, outboxB] = await Promise.all([
+      socketA.waitForEvent('workspace:event', (payload) => payload?.id === outboxEventId),
+      socketB.waitForEvent('workspace:event', (payload) => payload?.id === outboxEventId),
+    ]);
+    for (const event of [outboxA, outboxB]) {
+      assert.equal(event.type, 'request.status.changed');
+      assert.deepEqual(event.payload, { from: 'playing', to: 'completed' });
+      assert.equal(event.refreshRequired, false);
+    }
+    await Promise.all([
+      assert.rejects(
+        socketA.waitForEvent('workspace:event', (payload) => payload?.id === outboxEventId, 250),
+        /Timed out waiting for Socket.IO event/,
+      ),
+      assert.rejects(
+        socketB.waitForEvent('workspace:event', (payload) => payload?.id === outboxEventId, 250),
+        /Timed out waiting for Socket.IO event/,
+      ),
+    ]);
   } finally {
     fixtures.releasePlay();
     fixtures.releaseStatus();
+    await Promise.all(sockets.map((socket) => socket.close().catch(() => undefined)));
     await Promise.all(processes.map((process) => process.close().catch(() => undefined)));
     await fixtures.close();
     if (seeded) {
