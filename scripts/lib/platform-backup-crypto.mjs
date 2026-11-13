@@ -52,6 +52,44 @@ function createHashingTransform(hash, count) {
   });
 }
 
+export async function loadBackupKeyRing({ keyFile }) {
+  if (typeof keyFile !== 'string' || !keyFile.trim()) {
+    throw new TypeError('A backup key-ring file is required.');
+  }
+  const details = await stat(keyFile);
+  if ((details.mode & 0o077) !== 0) {
+    throw new Error('Backup key-ring file permissions must be 0600 or stricter.');
+  }
+  let document;
+  try {
+    document = JSON.parse((await readFile(keyFile, 'utf8')));
+  } catch {
+    throw new Error('Backup key-ring file is not valid JSON.');
+  }
+  if (
+    document?.format !== 'multi-streamer-audio-platform.backup-keyring' ||
+    document.version !== 1 ||
+    typeof document.activeKeyId !== 'string' ||
+    !/^[a-zA-Z0-9._-]{1,64}$/.test(document.activeKeyId) ||
+    !document.keys ||
+    typeof document.keys !== 'object' ||
+    Array.isArray(document.keys)
+  ) {
+    throw new Error('Backup key-ring metadata is invalid.');
+  }
+
+  const keys = new Map();
+  for (const [id, encoded] of Object.entries(document.keys)) {
+    if (!/^[a-zA-Z0-9._-]{1,64}$/.test(id) || typeof encoded !== 'string' || !/^[a-f0-9]{64}$/i.test(encoded)) {
+      throw new Error('Backup key-ring contains an invalid key entry.');
+    }
+    keys.set(id, Buffer.from(encoded, 'hex'));
+  }
+  const activeKey = keys.get(document.activeKeyId);
+  if (!activeKey) throw new Error('Backup key-ring active key is missing.');
+  return { activeKeyId: document.activeKeyId, activeKey, keys };
+}
+
 export async function encryptBackupFile({ sourcePath, destinationPath, key, keyId, context }) {
   validateKey(key);
   const aad = additionalData(keyId, context);
@@ -104,8 +142,7 @@ export async function encryptBackupFile({ sourcePath, destinationPath, key, keyI
   }
 }
 
-export async function decryptBackupFile({ sourcePath, destinationPath, key, keyId }) {
-  validateKey(key);
+export async function decryptBackupFile({ sourcePath, destinationPath, key, keyRing, keyId }) {
   const file = await open(sourcePath, 'r');
   let header;
   let payloadOffset;
@@ -148,7 +185,9 @@ export async function decryptBackupFile({ sourcePath, destinationPath, key, keyI
     throw new Error('Backup archive metadata or key ID is invalid.');
   }
 
-  const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(header.nonce, 'hex'));
+  const selectedKey = key ?? keyRing?.get(header.keyId);
+  validateKey(selectedKey);
+  const decipher = createDecipheriv('aes-256-gcm', selectedKey, Buffer.from(header.nonce, 'hex'));
   decipher.setAAD(additionalData(header.keyId, header.context));
   decipher.setAuthTag(Buffer.from(header.tag, 'hex'));
   const hash = createHash('sha256');
