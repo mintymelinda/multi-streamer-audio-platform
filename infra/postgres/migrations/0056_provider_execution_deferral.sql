@@ -62,8 +62,10 @@ BEGIN
 END;
 $function$;
 
+GRANT USAGE, CREATE ON SCHEMA public TO platform_provider_execution_owner;
 ALTER FUNCTION public.platform_defer_provider_execution_job(uuid, uuid, uuid, uuid, integer)
   OWNER TO platform_provider_execution_owner;
+REVOKE CREATE ON SCHEMA public FROM platform_provider_execution_owner;
 REVOKE ALL ON FUNCTION public.platform_defer_provider_execution_job(uuid, uuid, uuid, uuid, integer)
   FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.platform_defer_provider_execution_job(uuid, uuid, uuid, uuid, integer)
