@@ -10,6 +10,8 @@ DECLARE
   provider_a uuid := gen_random_uuid();
   provider_b uuid := gen_random_uuid();
   request_a uuid := gen_random_uuid();
+  execution_a uuid := gen_random_uuid();
+  operation_a uuid := gen_random_uuid();
   lease_fence bigint;
 BEGIN
   PERFORM set_config('app.user_id', actor_a::text, true);
@@ -35,13 +37,39 @@ BEGIN
     VALUES (provider_a, workspace_a, 'youtube', 'playback-a', 1);
   INSERT INTO workspace_playback_policies (workspace_id, enabled, reason)
     VALUES (workspace_a, false, 'Owner paused playback');
+  INSERT INTO media_requests (
+    id, workspace_id, source, submitted_by_user_id, title, status
+  ) VALUES (
+    request_a, workspace_a, 'dashboard', actor_a, 'Playback session test', 'playing'
+  );
+  INSERT INTO provider_execution_states (
+    id, workspace_id, request_id, provider_instance_id, state
+  ) VALUES (
+    execution_a, workspace_a, request_a, provider_a, 'playing'
+  );
+  INSERT INTO provider_output_assignments (
+    workspace_id, provider_instance_id, output_id, player_id, assigned_by
+  ) VALUES (
+    workspace_a, provider_a, 'output-a', 'player-a', actor_a
+  );
   INSERT INTO playback_operations (
-    workspace_id, provider_instance_id, player_id, request_id, requested_by,
+    id, workspace_id, provider_instance_id, player_id, output_id, request_id, requested_by,
     command, idempotency_key, status, result
   ) VALUES (
-    workspace_a, provider_a, 'player-a', request_a, actor_a,
-    'play', 'playback-command-a', 'uncertain', '{"outcome":"unknown"}'::jsonb
+    operation_a, workspace_a, provider_a, 'player-a', 'output-a', request_a, actor_a,
+    'play', 'playback-command-a', 'completed', '{"outcome":"started"}'::jsonb
   );
+  INSERT INTO playback_sessions (
+    workspace_id, request_id, provider_instance_id, execution_state_id,
+    dispatch_generation, playback_operation_id, actor_user_id, output_id, player_id,
+    expected_duration_ms
+  ) VALUES (
+    workspace_a, request_a, provider_a, execution_a, 1, operation_a, actor_a,
+    'output-a', 'player-a', 180000
+  );
+  IF (SELECT count(*) FROM playback_sessions) <> 1 THEN
+    RAISE EXCEPTION 'workspace owner cannot read its durable playback session';
+  END IF;
 
   INSERT INTO playback_leases (
     workspace_id, provider_instance_id, player_id, lease_owner_id,
@@ -103,6 +131,9 @@ BEGIN
   END IF;
   IF (SELECT count(*) FROM workspace_playback_policies) <> 0 THEN
     RAISE EXCEPTION 'playback policy leaked across workspace boundaries';
+  END IF;
+  IF (SELECT count(*) FROM playback_sessions) <> 0 THEN
+    RAISE EXCEPTION 'playback session leaked across workspace boundaries';
   END IF;
 END;
 $$;

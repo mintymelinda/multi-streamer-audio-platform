@@ -378,6 +378,10 @@ export class ProviderExecutionHandoffController {
       : operation.status === 'completed' || operation.status === 'reconciled'
         ? 'playing'
         : 'resolving';
+    const playbackOperationId = operation.id;
+    if (executionState === 'playing' && !playbackOperationId) {
+      throw new Error('Playback coordinator did not return a durable operation identity.');
+    }
     await this.database.transaction(
       { userId: input.actorUserId, verifiedWorkspaceId: input.workspaceId as never },
       async (client) => {
@@ -450,6 +454,33 @@ export class ProviderExecutionHandoffController {
               operationId: operation.id ?? input.executionStateId,
             });
           }
+        }
+
+        if (executionState === 'playing' && playbackOperationId) {
+          await client.query(
+            `INSERT INTO playback_sessions (
+               workspace_id, request_id, provider_instance_id, execution_state_id,
+               dispatch_generation, playback_operation_id, actor_user_id, output_id,
+               player_id, provider_playback_id, expected_duration_ms, status
+             )
+             SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'playing'
+              FROM media_requests r
+             WHERE r.workspace_id = $1 AND r.id = $2 AND r.status = 'playing'
+             ON CONFLICT (workspace_id, playback_operation_id) DO NOTHING`,
+            [
+              input.workspaceId,
+              input.requestId,
+              input.providerInstanceId,
+              input.executionStateId,
+              input.dispatchGeneration,
+              playbackOperationId,
+              input.actorUserId,
+              execution.output_id,
+              execution.player_id,
+              operation.providerPlaybackId ?? null,
+              execution.duration_ms,
+            ],
+          );
         }
       },
     );
