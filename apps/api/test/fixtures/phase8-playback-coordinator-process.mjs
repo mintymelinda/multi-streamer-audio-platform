@@ -1,5 +1,4 @@
 import { createInterface } from 'node:readline';
-import { createServer } from 'node:http';
 
 function send(value) {
   process.stdout.write(JSON.stringify(value) + '\n');
@@ -43,20 +42,17 @@ async function main() {
     throw new Error('Phase 8 API process identity or Redis configuration is incomplete.');
   }
 
-  const app = await NestFactory.createApplicationContext(PlaybackCoordinatorModule, {
+  const { FastifyAdapter } = await import('@nestjs/platform-fastify');
+  const app = await NestFactory.create(PlaybackCoordinatorModule, new FastifyAdapter(), {
     logger: false,
     abortOnError: false,
   });
   const coordinator = app.get(PlaybackCoordinatorService);
   const database = app.get(DatabaseService);
-  const httpServer = createServer();
-  const adapter = new RedisIoAdapter({ getHttpServer: () => httpServer });
+  const adapter = new RedisIoAdapter(app);
   await adapter.connect(process.env.REDIS_URL);
+  app.useWebSocketAdapter(adapter);
   const io = adapter.createIOServer(0, { transports: ['websocket'] });
-  await new Promise((resolve, reject) => {
-    httpServer.once('error', reject);
-    httpServer.listen(0, '127.0.0.1', resolve);
-  });
   const namespace = io.of('/workspace');
   const auth = {
     async resolveSession(token) {
@@ -82,7 +78,8 @@ async function main() {
     });
   });
 
-  const address = httpServer.address();
+  await app.listen(0, '127.0.0.1');
+  const address = app.getHttpServer().address();
   if (!address || typeof address === 'string') {
     throw new Error('Socket.IO server did not bind to a TCP port.');
   }
