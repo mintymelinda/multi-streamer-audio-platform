@@ -1,0 +1,40 @@
+{
+  "scenarios": [
+    {
+      "name": "api-readiness",
+      "method": "GET",
+      "path": "/health/ready",
+      "weight": 10
+    },
+    {
+      "name": "overlay-snapshot",
+      "method": "GET",
+      "path": "/overlay/scenes/SCENE_UUID/snapshot",
+      "headers": {
+        "Authorization": "Bearer REPLACE_WITH_VALID_43_CHARACTER_SCENE_TOKEN"
+      },
+      "weight": 25
+    },
+    {
+      "name": "workspace-queue-read",
+      "method": "GET",
+      "path": "/workspaces/WORKSPACE_UUID/queue",
+      "headers": {
+        "Cookie": "REPLACE_WITH_VALID_PLATFORM_SESSION_COOKIE"
+      },
+      "weight": 30
+    },
+    {
+      "name": "request-intake",
+      "method": "POST",
+      "path": "/workspaces/WORKSPACE_UUID/requests",
+      "headers": {
+        "Cookie": "REPLACE_WITH_VALID_PLATFORM_SESSION_COOKIE",
+        "X-CSRF-Token": "REPLACE_WITH_VALID_CSRF_TOKEN",
+        "Content-Type": "application/json"
+      },
+      "body": "{\"title\":\"Load test request {{sequence}}\",\"provider\":\"youtube\",\"mediaId\":\"REPLACE_WITH_VALID_TEST_MEDIA_ID\",\"idempotencyKey\":\"load-{{runId}}-{{sequence}}\"}",
+      "weight": 35
+    }
+  ]
+}
