@@ -78,6 +78,8 @@ export class LyrionPlaybackAdapter implements PlaybackAdapter {
     status: string;
     providerPlaybackId?: string;
     requestId?: string;
+    positionMs?: number;
+    durationMs?: number;
   }> {
     const response = await this.command(['status', '-', '1', 'tags:adKlur']);
     const result = response.result ?? {};
@@ -88,11 +90,15 @@ export class LyrionPlaybackAdapter implements PlaybackAdapter {
     // repeat requests for the same media are allowed, LMS playlist state alone
     // cannot prove which request generation started it. Never claim request
     // identity here; the Coordinator must keep ambiguous outcomes uncertain.
+    const positionMs = secondsToMilliseconds(result.time ?? result._time);
+    const durationMs = secondsToMilliseconds(result.duration ?? result._duration);
     return {
       status,
       ...(typeof result['playlist_cur_index'] === 'string' || typeof result['playlist_cur_index'] === 'number'
         ? { providerPlaybackId: String(result['playlist_cur_index']) }
         : {}),
+      ...(positionMs !== undefined ? { positionMs } : {}),
+      ...(durationMs !== undefined ? { durationMs } : {}),
     };
   }
 
@@ -164,6 +170,15 @@ export class LyrionPlaybackAdapter implements PlaybackAdapter {
     }
     return payload as LyrionResponse;
   }
+}
+
+function secondsToMilliseconds(value: unknown): number | undefined {
+  if (typeof value !== 'number' && typeof value !== 'string') return undefined;
+  if (typeof value === 'string' && !value.trim()) return undefined;
+  const seconds = Number(value);
+  if (!Number.isFinite(seconds) || seconds < 0) return undefined;
+  const milliseconds = Math.round(seconds * 1_000);
+  return Number.isSafeInteger(milliseconds) ? milliseconds : undefined;
 }
 
 function validateEndpoint(value: string, allowedHosts: string[]): URL {
