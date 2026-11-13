@@ -144,7 +144,7 @@ export class ProviderPlaybackMonitorController {
           state.progressMs === undefined ||
           state.durationMs === undefined ||
           state.durationMs <= 0 ||
-          state.progressMs < state.durationMs - 1500
+          state.progressMs < Math.max(state.durationMs - 1500, state.durationMs * 0.95)
         ) {
           return { accepted: true, status: 'stopped_before_end' };
         }
@@ -206,14 +206,18 @@ export class ProviderPlaybackMonitorController {
             payload.dispatchGeneration,
           ],
         );
-        if (execution.rowCount !== 1) return false;
+        if (execution.rowCount !== 1) {
+          throw new Error('Provider execution changed before playback completion was recorded.');
+        }
 
         const request = await client.query(
           `UPDATE media_requests SET status = 'completed', updated_at = now()
             WHERE workspace_id = $1 AND id = $2 AND status = 'playing'`,
           [payload.workspaceId, payload.requestId],
         );
-        if (request.rowCount !== 1) return false;
+        if (request.rowCount !== 1) {
+          throw new Error('Request lifecycle changed before playback completion was recorded.');
+        }
 
         await client.query(
           `INSERT INTO request_state_history
@@ -245,18 +249,11 @@ export class ProviderPlaybackMonitorController {
 
 function parsePayload(value: unknown): PlaybackMonitorPayload {
   if (!isRecord(value)) throw new UnauthorizedException('Provider playback monitor payload is invalid.');
-  const fields = [
-    'executionStateId',
-    'workspaceId',
-    'requestId',
-    'providerInstanceId',
-    'actorUserId',
-  ] as const;
-  for (const field of fields) {
-    if (typeof value[field] !== 'string' || !uuidPattern.test(value[field])) {
-      throw new UnauthorizedException('Provider playback monitor payload is invalid.');
-    }
-  }
+  const executionStateId = requireUuid(value.executionStateId);
+  const workspaceId = requireUuid(value.workspaceId);
+  const requestId = requireUuid(value.requestId);
+  const providerInstanceId = requireUuid(value.providerInstanceId);
+  const actorUserId = requireUuid(value.actorUserId);
   if (
     typeof value.dispatchGeneration !== 'number' ||
     !Number.isSafeInteger(value.dispatchGeneration) ||
@@ -265,13 +262,20 @@ function parsePayload(value: unknown): PlaybackMonitorPayload {
     throw new UnauthorizedException('Provider playback monitor payload is invalid.');
   }
   return {
-    executionStateId: value.executionStateId,
-    workspaceId: value.workspaceId,
-    requestId: value.requestId,
-    providerInstanceId: value.providerInstanceId,
+    executionStateId,
+    workspaceId,
+    requestId,
+    providerInstanceId,
     dispatchGeneration: value.dispatchGeneration,
-    actorUserId: value.actorUserId,
+    actorUserId,
   };
+}
+
+function requireUuid(value: unknown): string {
+  if (typeof value !== 'string' || !uuidPattern.test(value)) {
+    throw new UnauthorizedException('Provider playback monitor payload is invalid.');
+  }
+  return value;
 }
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
