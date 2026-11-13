@@ -314,12 +314,14 @@ async function backupObjects() {
         throw new Error('Object storage changed during backup inventory; rerun with writes paused.');
       }
       const sourceMetadata = await source.getFile(sourceObject.key, sourcePath);
+      const copiedFile = await stat(sourcePath);
       const after = await source.headObject(sourceObject.key);
       if (
         !after ||
         after.etag !== sourceObject.etag ||
         after.contentLength !== sourceObject.size ||
-        sourceMetadata.contentLength !== sourceObject.size
+        sourceMetadata.contentLength !== sourceObject.size ||
+        copiedFile.size !== sourceObject.size
       ) {
         throw new Error('Object changed while it was being copied; no consistent snapshot was published.');
       }
