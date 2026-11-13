@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { createServer } from 'node:http';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { link, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -23,9 +23,11 @@ async function withServer(handler, action) {
   }
 }
 
-async function runWorkload(baseUrl, directory, scenarios, extraArgs = []) {
-  const scenarioFile = join(directory, 'scenarios.json');
-  await writeFile(scenarioFile, JSON.stringify({ scenarios }), { mode: 0o600 });
+async function runWorkload(baseUrl, directory, scenarios, extraArgs = [], scenarioFileOverride) {
+  const scenarioFile = scenarioFileOverride ?? join(directory, 'scenarios.json');
+  if (!scenarioFileOverride) {
+    await writeFile(scenarioFile, JSON.stringify({ scenarios }), { mode: 0o600 });
+  }
   const child = spawn(process.execPath, [
     runner,
     '--base-url',
@@ -146,6 +148,35 @@ test('load runner rejects duplicate scenario identities and credential-bearing t
       assert.equal(credentialUrl.code, 1);
       assert.match(credentialUrl.stderr, /cannot contain credentials/);
       assert.equal(credentialUrl.stderr.includes('secret'), false);
+    });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('load runner refuses symlinked and multiply-linked scenario files', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'platform-load-file-safety-test-'));
+  try {
+    await withServer((_request, response) => {
+      response.writeHead(200).end();
+    }, async (baseUrl) => {
+      const scenarioContents = JSON.stringify({
+        scenarios: [{ name: 'health', method: 'GET', path: '/health/ready', weight: 1 }],
+      });
+      const target = join(directory, 'private-scenarios.json');
+      const symlinkPath = join(directory, 'scenarios-symlink.json');
+      const hardlinkPath = join(directory, 'scenarios-hardlink.json');
+      await writeFile(target, scenarioContents, { mode: 0o600 });
+      await symlink(target, symlinkPath);
+
+      const symlinkResult = await runWorkload(baseUrl, directory, [], [], symlinkPath);
+      assert.equal(symlinkResult.code, 1);
+      assert.match(symlinkResult.stderr, /must not be a symbolic link/);
+
+      await link(target, hardlinkPath);
+      const hardlinkResult = await runWorkload(baseUrl, directory, [], [], hardlinkPath);
+      assert.equal(hardlinkResult.code, 1);
+      assert.match(hardlinkResult.stderr, /no hard links/);
     });
   } finally {
     await rm(directory, { recursive: true, force: true });
