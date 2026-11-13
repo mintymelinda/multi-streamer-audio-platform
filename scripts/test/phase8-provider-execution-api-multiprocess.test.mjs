@@ -95,6 +95,7 @@ function createProviderFixtures(expectedPlayCount) {
   const playSeen = deferred();
   const releasePlay = deferred();
   const requests = [];
+  let playTimeout;
   const server = createServer(async (request, response) => {
     try {
       const url = new URL(request.url ?? '/', 'http://127.0.0.1');
@@ -145,19 +146,24 @@ function createProviderFixtures(expectedPlayCount) {
     requests,
     playSeen: Promise.race([
       playSeen.promise,
-      new Promise((_, reject) => setTimeout(
-        () => reject(new Error('Only ' + requests.filter((entry) => entry.command[0] === 'play').length
-          + ' of ' + expectedPlayCount + ' provider play commands reached the live API.')),
-        25000,
-      )),
+      new Promise((_, reject) => {
+        playTimeout = setTimeout(
+          () => reject(new Error('Only ' + requests.filter((entry) => entry.command[0] === 'play').length
+            + ' of ' + expectedPlayCount + ' provider play commands reached the live API.')),
+          25000,
+        );
+        playTimeout.unref?.();
+      }),
     ]),
     async start() {
       return listen(server);
     },
     release() {
+      clearTimeout(playTimeout);
       releasePlay.resolve();
     },
     async close() {
+      clearTimeout(playTimeout);
       releasePlay.resolve();
       server.closeAllConnections?.();
       if (server.listening) {
@@ -339,7 +345,7 @@ test('two BullMQ workers hand off five independent requests through the real sig
     const providerUrl = await provider.start();
     const seedStatements = ['BEGIN;'];
     for (const [index, fixture] of fixtures.entries()) {
-      const lyrionUrl = providerUrl + '/jsonrpc.js';
+      const lyrionUrl = providerUrl;
       seedStatements.push(
         "INSERT INTO platform_users (id, twitch_user_id) VALUES ('" + fixture.actorId + "', '" + fixture.twitchId + "');",
         "INSERT INTO workspaces (id, name, owner_user_id, broadcaster_twitch_user_id) VALUES ('" + fixture.workspaceId + "', 'Phase 8 live API workspace " + index + "', '" + fixture.actorId + "', '" + fixture.twitchId + "');",
