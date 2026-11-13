@@ -49,14 +49,14 @@ jobs:
 
       # Temporary lockfile repair after merging the latest Dependabot baseline.
       - name: Repair and commit lockfile
-        if: github.event_name == 'pull_request' && github.actor == 'mintymelinda' && (github.event.pull_request.head.ref == 'phase-1/identity-workspaces-tenant-isolation' || github.event.pull_request.head.ref == 'phase-2/twitch-reward-integration' || github.event.pull_request.head.ref == 'phase-2/test-first-completion' || github.event.pull_request.head.ref == 'phase-8/socketio-redis-cross-instance')
+        if: github.event_name == 'pull_request' && github.actor == 'mintymelinda' && (github.event.pull_request.head.ref == 'phase-1/identity-workspaces-tenant-isolation' || github.event.pull_request.head.ref == 'phase-2/twitch-reward-integration' || github.event.pull_request.head.ref == 'phase-2/test-first-completion')
         run: |
-          pnpm install --lockfile-only --no-frozen-lockfile
+          pnpm install --fix-lockfile --no-frozen-lockfile
           if ! git diff --quiet -- pnpm-lock.yaml; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add pnpm-lock.yaml
-            git -c core.hooksPath=/dev/null commit -m "chore: repair pnpm lockfile after dependency baseline update"
+            git commit -m "chore: repair pnpm lockfile after dependency baseline update"
             git push origin "HEAD:${GITHUB_HEAD_REF}"
           fi
 
