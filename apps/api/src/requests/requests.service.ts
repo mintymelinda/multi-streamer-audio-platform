@@ -601,9 +601,7 @@ export class RequestsService {
         return updated.rows[0];
       },
     );
-    if (action === 'approve' && result?.status === 'queued') {
-      await this.queueManager.dispatchNext({ workspaceId: workspace.id, actorId: actor.id });
-    }
+    await this.queueManager.dispatchNext({ workspaceId: workspace.id, actorId: actor.id });
     return result;
   }
 
