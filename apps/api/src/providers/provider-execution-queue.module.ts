@@ -124,14 +124,10 @@ type ExecutionRow = {
                               ON active_assignment.workspace_id = active_execution.workspace_id
                              AND active_assignment.provider_instance_id = active_execution.provider_instance_id
                              AND active_assignment.active = true
-                            JOIN media_requests active_request
-                              ON active_request.workspace_id = active_execution.workspace_id
-                             AND active_request.id = active_execution.request_id
                            WHERE active_assignment.workspace_id = assignment.workspace_id
                              AND active_assignment.output_id = assignment.output_id
                              AND active_execution.state IN ('resolving', 'ready', 'playing')
-                             AND active_request.status IN ('queued', 'resolving', 'ready', 'playing')
-                        )
+                                            )
                         AND NOT EXISTS (
                           SELECT 1
                             FROM playback_operations active_operation
