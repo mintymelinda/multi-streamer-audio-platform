@@ -3,14 +3,23 @@
 -- and output generation. Provider observations may update it, but never infer the
 -- request from a matching media URL.
 
+ALTER TABLE public.provider_execution_states
+  ADD CONSTRAINT provider_execution_states_session_identity_key
+  UNIQUE (workspace_id, request_id, provider_instance_id, dispatch_generation, id);
+
+ALTER TABLE public.playback_operations
+  ADD CONSTRAINT playback_operations_session_identity_key
+  UNIQUE (workspace_id, request_id, provider_instance_id, player_id, output_id, command, id);
+
 CREATE TABLE public.playback_sessions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   workspace_id uuid NOT NULL,
   request_id uuid NOT NULL,
   provider_instance_id uuid NOT NULL,
-  execution_state_id uuid NOT NULL REFERENCES public.provider_execution_states(id) ON DELETE CASCADE,
+  execution_state_id uuid NOT NULL,
   dispatch_generation integer NOT NULL CHECK (dispatch_generation > 0),
-  playback_operation_id uuid NOT NULL REFERENCES public.playback_operations(id) ON DELETE CASCADE,
+  playback_operation_id uuid NOT NULL,
+  command text NOT NULL DEFAULT 'play' CHECK (command = 'play'),
   actor_user_id uuid REFERENCES public.platform_users(id) ON DELETE SET NULL,
   output_id text NOT NULL CHECK (length(output_id) BETWEEN 1 AND 200),
   player_id text NOT NULL CHECK (length(player_id) BETWEEN 1 AND 200),
@@ -40,6 +49,14 @@ CREATE TABLE public.playback_sessions (
   UNIQUE (workspace_id, playback_operation_id),
   FOREIGN KEY (workspace_id, request_id)
     REFERENCES public.media_requests(workspace_id, id) ON DELETE CASCADE,
+  FOREIGN KEY (workspace_id, request_id, provider_instance_id, dispatch_generation, execution_state_id)
+    REFERENCES public.provider_execution_states(
+      workspace_id, request_id, provider_instance_id, dispatch_generation, id
+    ) ON DELETE CASCADE,
+  FOREIGN KEY (workspace_id, request_id, provider_instance_id, player_id, output_id, command, playback_operation_id)
+    REFERENCES public.playback_operations(
+      workspace_id, request_id, provider_instance_id, player_id, output_id, command, id
+    ) ON DELETE CASCADE,
   FOREIGN KEY (workspace_id, provider_instance_id)
     REFERENCES public.provider_instances(workspace_id, id) ON DELETE CASCADE
 );
