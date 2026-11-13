@@ -1,6 +1,6 @@
 import { createHash, createCipheriv, createDecipheriv, randomBytes, randomUUID } from 'node:crypto';
 import { constants, createReadStream, createWriteStream } from 'node:fs';
-import { link, open, readFile, rm, writeFile } from 'node:fs/promises';
+import { link, open, rm, writeFile } from 'node:fs/promises';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
@@ -18,7 +18,7 @@ async function readProtectedKeyFile(filePath, { encoding, expectedBytes, maximum
   try {
     const before = await file.stat({ bigint: true });
     if (!before.isFile() || before.nlink !== 1n || (before.mode & 0o077n) !== 0n) {
-      throw new Error('Backup key files must be regular, singly linked files with 0600 permissions or stricter.');
+      throw new Error('Backup key file permissions must be 0600 or stricter; the file must also be regular and singly linked.');
     }
     if (
       (expectedBytes !== undefined && before.size !== BigInt(expectedBytes)) ||
