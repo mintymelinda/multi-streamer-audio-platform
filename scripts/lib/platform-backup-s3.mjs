@@ -1,5 +1,5 @@
 import { createHash, createHmac } from 'node:crypto';
-import { constants, createReadStream, createWriteStream } from 'node:fs';
+import { constants, createWriteStream } from 'node:fs';
 import { open } from 'node:fs/promises';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -139,16 +139,6 @@ function signedRequest(config, method, key, options = {}) {
     ...(options.contentLength !== undefined ? { 'content-length': String(options.contentLength) } : {}),
   };
   return { url, headers };
-}
-
-async function fileDigest(filePath) {
-  const hash = createHash('sha256');
-  let bytes = 0;
-  for await (const chunk of createReadStream(filePath)) {
-    hash.update(chunk);
-    bytes += chunk.length;
-  }
-  return { sha256: hash.digest('hex'), bytes };
 }
 
 function decodeXml(value) {
