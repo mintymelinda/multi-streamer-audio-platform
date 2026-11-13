@@ -405,3 +405,76 @@ test('does not observe a provider while an output lease is held by another comma
   assert.equal(result,null);
   assert.equal(observed,false);
 });
+
+test('independent coordinator instances cannot start the same output while a database lease is held', async () => {
+  const leases = new Map();
+  let releaseFirst;
+  let signalStarted;
+  const gate = new Promise((resolve) => {
+    releaseFirst = resolve;
+  });
+  const started = new Promise((resolve) => {
+    signalStarted = resolve;
+  });
+  let playCalls = 0;
+
+  const dependencies = {
+    acquireLease: async (key, context) => {
+      const current = leases.get(key);
+      const now = new Date();
+      if (current && current.expiresAt > now) return { acquired: false };
+      const fencingToken = (current?.fencingToken ?? 0) + 1;
+      leases.set(key, {
+        ownerId: context.ownerId,
+        fencingToken,
+        expiresAt: context.expiresAt,
+      });
+      return { acquired: true, fencingToken };
+    },
+    releaseLease: async (key, context) => {
+      const current = leases.get(key);
+      if (current?.ownerId === context.ownerId) leases.delete(key);
+    },
+    findOperationByIdempotencyKey: async () => null,
+    persistOperation: async (operation) => operation,
+    getProviderAdapter: async () => ({
+      play: async () => {
+        playCalls += 1;
+        signalStarted();
+        await gate;
+        return { outcome: 'started' };
+      },
+    }),
+  };
+
+  const firstCoordinator = new PlaybackCoordinatorService(dependencies);
+  const secondCoordinator = new PlaybackCoordinatorService(dependencies);
+  const command = {
+    workspaceId: 'workspace-a',
+    providerInstanceId: 'lyrion-a',
+    playerId: 'player-a',
+    outputId: 'output-a',
+    command: 'play',
+  };
+  const first = firstCoordinator.execute({
+    ...command,
+    requestId: 'request-a',
+    idempotencyKey: 'request-a-play',
+  });
+
+  await started;
+  await assert.rejects(
+    secondCoordinator.execute({
+      ...command,
+      requestId: 'request-b',
+      idempotencyKey: 'request-b-play',
+    }),
+    (error) => error.code === 'PLAYBACK_LEASE_HELD',
+  );
+  assert.equal(playCalls, 1);
+
+  releaseFirst();
+  await first;
+  assert.equal(leases.size, 0);
+});
+
