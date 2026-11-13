@@ -12,6 +12,7 @@ export type QueueDispatchResult =
 
 type QueueCandidate = {
   id: string;
+  status: 'queued' | 'resolving' | 'ready';
   source: 'twitch_reward' | 'dashboard' | 'moderator' | 'api';
   submitted_by_user_id: string | null;
   owner_user_id: string;
@@ -52,13 +53,16 @@ export class QueueManagerService {
              JOIN media_requests r
                ON r.workspace_id = q.workspace_id AND r.id = q.request_id
              JOIN workspaces w ON w.id = r.workspace_id
-            WHERE q.workspace_id = $1 AND r.status = 'queued'
+            WHERE q.workspace_id = $1 AND r.status IN ('queued', 'resolving', 'ready')
             ORDER BY q.priority DESC, q.sequence ASC
             LIMIT 1`,
           [workspaceId],
         );
         const candidate = selected.rows[0];
         if (!candidate) return { status: 'empty' };
+        if (candidate.status !== 'queued') {
+          return { status: 'already_scheduled', requestId: candidate.id };
+        }
 
         const actorId =
           candidate.source === 'twitch_reward'
