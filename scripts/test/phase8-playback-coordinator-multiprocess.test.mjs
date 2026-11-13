@@ -105,11 +105,13 @@ function createProviderFixtures() {
       title: 'Two-process playback fixture',
       author: 'Phase 8 test',
       lengthSeconds: 60,
-      adaptiveFormats: [{
-        type: 'audio/webm; codecs=opus',
+      adaptiveFormats: [
+        {
+          type: 'audio/webm; codecs=opus',
         url: 'https://media.example.test/fixture.webm',
         bitrate: 128000,
-      }],
+        },
+      ],
     });
   });
 
@@ -225,9 +227,11 @@ function startApiProcess(environment) {
   child.on('exit', (code, signal) => {
     for (const waiter of waiters.splice(0)) {
       clearTimeout(waiter.timer);
-      waiter.reject(new Error(
-        'API coordinator child exited before replying (' + code + '/' + signal + '). stdout=' + stdout + ' stderr=' + stderr,
-      ));
+      waiter.reject(
+        new Error(
+          'API coordinator child exited before replying (' + code + '/' + signal + '). stdout=' + stdout + ' stderr=' + stderr,
+        ),
+      );
     }
   });
 
@@ -342,10 +346,12 @@ function connectWorkspaceSocket(port, workspaceId) {
           timer: setTimeout(() => {
             const current = waiters.indexOf(waiter);
             if (current >= 0) waiters.splice(current, 1);
-            reject(new Error(
-              'Timed out waiting for Socket.IO event ' + name + '; readyState='
-                + socket.readyState + '; packets=' + packets.slice(-8).join('|'),
-            ));
+            reject(
+              new Error(
+                'Timed out waiting for Socket.IO event ' + name + '; readyState='
+                  + socket.readyState + '; packets=' + packets.slice(-8).join('|'),
+              ),
+            );
           }, timeoutMs),
         };
         waiters.push(waiter);
