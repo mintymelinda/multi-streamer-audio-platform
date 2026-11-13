@@ -270,6 +270,8 @@ function connectWorkspaceSocket(port, workspaceId) {
   );
   const received = [];
   const waiters = [];
+  const packets = [];
+  let namespaceRequested = false;
 
   function deliver(name, payload) {
     const index = waiters.findIndex(
@@ -284,11 +286,22 @@ function connectWorkspaceSocket(port, workspaceId) {
     }
   }
 
-  socket.addEventListener('open', () => {
-    socket.send('40/workspace,');
+  socket.addEventListener('error', () => {
+    deliver('phase8:transport-error', 'WebSocket transport error');
+  });
+  socket.addEventListener('close', (event) => {
+    deliver('phase8:transport-close', { code: event.code, reason: event.reason });
   });
   socket.addEventListener('message', (event) => {
     const packet = String(event.data);
+    packets.push(packet);
+    if (packet.startsWith('0')) {
+      if (!namespaceRequested) {
+        namespaceRequested = true;
+        socket.send('40/workspace,');
+      }
+      return;
+    }
     if (packet === '2') {
       socket.send('3');
       return;
@@ -329,7 +342,10 @@ function connectWorkspaceSocket(port, workspaceId) {
           timer: setTimeout(() => {
             const current = waiters.indexOf(waiter);
             if (current >= 0) waiters.splice(current, 1);
-            reject(new Error('Timed out waiting for Socket.IO event ' + name));
+            reject(new Error(
+              'Timed out waiting for Socket.IO event ' + name + '; readyState='
+                + socket.readyState + '; packets=' + packets.slice(-8).join('|'),
+            ));
           }, timeoutMs),
         };
         waiters.push(waiter);
