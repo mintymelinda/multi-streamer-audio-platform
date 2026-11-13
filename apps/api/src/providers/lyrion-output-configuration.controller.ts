@@ -25,6 +25,7 @@ import { InvidiousResolverService } from './invidious-resolver.service.js';
 import { YouTubeInvidiousMediaResolver } from './playback-media-source.resolver.js';
 import { LyrionPlaybackAdapter } from './lyrion-playback.adapter.js';
 import { YouTubeInvidiousAdapter } from './youtube-invidious.adapter.js';
+import { QueueManagerService } from '../queues/queue-manager.service.js';
 
 type LyrionConfiguration = {
   instanceKey: string;
@@ -125,6 +126,7 @@ export class LyrionOutputConfigurationController {
     private readonly database: DatabaseService,
     private readonly credentials: ProviderCredentialsService,
     private readonly invidious: InvidiousResolverService,
+    private readonly queueManager: QueueManagerService,
   ) {}
 
   @Post('lyrion')
@@ -266,6 +268,7 @@ export class LyrionOutputConfigurationController {
       throw error;
     }
 
+    await this.queueManager.dispatchNext({ workspaceId: tenantId, actorId });
     return {
       providerInstanceId: identity,
       providerId: 'lyrion',
@@ -301,6 +304,7 @@ export class LyrionOutputConfigurationController {
       actorId,
       providerId: 'lyrion',
     });
+    await this.queueManager.dispatchNext({ workspaceId: tenantId, actorId });
     return { disconnected: true, settingsPreserved: true };
   }
 }
