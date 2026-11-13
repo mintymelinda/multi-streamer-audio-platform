@@ -81,6 +81,8 @@ export interface PlaybackAdapter {
     status: string;
     providerPlaybackId?: string;
     requestId?: string;
+    positionMs?: number;
+    durationMs?: number;
   }>;
 }
 
