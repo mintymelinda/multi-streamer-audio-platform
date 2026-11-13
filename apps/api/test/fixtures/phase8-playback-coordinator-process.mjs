@@ -30,14 +30,57 @@ async function main() {
   send({ type: 'booting', stage: 'api-modules', pid: process.pid });
   const { PlaybackCoordinatorModule } = await import('../../dist/playback/playback-coordinator.module.js');
   const { PlaybackCoordinatorService } = await import('../../dist/playback/playback-coordinator.service.js');
+  const { DatabaseService } = await import('../../dist/database/database.service.js');
+  const { WorkspaceRealtimeGateway } = await import('../../dist/realtime/workspace-realtime.gateway.js');
+  const { RedisIoAdapter } = await import('../../dist/realtime/redis-io.adapter.js');
   send({ type: 'booting', stage: 'nest-context', pid: process.pid });
+
+  const userId = process.env.PHASE8_REALTIME_USER_ID;
+  const workspaceId = process.env.PHASE8_REALTIME_WORKSPACE_ID;
+  const sessionToken = process.env.PHASE8_REALTIME_SESSION_TOKEN;
+  if (!userId || !workspaceId || !sessionToken || !process.env.REDIS_URL) {
+    throw new Error('Phase 8 API process identity or Redis configuration is incomplete.');
+  }
 
   const app = await NestFactory.createApplicationContext(PlaybackCoordinatorModule, {
     logger: false,
     abortOnError: false,
   });
   const coordinator = app.get(PlaybackCoordinatorService);
-  send({ type: 'ready', pid: process.pid });
+  const database = app.get(DatabaseService);
+  const adapter = new RedisIoAdapter({ getHttpServer: () => null });
+  await adapter.connect(process.env.REDIS_URL);
+  const io = adapter.createIOServer(0, { transports: ['websocket'] });
+  const namespace = io.of('/workspace');
+  const auth = {
+    async resolveSession(token) {
+      return token === sessionToken ? { id: userId } : null;
+    },
+  };
+  const gateway = new WorkspaceRealtimeGateway(database, auth);
+  gateway.server = namespace;
+  await gateway.onModuleInit();
+
+  namespace.on('connection', (socket) => {
+    socket.data.userId = userId;
+    socket.data.sessionToken = sessionToken;
+    socket.on('workspace:subscribe', async (body) => {
+      try {
+        const result = await gateway.subscribe(socket, body);
+        socket.emit('phase8:ready', result);
+      } catch (error) {
+        socket.emit('phase8:error', {
+          message: error instanceof Error ? error.message : 'subscription-failed',
+        });
+      }
+    });
+  });
+
+  const address = io.httpServer.address();
+  if (!address || typeof address === 'string') {
+    throw new Error('Socket.IO server did not bind to a TCP port.');
+  }
+  send({ type: 'ready', pid: process.pid, port: address.port });
 
   const lines = createInterface({ input: process.stdin });
   for await (const line of lines) {
@@ -50,6 +93,13 @@ async function main() {
     }
 
     if (message?.type === 'close') break;
+    if (message?.type === 'broadcast' && typeof message.eventId === 'string') {
+      namespace.to(`workspace:${workspaceId}`).emit('phase8:redis-probe', {
+        id: message.eventId,
+      });
+      send({ type: 'broadcasted', eventId: message.eventId });
+      continue;
+    }
     if (message?.type !== 'execute' || typeof message.commandId !== 'string') {
       send({ type: 'protocol-error', message: 'invalid-command' });
       continue;
@@ -81,6 +131,8 @@ async function main() {
     }
   }
 
+  await gateway.onModuleDestroy();
+  await adapter.close(io);
   await app.close();
 }
 
