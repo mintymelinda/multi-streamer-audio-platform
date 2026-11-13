@@ -46,8 +46,13 @@ export class LyrionPlaybackAdapter implements PlaybackAdapter {
     await this.command(['power', '1']);
     await this.command(['playlist', 'clear']);
     await this.command(['playlist', 'add', media.streamUrl]);
+    await this.command(['playlist', 'repeat', '0']);
     await this.command(['play']);
-    return { outcome: 'started' };
+    const state = await this.getPlaybackState(input);
+    return {
+      outcome: state.status === 'playing' ? 'started' : 'unknown',
+      ...(state.providerPlaybackId ? { providerPlaybackId: state.providerPlaybackId } : {}),
+    };
   }
 
   async pause(): Promise<ProviderCommandResult> {
@@ -86,17 +91,15 @@ export class LyrionPlaybackAdapter implements PlaybackAdapter {
     const rawMode = result.mode ?? result._mode;
     const mode = typeof rawMode === 'string' ? rawMode : 'stop';
     const status = mode === 'play' ? 'playing' : mode === 'pause' ? 'paused' : 'stopped';
-    // A matching media URL identifies the track, not the logical request. Since
-    // repeat requests for the same media are allowed, LMS playlist state alone
-    // cannot prove which request generation started it. Never claim request
-    // identity here; the Coordinator must keep ambiguous outcomes uncertain.
+    // playlist_timestamp changes when LMS mutates the current playlist. It is a
+    // provider-session marker, not a logical request ID; never infer request
+    // identity from the playlist index or media URL.
+    const providerPlaybackId = parseProviderPlaybackId(result.playlist_timestamp);
     const positionMs = secondsToMilliseconds(result.time ?? result._time);
     const durationMs = secondsToMilliseconds(result.duration ?? result._duration);
     return {
       status,
-      ...(typeof result['playlist_cur_index'] === 'string' || typeof result['playlist_cur_index'] === 'number'
-        ? { providerPlaybackId: String(result['playlist_cur_index']) }
-        : {}),
+      ...(providerPlaybackId ? { providerPlaybackId } : {}),
       ...(positionMs !== undefined ? { positionMs } : {}),
       ...(durationMs !== undefined ? { durationMs } : {}),
     };
@@ -170,6 +173,13 @@ export class LyrionPlaybackAdapter implements PlaybackAdapter {
     }
     return payload as LyrionResponse;
   }
+}
+
+
+function parseProviderPlaybackId(value: unknown): string | undefined {
+  if (typeof value === 'string' && value.trim()) return value.trim();
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  return undefined;
 }
 
 function secondsToMilliseconds(value: unknown): number | undefined {
