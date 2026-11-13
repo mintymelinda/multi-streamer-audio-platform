@@ -34,8 +34,11 @@ test('plays resolved YouTube media through the separate Lyrion output adapter', 
     mediaResolver: sourceResolver,
     allowedHosts: ['lms.example.test'],
     request: async (url, options) => {
-      calls.push({ url: String(url), options, body: JSON.parse(options.body) });
-      return response({});
+      const body = JSON.parse(options.body);
+      calls.push({ url: String(url), options, body });
+      return response(body.params[1][0] === 'status'
+        ? { mode: 'play', playlist_timestamp: 'session-123', time: 12.5, duration: 180 }
+        : {});
     },
   });
   const result = await adapter.play({
@@ -53,15 +56,17 @@ test('plays resolved YouTube media through the separate Lyrion output adapter', 
       mediaUrl: 'https://www.youtube.com/watch?v=abcdefghijk',
     },
   });
-  assert.deepEqual(result, { outcome: 'started' });
-  assert.equal(calls.length, 4);
+  assert.deepEqual(result, { outcome: 'started', providerPlaybackId: 'session-123' });
+  assert.equal(calls.length, 6);
   assert.equal(calls[0].url, 'https://lms.example.test/lms/jsonrpc.js');
   assert.equal(calls[0].options.headers.authorization, `Basic ${Buffer.from('streamer:private-password').toString('base64')}`);
   assert.deepEqual(calls.map((call) => call.body.params[1]), [
     ['power', '1'],
     ['playlist', 'clear'],
     ['playlist', 'add', streamUrl],
+    ['playlist', 'repeat', '0'],
     ['play'],
+    ['status', '-', '1', 'tags:adKlur'],
   ]);
 });
 
@@ -74,6 +79,7 @@ test('does not infer logical request identity from a matching Lyrion stream URL'
     request: async () => response({
       mode: 'play',
       playlist_cur_index: '2',
+      playlist_timestamp: 'session-456',
       time: '42.25',
       duration: 180,
       playlist_loop: [
@@ -95,7 +101,7 @@ test('does not infer logical request identity from a matching Lyrion stream URL'
   });
   assert.equal(state.status, 'playing');
   assert.equal(state.requestId, undefined);
-  assert.equal(state.providerPlaybackId, '2');
+  assert.equal(state.providerPlaybackId, 'session-456');
   assert.equal(state.positionMs, 42_250);
   assert.equal(state.durationMs, 180_000);
 });
