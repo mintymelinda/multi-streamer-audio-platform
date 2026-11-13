@@ -147,7 +147,8 @@ export function createPlatformBackupS3Client(options) {
   const parsed = new URL(endpoint);
   const localEndpoint = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1'
     || parsed.hostname === 'object-storage';
-  if (parsed.protocol !== 'https:' && !localEndpoint && !(allowInsecureHttp && nodeEnv !== 'production')) {
+  if (parsed.protocol !== 'https:' && !(localEndpoint && nodeEnv !== 'production')
+    && !(allowInsecureHttp && nodeEnv !== 'production')) {
     throw new Error('Backup S3 storage must use HTTPS outside local development.');
   }
   const config = { endpoint: parsed.origin + parsed.pathname, bucket, accessKey, secretKey, region };
