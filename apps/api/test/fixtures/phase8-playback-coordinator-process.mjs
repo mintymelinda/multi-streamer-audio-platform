@@ -33,8 +33,8 @@ async function main() {
   const { PlaybackCoordinatorModule } = await import('../../dist/playback/playback-coordinator.module.js');
   const { PlaybackCoordinatorService } = await import('../../dist/playback/playback-coordinator.service.js');
   const { DatabaseModule } = await import('../../dist/database/database.module.js');
-  const { DatabaseService } = await import('../../dist/database/database.service.js');
   const { WorkspaceRealtimeGateway } = await import('../../dist/realtime/workspace-realtime.gateway.js');
+  const { AuthService } = await import('../../dist/identity/auth.service.js');
   const { RedisIoAdapter } = await import('../../dist/realtime/redis-io.adapter.js');
 
   const userId = process.env.PHASE8_REALTIME_USER_ID;
@@ -44,37 +44,17 @@ async function main() {
     throw new Error('Phase 8 API process identity or Redis configuration is incomplete.');
   }
 
+  const auth = {
+    async resolveSession(token) {
+      return token === sessionToken ? { id: userId } : null;
+    },
+  };
   class Phase8RealtimeModule {}
   Module({
     imports: [PlaybackCoordinatorModule, DatabaseModule],
     providers: [
-      {
-        provide: WorkspaceRealtimeGateway,
-        inject: [DatabaseService],
-        useFactory(database) {
-          const auth = {
-            async resolveSession(token) {
-              return token === sessionToken ? { id: userId } : null;
-            },
-          };
-          const gateway = new WorkspaceRealtimeGateway(database, auth);
-          gateway.handleConnection = async (socket) => {
-            socket.data.userId = userId;
-            socket.data.sessionToken = sessionToken;
-            socket.on('phase8:subscribe', async (body) => {
-              try {
-                const result = await gateway.subscribe(socket, body);
-                socket.emit('phase8:ready', result);
-              } catch (error) {
-                socket.emit('phase8:error', {
-                  message: error instanceof Error ? error.message : 'subscription-failed',
-                });
-              }
-            });
-          };
-          return gateway;
-        },
-      },
+      WorkspaceRealtimeGateway,
+      { provide: AuthService, useValue: auth },
     ],
   })(Phase8RealtimeModule);
 
@@ -84,12 +64,26 @@ async function main() {
     abortOnError: false,
   });
   const coordinator = app.get(PlaybackCoordinatorService);
+  const gateway = app.get(WorkspaceRealtimeGateway);
+  gateway.handleConnection = async (socket) => {
+    socket.data.userId = userId;
+    socket.data.sessionToken = sessionToken;
+    socket.on('phase8:subscribe', async (body) => {
+      try {
+        const result = await gateway.subscribe(socket, body);
+        socket.emit('phase8:ready', result);
+      } catch (error) {
+        socket.emit('phase8:error', {
+          message: error instanceof Error ? error.message : 'subscription-failed',
+        });
+      }
+    });
+  };
   const adapter = new RedisIoAdapter(app);
   await adapter.connect(process.env.REDIS_URL);
   app.useWebSocketAdapter(adapter);
   await app.listen(0, '127.0.0.1');
 
-  const gateway = app.get(WorkspaceRealtimeGateway);
   const address = app.getHttpServer().address();
   if (!address || typeof address === 'string') {
     throw new Error('Socket.IO server did not bind to a TCP port.');
