@@ -70,6 +70,14 @@ export interface PlaybackCoordinatorDependencies {
   leaseDurationMs?: number;
 }
 
+export interface PlaybackState {
+  status: string;
+  providerPlaybackId?: string;
+  requestId?: string;
+  positionMs?: number;
+  durationMs?: number;
+}
+
 export interface PlaybackAdapter {
   play?(input: PlaybackCommandInput): Promise<ProviderCommandResult>;
   pause?(input: PlaybackCommandInput): Promise<ProviderCommandResult>;
@@ -77,13 +85,7 @@ export interface PlaybackAdapter {
   skip?(input: PlaybackCommandInput): Promise<ProviderCommandResult>;
   seek?(input: PlaybackCommandInput): Promise<ProviderCommandResult>;
   // requestId must identify the provider's current item; otherwise reconciliation stays uncertain.
-  getPlaybackState?(input: PlaybackCommandInput): Promise<{
-    status: string;
-    providerPlaybackId?: string;
-    requestId?: string;
-    positionMs?: number;
-    durationMs?: number;
-  }>;
+  getPlaybackState?(input: PlaybackCommandInput): Promise<PlaybackState | null>;
 }
 
 export interface PlaybackCommandInput {
@@ -141,6 +143,39 @@ export class PlaybackCoordinatorService {
     const command = validateCommand(input);
     const lockKey = leaseKey(command);
     return this.withLocalLock(lockKey, () => this.executeLocked(command, lockKey));
+  }
+
+  async observePlaybackState(input: PlaybackCommandInput): Promise<PlaybackState | null> {
+    const command = validateCommand({ ...input, command: 'play' });
+    const lockKey = leaseKey(command);
+    return this.withLocalLock(lockKey, async () => {
+      const ownerId = randomUUID();
+      const expiresAt = new Date(this.now().getTime() + this.leaseDurationMs);
+      const acquired = await this.dependencies.acquireLease(lockKey, {
+        ...command,
+        ownerId,
+        expiresAt,
+      });
+      const lease = typeof acquired === 'boolean' ? { acquired } : acquired;
+      if (!lease.acquired) return null;
+
+      const observationInput = {
+        ...command,
+        ...(lease.fencingToken !== undefined ? { fencingToken: lease.fencingToken } : {}),
+      };
+      try {
+        const adapter = await this.dependencies.getProviderAdapter(
+          command.providerInstanceId,
+          observationInput,
+        );
+        return (await adapter.getPlaybackState?.(observationInput)) ?? null;
+      } finally {
+        await this.dependencies.releaseLease?.(lockKey, {
+          ...observationInput,
+          ownerId,
+        });
+      }
+    });
   }
 
   async acquirePlaybackLease(

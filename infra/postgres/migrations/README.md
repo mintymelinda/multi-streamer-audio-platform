@@ -64,6 +64,8 @@ Start the local services with `pnpm dev:infra`, then apply the role bootstrap an
 - `0056_provider_execution_deferral.sql` gives the restricted provider worker a narrowly-scoped function to move blocked queued jobs to retry-wait so Queue Manager can issue a fresh dispatch generation when they become eligible.
 - `0057_durable_playback_sessions.sql` stores each confirmed playback start as a workspace-isolated session bound to its coordinator operation, logical request, provider execution generation, actor, and assigned output.
 
+- `0058_provider_playback_monitor.sql` exposes a worker-only listing of active durable playback sessions and records retryable queue-advance acknowledgements.
+
 The initial overlay scene safety ceiling is 1,000 across the entire platform. The platform runtime can read the configured value but cannot change it or mutate the usage counter. Until the platform settings controls are added to the platform-administration console, an operator changes it through the privileged database administration path, for example: `UPDATE platform_settings SET setting_value = '1500'::jsonb, updated_at = now() WHERE setting_key = 'overlay_scene_safety_ceiling';`.
 
 New tenant-owned tables must follow the same pattern. Never put plaintext provider credentials in integration rows, audit details, outbox payloads, logs, or job messages.

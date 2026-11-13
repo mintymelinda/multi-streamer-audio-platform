@@ -47,6 +47,11 @@ BEGIN
  IF NOT has_function_privilege(session_user, 'public.platform_defer_provider_execution_job(uuid,uuid,uuid,uuid,integer)', 'EXECUTE')
    OR has_function_privilege('platform_runtime', 'public.platform_defer_provider_execution_job(uuid,uuid,uuid,uuid,integer)', 'EXECUTE')
  THEN RAISE EXCEPTION 'provider job deferral function grants are incorrect'; END IF;
+ IF NOT has_function_privilege(session_user, 'public.platform_list_active_playback_sessions()', 'EXECUTE')
+   OR has_function_privilege('platform_runtime', 'public.platform_list_active_playback_sessions()', 'EXECUTE')
+ THEN RAISE EXCEPTION 'playback-session monitor function grants are incorrect'; END IF;
+ IF EXISTS (SELECT 1 FROM public.platform_list_active_playback_sessions())
+ THEN RAISE EXCEPTION 'monitor function returned a session with no active playing execution'; END IF;
  IF NOT EXISTS (SELECT 1 FROM platform_validate_provider_execution_job(user_execution_id,workspace_id,user_request_id,provider_id,3) v
    WHERE v.actor_user_id=submitter_id AND v.request_source='dashboard') THEN RAISE EXCEPTION 'user request actor path failed'; END IF;
  IF EXISTS (SELECT 1 FROM platform_validate_provider_execution_job(twitch_execution_id,workspace_id,twitch_request_id,provider_id,4))

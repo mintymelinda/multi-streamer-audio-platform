@@ -12,6 +12,16 @@ export interface ProviderExecutionJob {
   providerInstanceId: string;
   dispatchGeneration: number;
 }
+export interface ActiveProviderPlaybackSession {
+  playback_session_id: string;
+  execution_state_id: string;
+  workspace_id: string;
+  request_id: string;
+  provider_instance_id: string;
+  dispatch_generation: number;
+  actor_user_id: string;
+}
+
 export interface ValidatedProviderExecution {
   execution_state_id: string; workspace_id: string; request_id: string; provider_instance_id: string;
   state: 'queued' | 'retry_wait' | 'resolving'; attempt: number; dispatch_generation: number;
@@ -67,6 +77,7 @@ export async function handoffValidatedProviderExecution(
   },
 ): Promise<{ accepted: true; operationId: string | null; status: string }> {
   const body = {
+    playbackSessionId: input.playback_session_id,
     executionStateId: input.execution_state_id,
     workspaceId: input.workspace_id,
     requestId: input.request_id,
@@ -101,6 +112,56 @@ export async function handoffValidatedProviderExecution(
   return result as { accepted: true; operationId: string | null; status: string };
 }
 
+
+export async function listActivePlaybackSessions(pool: Pool): Promise<ActiveProviderPlaybackSession[]> {
+  const result = await pool.query<ActiveProviderPlayback>(
+    'SELECT * FROM public.platform_list_active_playback_sessions()',
+  );
+  return result.rows;
+}
+
+export async function monitorPlaybackSession(
+  input: ActiveProviderPlaybackSession,
+  options: {
+    url: string;
+    secret: string;
+    fetchImpl?: typeof fetch;
+    now?: () => number;
+  },
+): Promise<{ accepted: true; status: string }> {
+  const body = {
+    executionStateId: input.execution_state_id,
+    workspaceId: input.workspace_id,
+    requestId: input.request_id,
+    providerInstanceId: input.provider_instance_id,
+    dispatchGeneration: input.dispatch_generation,
+    actorUserId: input.actor_user_id,
+  };
+  const timestamp = String(Math.floor((options.now?.() ?? Date.now()) / 1000));
+  const signature = createProviderExecutionHandoffSignature(options.secret, timestamp, body);
+  const response = await (options.fetchImpl ?? fetch)(options.url, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-provider-execution-timestamp': timestamp,
+      'x-provider-execution-signature': signature,
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!response.ok) throw new Error(`provider_playback_monitor_http_${response.status}`);
+  const result: unknown = await response.json();
+  if (
+    !result ||
+    typeof result !== 'object' ||
+    (result as Record<string, unknown>).accepted !== true ||
+    typeof (result as Record<string, unknown>).status !== 'string'
+  ) {
+    throw new Error('provider_playback_monitor_invalid_response');
+  }
+  return result as { accepted: true; status: string };
+}
+
 export async function deferProviderExecutionJob(pool: Pool, value: unknown): Promise<boolean> {
   const job = parseProviderExecutionJob(value);
   const result = await pool.query<{ deferred: boolean }>(
@@ -130,15 +191,26 @@ export class ProviderExecutionConsumerService implements OnModuleInit, OnModuleD
     maxRetriesPerRequest: null, enableReadyCheck: true,
   });
   private worker: Worker<ProviderExecutionJob> | undefined;
+  private monitorTimer: NodeJS.Timeout | undefined;
+  private monitoring = false;
   async onModuleInit(): Promise<void> {
     await this.pool.query('SELECT 1');
-    const permission = await this.pool.query<{ can_validate: boolean; can_defer: boolean }>(
+    const permission = await this.pool.query<{
+      can_validate: boolean;
+      can_defer: boolean;
+      can_monitor: boolean;
+    }>(
       `SELECT
          has_function_privilege(current_user, 'public.platform_validate_provider_execution_job(uuid,uuid,uuid,uuid,integer)', 'EXECUTE') AS can_validate,
-         has_function_privilege(current_user, 'public.platform_defer_provider_execution_job(uuid,uuid,uuid,uuid,integer)', 'EXECUTE') AS can_defer`,
+         has_function_privilege(current_user, 'public.platform_defer_provider_execution_job(uuid,uuid,uuid,uuid,integer)', 'EXECUTE') AS can_defer,
+         has_function_privilege(current_user, 'public.platform_list_active_playback_sessions()', 'EXECUTE') AS can_monitor`,
     );
-    if (permission.rows[0]?.can_validate !== true || permission.rows[0]?.can_defer !== true) {
-      throw new Error('Provider execution database identity cannot validate and defer jobs.');
+    if (
+      permission.rows[0]?.can_validate !== true ||
+      permission.rows[0]?.can_defer !== true ||
+      permission.rows[0]?.can_monitor !== true
+    ) {
+      throw new Error('Provider execution database identity cannot validate, defer, and monitor playback.');
     }
     this.worker = new Worker<ProviderExecutionJob>(
       'provider-execution', async (job: Job<ProviderExecutionJob>) => this.process(job),
@@ -148,11 +220,51 @@ export class ProviderExecutionConsumerService implements OnModuleInit, OnModuleD
       `Provider execution validation job ${job?.id ?? 'unknown'} failed: ${error.message}`,
     ));
     await this.worker.waitUntilReady();
+    const monitorInterval = 5_000;
+    this.monitorTimer = setInterval(() => {
+      void this.monitorActivePlayback().catch((error) => {
+        this.logger.error(`Provider playback monitor failed: ${error instanceof Error ? error.message : 'unknown error'}`);
+      });
+    }, monitorInterval);
+    this.monitorTimer.unref?.();
     this.logger.log('Provider execution validation consumer is ready');
   }
   async onModuleDestroy(): Promise<void> {
+    if (this.monitorTimer) clearInterval(this.monitorTimer);
     await this.worker?.close(); await this.redis.quit(); await this.pool.end();
   }
+  private async monitorActivePlayback(): Promise<void> {
+    if (this.monitoring) return;
+    this.monitoring = true;
+    try {
+      const handoffUrl = process.env.PROVIDER_EXECUTION_HANDOFF_URL?.trim();
+      if (!handoffUrl) return;
+      const monitorUrl = new URL('./monitor', handoffUrl).toString();
+      const secret = readRequiredSetting(
+        'PROVIDER_EXECUTION_HANDOFF_SECRET_FILE',
+        'PROVIDER_EXECUTION_HANDOFF_SECRET',
+      );
+      const active = await listActivePlaybackSessions(this.pool);
+      for (const playback of active) {
+        try {
+          const result = await monitorPlaybackSession(playback, {
+            url: monitorUrl,
+            secret,
+          });
+          if (result.status === 'completed') {
+            this.logger.log(`Completed playback session ${playback.playback_session_id} for request ${playback.request_id}.`);
+          }
+        } catch (error) {
+          this.logger.warn(
+            `Playback monitor request ${playback.request_id} failed: ${error instanceof Error ? error.message : 'unknown error'}`,
+          );
+        }
+      }
+    } finally {
+      this.monitoring = false;
+    }
+  }
+
   private async process(job: Job<ProviderExecutionJob>): Promise<void> {
     const validated = await validateProviderExecutionJob(this.pool, job.data);
     if (!validated) {
@@ -182,3 +294,4 @@ export class ProviderExecutionConsumerService implements OnModuleInit, OnModuleD
     );
   }
 }
+
