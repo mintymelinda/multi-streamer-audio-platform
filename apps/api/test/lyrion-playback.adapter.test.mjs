@@ -57,13 +57,14 @@ test('plays resolved YouTube media through the separate Lyrion output adapter', 
     },
   });
   assert.deepEqual(result, { outcome: 'started', providerPlaybackId: '1723945752.73756' });
-  assert.equal(calls.length, 5);
+  assert.equal(calls.length, 6);
   assert.equal(calls[0].url, 'https://lms.example.test/lms/jsonrpc.js');
   assert.equal(calls[0].options.headers.authorization, `Basic ${Buffer.from('streamer:private-password').toString('base64')}`);
   assert.deepEqual(calls.map((call) => call.body.params[1]), [
     ['power', '1'],
     ['playlist', 'clear'],
     ['playlist', 'add', streamUrl],
+    ['playlist', 'repeat', '0'],
     ['play'],
     ['status', '-', '1', 'tags:adKlur'],
   ]);
