@@ -92,6 +92,7 @@ async function runCommand(binary, commandArgs, options = {}) {
     });
     const output = [];
     child.stdout.on('data', (chunk) => output.push(chunk));
+    child.stderr.on('data', () => {});
     child.on('error', () => reject(new Error(binary + ' could not be started.')));
     child.on('close', (code) => {
       if (code !== 0) reject(new Error(binary + ' failed with exit code ' + code + '.'));
@@ -392,6 +393,21 @@ async function backupObjects() {
   }
 }
 
+async function verifyExistingWal(client, objectKey, filename, directory, keys, expected) {
+  const encryptedPath = join(directory, filename + '.existing.msapbk');
+  const restoredPath = join(directory, filename + '.existing.wal');
+  await client.getFile(objectKey, encryptedPath);
+  const existing = await decryptBackupFile({
+    sourcePath: encryptedPath,
+    destinationPath: restoredPath,
+    keyRing: keys.keys,
+    context: 'wal:' + filename.toUpperCase(),
+  });
+  if (existing.sha256 !== expected.sha256 || existing.plaintextBytes !== expected.plaintextBytes) {
+    throw new Error('An immutable WAL archive already exists with different segment content.');
+  }
+}
+
 async function archiveWal(sourcePath, filename) {
   if (!walFilenamePattern.test(filename ?? '')) throw new Error('WAL filename is invalid.');
   const keys = await loadKeys();
@@ -408,12 +424,23 @@ async function archiveWal(sourcePath, filename) {
       context: 'wal:' + filename.toUpperCase(),
     });
     const objectKey = backupKey(prefix, 'wal/' + filename.toUpperCase() + '.msapbk');
-    await client.putFile(objectKey, encryptedPath, {
-      metadata: {
-        'x-amz-meta-plaintext-sha256': encrypted.sha256,
-        'x-amz-meta-key-id': keys.activeKeyId,
-      },
-    });
+    const existing = await client.headObject(objectKey);
+    if (existing) {
+      await verifyExistingWal(client, objectKey, filename, directory, keys, encrypted);
+    } else {
+      try {
+        await client.putFile(objectKey, encryptedPath, {
+          metadata: {
+            'x-amz-meta-plaintext-sha256': encrypted.sha256,
+            'x-amz-meta-key-id': keys.activeKeyId,
+          },
+        });
+      } catch (error) {
+        const concurrentArchive = await client.headObject(objectKey);
+        if (!concurrentArchive) throw error;
+        await verifyExistingWal(client, objectKey, filename, directory, keys, encrypted);
+      }
+    }
     if (/^[0-9a-f]{24}$/i.test(filename)) {
       await uploadStatus(client, prefix, 'wal', {
         status: 'ok',
@@ -534,6 +561,10 @@ async function restoreObjects(snapshotId, targetBucket) {
   const id = ensureBackupId(snapshotId);
   if (!targetBucket || !/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(targetBucket)) {
     throw new Error('Provide a valid empty target object-storage bucket name.');
+  }
+  const sourceBucket = requiredEnv('OBJECT_STORAGE_BUCKET');
+  if (targetBucket === sourceBucket) {
+    throw new Error('Object restore target bucket must be different from the live source bucket.');
   }
   const keys = await loadKeys();
   const backup = createBackupClient();
