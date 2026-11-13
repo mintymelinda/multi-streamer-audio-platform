@@ -2,10 +2,13 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
-import { Queue } from 'bullmq';
-import { Redis } from 'ioredis';
 import test from 'node:test';
+
+const require = createRequire(new URL('../../apps/worker/package.json', import.meta.url));
+const { Queue } = require('bullmq');
+const Redis = require('ioredis');
 
 const workerFixture = fileURLToPath(
   new URL('../../apps/worker/test/fixtures/phase8-provider-execution-worker-process.mjs', import.meta.url),
