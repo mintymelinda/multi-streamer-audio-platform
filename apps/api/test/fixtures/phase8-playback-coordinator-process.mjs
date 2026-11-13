@@ -1,14 +1,16 @@
-import 'reflect-metadata';
 import { createInterface } from 'node:readline';
-import { NestFactory } from '@nestjs/core';
-import { PlaybackCoordinatorModule } from '../../dist/playback/playback-coordinator.module.js';
-import { PlaybackCoordinatorService } from '../../dist/playback/playback-coordinator.service.js';
 
 function send(value) {
   process.stdout.write(JSON.stringify(value) + '\n');
 }
 
 async function main() {
+  send({ type: 'booting', pid: process.pid });
+  await import('reflect-metadata');
+  const { NestFactory } = await import('@nestjs/core');
+  const { PlaybackCoordinatorModule } = await import('../../dist/playback/playback-coordinator.module.js');
+  const { PlaybackCoordinatorService } = await import('../../dist/playback/playback-coordinator.service.js');
+
   const app = await NestFactory.createApplicationContext(PlaybackCoordinatorModule, {
     logger: false,
   });
@@ -61,9 +63,9 @@ async function main() {
 }
 
 main().catch((error) => {
-  send({
-    type: 'boot-error',
-    message: error instanceof Error ? error.message : 'unknown-error',
-  });
+  const message = error instanceof Error ? error.message : 'unknown-error';
+  const stack = error instanceof Error ? error.stack : undefined;
+  process.stderr.write((stack ?? message) + '\n');
+  send({ type: 'boot-error', message, stack });
   process.exitCode = 1;
 });
