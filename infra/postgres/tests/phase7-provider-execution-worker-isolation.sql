@@ -83,7 +83,7 @@ DECLARE workspace_id uuid:=current_setting('test.workspace_id')::uuid; provider_
  twitch_request_id uuid:=current_setting('test.twitch_request_id')::uuid; twitch_execution_id uuid:=current_setting('test.twitch_execution_id')::uuid;
 BEGIN
  IF NOT EXISTS (SELECT 1 FROM platform_validate_provider_execution_job(twitch_execution_id,workspace_id,twitch_request_id,provider_id,4) v
-   WHERE v.actor_user_id=current_setting('test.owner_id')::uuid AND v.request_source='twitch_reward' AND v.state='resolving')
+   WHERE v.actor_user_id=current_setting('test.owner_id')::uuid AND v.request_source='twitch_reward' AND v.state='retry_wait')
  THEN RAISE EXCEPTION 'Twitch resolving handoff replay path failed after safe queue advancement'; END IF;
  IF EXISTS (SELECT 1 FROM platform_validate_provider_execution_job(twitch_execution_id,workspace_id,twitch_request_id,provider_id,2))
  THEN RAISE EXCEPTION 'stale dispatch generation was accepted'; END IF;
