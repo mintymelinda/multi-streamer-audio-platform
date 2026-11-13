@@ -87,7 +87,7 @@ The test verifies both delivery paths:
 
 The same two API processes concurrently execute the same idempotent playback command while a deterministic Lyrion fixture delays the first play and the duplicate's status reconciliation. The test verifies the operation remains completed and the provider receives exactly one `play`.
 
-This closes the automated cross-instance Redis/outbox/playback regression gate for the tested application modules. It does not replace browser OBS/streamer journeys, actual Twitch OAuth session issuance, disconnect/reconnect and missed-event recovery tests, or a live Lyrion device. Do not infer those broader release gates from this test.
+This is the automated cross-instance Redis/outbox/playback regression gate for the tested application modules; require a green CI run on the exact PR head before marking item 70 complete. It does not replace browser OBS/streamer journeys, actual Twitch OAuth session issuance, disconnect/reconnect and missed-event recovery tests, or a live Lyrion device. Do not infer those broader release gates from this test.
 
 ### Worker and scheduler coordination
 
