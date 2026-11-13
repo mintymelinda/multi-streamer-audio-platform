@@ -166,6 +166,14 @@ BEGIN
            )
          )
     )
+    AND NOT EXISTS (
+      SELECT 1
+        FROM public.provider_execution_states other_execution
+       WHERE other_execution.workspace_id = p_workspace_id
+         AND other_execution.request_id = p_request_id
+         AND other_execution.id <> s.id
+         AND other_execution.state IN ('resolving', 'ready', 'playing')
+    )
     -- A stale queue row must not allow a second request to take an output
     -- that still has a resolving/ready/playing execution or uncertain command.
     AND NOT EXISTS (
