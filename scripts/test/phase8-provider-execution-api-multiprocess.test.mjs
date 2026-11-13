@@ -439,7 +439,7 @@ test('two BullMQ workers hand off five independent requests through the real sig
         const current = await queue.getJob(job.id);
         return current ? current.getState() : 'missing';
       }));
-      if (states.every((state) => state === 'completed') return;
+      if (states.every((state) => state === 'completed')) return;
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
     for (const job of jobs) {
