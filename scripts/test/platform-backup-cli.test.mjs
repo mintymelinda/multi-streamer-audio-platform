@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
+import { randomBytes } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
@@ -46,4 +50,36 @@ test('rejects the malformed short backup-history filename form', () => {
   const result = runArchiveWal('00000001.backup');
   assert.equal(result.status, 1);
   assert.match(result.stderr, /WAL filename is invalid/);
+});
+
+test('rejects PostgreSQL credentials embedded in the backup database URL', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'platform-backup-cli-test-'));
+  try {
+    const keyFile = join(directory, 'keyring.json');
+    await writeFile(keyFile, JSON.stringify({
+      format: 'multi-streamer-audio-platform.backup-keyring',
+      version: 1,
+      activeKeyId: 'backup-test',
+      keys: { 'backup-test': randomBytes(32).toString('hex') },
+    }), { mode: 0o600 });
+    const env = {
+      PATH: process.env.PATH ?? '',
+      NODE_ENV: 'test',
+      PLATFORM_BACKUP_KEYRING_FILE: keyFile,
+      PLATFORM_BACKUP_S3_ENDPOINT: 'https://objects.example.test',
+      PLATFORM_BACKUP_S3_BUCKET: 'platform-backups',
+      PLATFORM_BACKUP_S3_ACCESS_KEY: 'test-access',
+      PLATFORM_BACKUP_S3_SECRET_KEY: 'test-secret',
+      PLATFORM_BACKUP_DATABASE_URL: 'postgresql://backup-user:do-not-leak@db.example.test/platform',
+    };
+    const result = spawnSync(process.execPath, [backupScript, 'backup-postgres'], {
+      encoding: 'utf8',
+      env,
+    });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /must not contain a password/);
+    assert.doesNotMatch(result.stderr, /do-not-leak/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
