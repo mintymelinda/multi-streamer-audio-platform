@@ -33,8 +33,15 @@ test('configures a workspace-scoped Lyrion output and stores no credentials by d
     status: 200,
     headers: { 'content-type': 'application/json' },
   });
+  const dispatchCalls = [];
+  const queueManager = {
+    dispatchNext: async (input) => {
+      dispatchCalls.push(input);
+      return { status: 'empty' };
+    },
+  };
   try {
-    const controller = new LyrionOutputConfigurationController(database, credentials, {});
+    const controller = new LyrionOutputConfigurationController(database, credentials, {}, queueManager);
     const result = await controller.configure(request, {
       instanceKey: 'living-room',
       baseUrl: 'http://localhost:9000',
@@ -51,6 +58,7 @@ test('configures a workspace-scoped Lyrion output and stores no credentials by d
     });
     assert.equal(queries.length, 4);
     assert.equal(queries[2].values[1], JSON.stringify({ baseUrl: 'http://localhost:9000' }));
+    assert.deepEqual(dispatchCalls, [{ workspaceId: request.workspace.id, actorId: request.user.id }]);
   } finally {
     globalThis.fetch = previousFetch;
     if (previousInvidiousUrl === undefined) delete process.env.INVIDIOUS_INSTANCE_URL;
@@ -68,7 +76,7 @@ test('rejects a production Lyrion endpoint that is not operator allowlisted', as
   process.env.NODE_ENV = 'production';
   delete process.env.LYRION_ALLOWED_HOSTS;
   try {
-    const controller = new LyrionOutputConfigurationController(database, credentials, {});
+    const controller = new LyrionOutputConfigurationController(database, credentials, {}, { dispatchNext: async () => ({ status: 'empty' }) });
     await assert.rejects(
       controller.configure(request, {
         instanceKey: 'living-room',
