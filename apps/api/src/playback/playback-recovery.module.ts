@@ -4,6 +4,8 @@ import { DatabaseService } from '../database/database.service.js';
 import { IdentityModule } from '../identity/identity.module.js';
 import { ProviderExecutionQueueModule } from '../providers/provider-execution-queue.module.js';
 import { ProviderExecutionQueueService } from '../providers/provider-execution-queue.service.js';
+import { QueueManagerModule } from '../queues/queue-manager.module.js';
+import { QueueManagerService } from '../queues/queue-manager.service.js';
 import { WorkspacesModule } from '../workspaces/workspaces.module.js';
 import {
   PlaybackRecoveryController,
@@ -16,13 +18,17 @@ import {
 } from './playback-recovery.service.js';
 
 @Module({
-  imports: [DatabaseModule, IdentityModule, WorkspacesModule, ProviderExecutionQueueModule],
+  imports: [DatabaseModule, IdentityModule, WorkspacesModule, ProviderExecutionQueueModule, QueueManagerModule],
   controllers: [PlaybackRecoveryController, PlaybackRecoveryPolicyController],
   providers: [
     {
       provide: PlaybackRecoveryService,
-      inject: [DatabaseService, ProviderExecutionQueueService],
-      useFactory: (database: DatabaseService, executionQueue: ProviderExecutionQueueService) =>
+      inject: [DatabaseService, ProviderExecutionQueueService, QueueManagerService],
+      useFactory: (
+        database: DatabaseService,
+        executionQueue: ProviderExecutionQueueService,
+        queueManager: QueueManagerService,
+      ) =>
         new PlaybackRecoveryService({
           getPolicy: async (workspaceId, actorId) => {
             const result = await database.transaction(
@@ -174,9 +180,11 @@ import {
           },
           skip: async (request: RecoverablePlaybackRequest, actorId: string, reason: string) => {
             await closeRequest(database, request, actorId, 'skipped', reason);
+            await queueManager.dispatchNext({ workspaceId: request.workspaceId, actorId });
           },
           dismiss: async (request: RecoverablePlaybackRequest, actorId: string, reason: string) => {
             await closeRequest(database, request, actorId, 'cancelled', reason);
+            await queueManager.dispatchNext({ workspaceId: request.workspaceId, actorId });
           },
           appendAudit: async (event) => {
             const workspaceId = String(event.workspaceId);
