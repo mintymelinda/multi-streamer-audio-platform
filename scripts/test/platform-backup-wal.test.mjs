@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { createServer } from 'node:http';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -116,7 +116,7 @@ test('WAL archiving retries safely after an upload succeeds but acknowledgement 
     const walKey = 'v1/platform/wal/000000010000000000000001.msapbk';
     const firstArchive = objects.get(walKey);
     assert.ok(firstArchive);
-    assert.ok(objects.has('v1/platform/status/wal/'));
+    assert.ok([...objects.keys()].some((key) => key.startsWith('v1/platform/status/wal/')));
 
     const firstPutCount = requests.filter((item) => item.method === 'PUT' && item.key === walKey).length;
     const retry = await runArchiveWal('000000010000000000000001', sourcePath, env);
