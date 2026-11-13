@@ -27,6 +27,10 @@ type PlaybackSessionRow = {
   id: string;
   status: 'playing' | 'paused' | 'completed';
   expected_duration_ms: string | number | null;
+  observed_position_ms: string | number | null;
+  observed_duration_ms: string | number | null;
+  observed_status: string | null;
+  observed_at: string | Date | null;
   queue_advance_pending: boolean;
   output_id: string;
   player_id: string;
@@ -96,8 +100,9 @@ export class ProviderPlaybackMonitorController {
     if (!rawObservation) return { accepted: true, status: 'output_busy' };
 
     const observation = normalizeObservation(rawObservation);
-    if (observation.status === 'stopped' && isNaturalCompletion(session, observation)) {
-      const completed = await this.completeRequest(payload, observation);
+    const completionEvidence = naturalCompletionEvidence(session, observation);
+    if (completionEvidence) {
+      const completed = await this.completeRequest(payload, completionEvidence);
       if (!completed) return { accepted: true, status: 'stale' };
       await this.advanceQueue(payload);
       return { accepted: true, status: 'completed' };
@@ -125,6 +130,8 @@ export class ProviderPlaybackMonitorController {
       async (client) => {
         const result = await client.query<PlaybackSessionRow>(
           `SELECT session.id, session.status, session.expected_duration_ms::text,
+                  session.observed_position_ms::text, session.observed_duration_ms::text,
+                  session.observed_status, session.observed_at,
                   session.queue_advance_dispatched_at IS NULL AS queue_advance_pending,
                   session.output_id, session.player_id
              FROM public.playback_sessions session
@@ -408,23 +415,51 @@ function normalizeObservation(value: {
   };
 }
 
-function isNaturalCompletion(session: PlaybackSessionRow, observation: ProviderObservation): boolean {
-  if (
-    session.status !== 'playing' ||
-    observation.status !== 'stopped' ||
-    observation.positionMs === undefined ||
-    observation.durationMs === undefined ||
-    observation.durationMs <= 0
-  ) return false;
+function naturalCompletionEvidence(
+  session: PlaybackSessionRow,
+  observation: ProviderObservation,
+): { positionMs: number; durationMs: number } | null {
+  if (session.status !== 'playing' || observation.status !== 'stopped') return null;
 
   const expectedDuration = session.expected_duration_ms === null
     ? null
     : Number(session.expected_duration_ms);
-  if (expectedDuration !== null && Number.isFinite(expectedDuration) && expectedDuration > 0) {
-    const tolerance = Math.max(10_000, expectedDuration * 0.1);
-    if (Math.abs(observation.durationMs - expectedDuration) > tolerance) return false;
+  const isNearEnd = (positionMs: number, durationMs: number): boolean => {
+    if (!Number.isSafeInteger(positionMs) || positionMs < 0 ||
+        !Number.isSafeInteger(durationMs) || durationMs <= 0) return false;
+    if (expectedDuration !== null && Number.isFinite(expectedDuration) && expectedDuration > 0) {
+      const tolerance = Math.max(10_000, expectedDuration * 0.1);
+      if (Math.abs(durationMs - expectedDuration) > tolerance) return false;
+    }
+    return positionMs >= Math.max(durationMs - 1_500, durationMs * 0.98);
+  };
+
+  if (
+    observation.positionMs !== undefined &&
+    observation.durationMs !== undefined &&
+    isNearEnd(observation.positionMs, observation.durationMs)
+  ) {
+    return { positionMs: observation.positionMs, durationMs: observation.durationMs };
   }
-  return observation.positionMs >= Math.max(observation.durationMs - 1_500, observation.durationMs * 0.95);
+
+  // Lyrion may reset its position counter immediately after stopping a track.
+  // A recent near-end sample from this exact durable session is safe evidence.
+  const observedAt = session.observed_at ? new Date(session.observed_at).getTime() : Number.NaN;
+  const sampleAgeMs = Date.now() - observedAt;
+  const previousPosition = session.observed_position_ms === null ? undefined : Number(session.observed_position_ms);
+  const previousDuration = session.observed_duration_ms === null ? undefined : Number(session.observed_duration_ms);
+  if (
+    session.observed_status === 'playing' &&
+    Number.isFinite(sampleAgeMs) &&
+    sampleAgeMs >= 0 &&
+    sampleAgeMs <= 10_000 &&
+    previousPosition !== undefined &&
+    previousDuration !== undefined &&
+    isNearEnd(previousPosition, previousDuration)
+  ) {
+    return { positionMs: previousPosition, durationMs: previousDuration };
+  }
+  return null;
 }
 
 function parsePayload(value: unknown): PlaybackMonitorPayload {
