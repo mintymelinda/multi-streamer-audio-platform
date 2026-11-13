@@ -77,7 +77,6 @@ export async function handoffValidatedProviderExecution(
   },
 ): Promise<{ accepted: true; operationId: string | null; status: string }> {
   const body = {
-    playbackSessionId: input.playback_session_id,
     executionStateId: input.execution_state_id,
     workspaceId: input.workspace_id,
     requestId: input.request_id,
@@ -114,7 +113,7 @@ export async function handoffValidatedProviderExecution(
 
 
 export async function listActivePlaybackSessions(pool: Pool): Promise<ActiveProviderPlaybackSession[]> {
-  const result = await pool.query<ActiveProviderPlayback>(
+  const result = await pool.query<ActiveProviderPlaybackSession>(
     'SELECT * FROM public.platform_list_active_playback_sessions()',
   );
   return result.rows;
@@ -130,6 +129,7 @@ export async function monitorPlaybackSession(
   },
 ): Promise<{ accepted: true; status: string }> {
   const body = {
+    playbackSessionId: input.playback_session_id,
     executionStateId: input.execution_state_id,
     workspaceId: input.workspace_id,
     requestId: input.request_id,
