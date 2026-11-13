@@ -79,6 +79,7 @@ jobs:
           pnpm exec biome format
           apps/api/test/fixtures/phase8-playback-coordinator-process.mjs
           scripts/test/phase8-playback-coordinator-multiprocess.test.mjs
+          scripts/e2e/browser-smoke.mjs
 
       - name: Validate deletion-ledger recovery tooling
         run: |
