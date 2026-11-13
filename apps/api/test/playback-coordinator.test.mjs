@@ -368,3 +368,51 @@ test('passes verified workspace and actor context to the output adapter factory'
   assert.equal(received.context.actorId, 'actor-a');
   assert.equal(received.context.outputId, 'output-a');
 });
+
+test('observes provider playback state under the fenced output lease', async () => {
+  let acquired;
+  let released;
+  const service = new PlaybackCoordinatorService({
+    acquireLease: async (key, context) => {
+      acquired = { key, context };
+      return { acquired: true, fencingToken: 17 };
+    },
+    releaseLease: async (key, context) => {
+      released = { key, context };
+    },
+    findOperationByIdempotencyKey: async () => null,
+    persistOperation: async (operation) => operation,
+    getProviderAdapter: async (_providerInstanceId, context) => ({
+      getPlaybackState: async (input) => {
+        assert.equal(input.fencingToken, 17);
+        assert.equal(context.fencingToken, 17);
+        return {
+          status: 'stopped',
+          providerPlaybackId: 'playlist-session-42',
+          progressMs: 180000,
+          durationMs: 180000,
+        };
+      },
+    }),
+  });
+
+  const state = await service.observePlaybackState({
+    workspaceId: 'workspace-a',
+    providerInstanceId: 'lyrion-a',
+    playerId: 'player-a',
+    outputId: 'output-a',
+    requestId: 'request-a',
+    command: 'play',
+    idempotencyKey: 'monitor-request-a',
+    actorId: 'actor-a',
+  });
+
+  assert.deepEqual(state, {
+    status: 'stopped',
+    providerPlaybackId: 'playlist-session-42',
+    progressMs: 180000,
+    durationMs: 180000,
+  });
+  assert.equal(acquired.context.ownerId, released.context.ownerId);
+  assert.equal(released.context.fencingToken, 17);
+});
