@@ -48,6 +48,7 @@ test('dispatches the first queued request under its original submitter identity'
   const h = harness({
     candidate: {
       id: requestId,
+      status: 'queued',
       source: 'dashboard',
       submitted_by_user_id: submitterId,
       owner_user_id: ownerId,
@@ -66,6 +67,7 @@ test('uses the workspace owner as the actor for Twitch reward requests', async (
   const h = harness({
     candidate: {
       id: requestId,
+      status: 'queued',
       source: 'twitch_reward',
       submitted_by_user_id: null,
       owner_user_id: ownerId,
@@ -82,6 +84,7 @@ test('does not create a duplicate provider execution for an already scheduled re
   const h = harness({
     candidate: {
       id: requestId,
+      status: 'queued',
       source: 'dashboard',
       submitted_by_user_id: submitterId,
       owner_user_id: ownerId,
@@ -95,10 +98,28 @@ test('does not create a duplicate provider execution for an already scheduled re
   assert.equal(h.enqueueCalls.length, 0);
 });
 
+test('does not bypass a request that is still resolving at the queue head', async () => {
+  const h = harness({
+    candidate: {
+      id: requestId,
+      status: 'resolving',
+      source: 'dashboard',
+      submitted_by_user_id: submitterId,
+      owner_user_id: ownerId,
+    },
+  });
+
+  const result = await h.service.dispatchNext({ workspaceId, actorId: triggerActorId });
+
+  assert.deepEqual(result, { status: 'already_scheduled', requestId });
+  assert.equal(h.enqueueCalls.length, 0);
+});
+
 test('leaves a request queued when every assigned output is busy', async () => {
   const h = harness({
     candidate: {
       id: requestId,
+      status: 'queued',
       source: 'dashboard',
       submitted_by_user_id: submitterId,
       owner_user_id: ownerId,
