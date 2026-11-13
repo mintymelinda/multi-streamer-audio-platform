@@ -1,10 +1,8 @@
 import assert from 'node:assert/strict';
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
-import { once } from 'node:events';
 import { createServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
-import { join } from 'node:path';
 import { Queue } from 'bullmq';
 import { Redis } from 'ioredis';
 import test from 'node:test';
@@ -13,6 +11,8 @@ const processFixture = fileURLToPath(
   new URL('./fixtures/phase8-provider-execution-worker-process.mjs', import.meta.url),
 );
 const handoffSecret = 'phase8-two-worker-handoff-secret-at-least-32-bytes';
+const workerConcurrency = 4;
+const parallelWorkspaces = workerConcurrency + 1;
 
 function findPostgresContainer() {
   const result = spawnSync(
@@ -106,22 +106,24 @@ function verifyHandoffSignature(timestamp, signature, body) {
   return expected.length === supplied.length && timingSafeEqual(expected, supplied);
 }
 
-function createHandoffFixture() {
-  const received = deferred();
+function createHandoffFixture(expectedCount) {
+  const receivedAll = deferred();
+  const releaseResponses = deferred();
   const requests = [];
+  let timeout;
   const server = createServer(async (request, response) => {
     try {
       const chunks = [];
       for await (const chunk of request) chunks.push(chunk);
-      const raw = Buffer.concat(chunks).toString('utf8');
-      const body = JSON.parse(raw);
+      const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
       const validSignature = verifyHandoffSignature(
         request.headers['x-provider-execution-timestamp'],
         request.headers['x-provider-execution-signature'],
         body,
       );
       requests.push({ body, validSignature, path: request.url });
-      received.resolve({ body, validSignature, path: request.url });
+      if (requests.length === expectedCount) receivedAll.resolve([...requests]);
+      await releaseResponses.promise;
       response.writeHead(202, { 'content-type': 'application/json' });
       response.end(JSON.stringify({
         accepted: true,
@@ -129,19 +131,36 @@ function createHandoffFixture() {
         status: 'accepted',
       }));
     } catch {
-      response.writeHead(400).end();
+      if (!response.headersSent) response.writeHead(400);
+      response.end();
     }
   });
 
   return {
     requests,
-    received: received.promise,
+    received: Promise.race([
+      receivedAll.promise,
+      new Promise((_, reject) => {
+        timeout = setTimeout(
+          () => reject(new Error('Expected ' + expectedCount + ' concurrent worker handoffs; received ' + requests.length)),
+          20000,
+        );
+      }),
+    ]),
     async start() {
       return listen(server);
     },
+    release() {
+      clearTimeout(timeout);
+      releaseResponses.resolve();
+    },
     async close() {
+      clearTimeout(timeout);
+      releaseResponses.resolve();
       server.closeAllConnections?.();
-      await new Promise((resolve) => server.close(() => resolve()));
+      if (server.listening) {
+        await new Promise((resolve) => server.close(() => resolve()));
+      }
     },
   };
 }
@@ -255,7 +274,7 @@ async function waitForRedis(redisUrl) {
   }
 }
 
-test('two independent BullMQ provider workers share one Redis queue and hand off a validated job once', async (t) => {
+test('two independent BullMQ provider workers consume five parallel workspaces through shared Redis exactly once', async (t) => {
   if (process.env.CI !== 'true' && process.env.GITHUB_ACTIONS !== 'true') {
     t.skip('Runs in CI with disposable Redis and the PostgreSQL service container.');
     return;
@@ -268,17 +287,19 @@ test('two independent BullMQ provider workers share one Redis queue and hand off
   }
 
   const redisContainer = 'phase8-provider-workers-' + process.pid + '-' + randomUUID().slice(0, 8);
-  const actorId = randomUUID();
-  const workspaceId = randomUUID();
-  const sourceProviderId = randomUUID();
-  const outputProviderId = randomUUID();
-  const requestId = randomUUID();
-  const executionStateId = randomUUID();
-  const outputId = 'phase8-output-' + randomUUID();
-  const playerId = 'phase8-player-' + randomUUID();
-  const twitchId = String(Date.now()) + String(Math.floor(Math.random() * 1_000_000));
-  const jobId = 'phase8-provider-' + executionStateId + '-1';
-  const handoff = createHandoffFixture();
+  const fixtures = Array.from({ length: parallelWorkspaces }, () => ({
+    actorId: randomUUID(),
+    workspaceId: randomUUID(),
+    sourceProviderId: randomUUID(),
+    outputProviderId: randomUUID(),
+    requestId: randomUUID(),
+    executionStateId: randomUUID(),
+    outputId: 'phase8-output-' + randomUUID(),
+    playerId: 'phase8-player-' + randomUUID(),
+    twitchId: String(Date.now()) + String(Math.floor(Math.random() * 1_000_000)),
+  }));
+  const jobIds = fixtures.map((fixture) => 'phase8-provider-' + fixture.executionStateId + '-1');
+  const handoff = createHandoffFixture(parallelWorkspaces);
   const children = [];
   let seeded = false;
   let redisStarted = false;
@@ -313,20 +334,22 @@ test('two independent BullMQ provider workers share one Redis queue and hand off
     await waitForRedis(redisUrl);
 
     const handoffUrl = await handoff.start();
-    const seed = [
-      'BEGIN;',
-      "INSERT INTO platform_users (id, twitch_user_id) VALUES ('" + actorId + "', '" + twitchId + "');",
-      "INSERT INTO workspaces (id, name, owner_user_id, broadcaster_twitch_user_id) VALUES ('" + workspaceId + "', 'Phase 8 worker queue', '" + actorId + "', '" + twitchId + "');",
-      "INSERT INTO workspace_memberships (workspace_id, user_id, role, status) VALUES ('" + workspaceId + "', '" + actorId + "', 'owner', 'active');",
-      "INSERT INTO provider_instances (id, workspace_id, provider_id, instance_key, contract_version, capabilities, connection_health, enabled) VALUES ('" + sourceProviderId + "', '" + workspaceId + "', 'youtube', 'phase8-source-" + sourceProviderId + "', 1, '{\"resolve\":true}'::jsonb, 'healthy', true);",
-      "INSERT INTO provider_instances (id, workspace_id, provider_id, instance_key, contract_version, capabilities, connection_health, enabled) VALUES ('" + outputProviderId + "', '" + workspaceId + "', 'lyrion', 'phase8-output-" + outputProviderId + "', 1, '{\"playback\":true,\"supportedSourceProviderIds\":[\"youtube\"]}'::jsonb, 'healthy', true);",
-      "INSERT INTO provider_output_assignments (workspace_id, provider_instance_id, output_id, player_id, assigned_by, active) VALUES ('" + workspaceId + "', '" + outputProviderId + "', '" + outputId + "', '" + playerId + "', '" + actorId + "', true);",
-      "INSERT INTO media_requests (id, workspace_id, source, submitted_by_user_id, provider, media_id, title, status) VALUES ('" + requestId + "', '" + workspaceId + "', 'dashboard', '" + actorId + "', 'youtube', 'phase8-media', 'Phase 8 worker handoff', 'queued');",
-      "INSERT INTO logical_queue_entries (workspace_id, request_id, priority, sequence) VALUES ('" + workspaceId + "', '" + requestId + "', 0, 1);",
-      "INSERT INTO provider_execution_states (id, workspace_id, request_id, provider_instance_id, state, dispatch_generation) VALUES ('" + executionStateId + "', '" + workspaceId + "', '" + requestId + "', '" + outputProviderId + "', 'queued', 1);",
-      'COMMIT;',
-    ].join('\n');
-    runSql(postgresContainer, seed);
+    const seedStatements = ['BEGIN;'];
+    for (const [index, fixture] of fixtures.entries()) {
+      seedStatements.push(
+        "INSERT INTO platform_users (id, twitch_user_id) VALUES ('" + fixture.actorId + "', '" + fixture.twitchId + "');",
+        "INSERT INTO workspaces (id, name, owner_user_id, broadcaster_twitch_user_id) VALUES ('" + fixture.workspaceId + "', 'Phase 8 worker queue " + index + "', '" + fixture.actorId + "', '" + fixture.twitchId + "');",
+        "INSERT INTO workspace_memberships (workspace_id, user_id, role, status) VALUES ('" + fixture.workspaceId + "', '" + fixture.actorId + "', 'owner', 'active');",
+        "INSERT INTO provider_instances (id, workspace_id, provider_id, instance_key, contract_version, capabilities, connection_health, enabled) VALUES ('" + fixture.sourceProviderId + "', '" + fixture.workspaceId + "', 'youtube', 'phase8-source-" + fixture.sourceProviderId + "', 1, '{\"resolve\":true}'::jsonb, 'healthy', true);",
+        "INSERT INTO provider_instances (id, workspace_id, provider_id, instance_key, contract_version, capabilities, connection_health, enabled) VALUES ('" + fixture.outputProviderId + "', '" + fixture.workspaceId + "', 'lyrion', 'phase8-output-" + fixture.outputProviderId + "', 1, '{\"playback\":true,\"supportedSourceProviderIds\":[\"youtube\"]}'::jsonb, 'healthy', true);",
+        "INSERT INTO provider_output_assignments (workspace_id, provider_instance_id, output_id, player_id, assigned_by, active) VALUES ('" + fixture.workspaceId + "', '" + fixture.outputProviderId + "', '" + fixture.outputId + "', '" + fixture.playerId + "', '" + fixture.actorId + "', true);",
+        "INSERT INTO media_requests (id, workspace_id, source, submitted_by_user_id, provider, media_id, title, status) VALUES ('" + fixture.requestId + "', '" + fixture.workspaceId + "', 'dashboard', '" + fixture.actorId + "', 'youtube', 'phase8-media-" + index + "', 'Phase 8 worker handoff " + index + "', 'queued');",
+        "INSERT INTO logical_queue_entries (workspace_id, request_id, priority, sequence) VALUES ('" + fixture.workspaceId + "', '" + fixture.requestId + "', 0, 1);",
+        "INSERT INTO provider_execution_states (id, workspace_id, request_id, provider_instance_id, state, dispatch_generation) VALUES ('" + fixture.executionStateId + "', '" + fixture.workspaceId + "', '" + fixture.requestId + "', '" + fixture.outputProviderId + "', 'queued', 1);",
+      );
+    }
+    seedStatements.push('COMMIT;');
+    runSql(postgresContainer, seedStatements.join('\n'));
     seeded = true;
 
     const environment = {
@@ -354,52 +377,81 @@ test('two independent BullMQ provider workers share one Redis queue and hand off
     queueConnection = new Redis(redisUrl, { maxRetriesPerRequest: null });
     queue = new Queue('provider-execution', { connection: queueConnection });
     await queue.waitUntilReady();
-    const jobData = {
-      executionStateId,
-      workspaceId,
-      requestId,
-      providerInstanceId: outputProviderId,
+    const jobs = await Promise.all(fixtures.map((fixture, index) =>
+      queue.add('provider-execution', {
+        executionStateId: fixture.executionStateId,
+        workspaceId: fixture.workspaceId,
+        requestId: fixture.requestId,
+        providerInstanceId: fixture.outputProviderId,
+        dispatchGeneration: 1,
+      }, {
+        jobId: jobIds[index],
+        attempts: 1,
+        removeOnComplete: false,
+      }),
+    ));
+    const duplicate = await queue.add('provider-execution', {
+      executionStateId: fixtures[0].executionStateId,
+      workspaceId: fixtures[0].workspaceId,
+      requestId: fixtures[0].requestId,
+      providerInstanceId: fixtures[0].outputProviderId,
       dispatchGeneration: 1,
-    };
-    const firstJob = await queue.add('provider-execution', jobData, {
-      jobId,
+    }, {
+      jobId: jobIds[0],
       attempts: 1,
       removeOnComplete: false,
     });
-    const duplicateJob = await queue.add('provider-execution', jobData, {
-      jobId,
-      attempts: 1,
-      removeOnComplete: false,
-    });
-    assert.equal(duplicateJob.id, firstJob.id, 'duplicate dispatcher delivery must reuse the same BullMQ job ID');
+    assert.equal(duplicate.id, jobs[0].id, 'duplicate dispatcher delivery must reuse the same BullMQ job ID');
 
     const delivered = await handoff.received;
-    assert.equal(delivered.validSignature, true, 'the worker handoff must use the expected HMAC signature');
-    assert.equal(delivered.path, '/internal/provider-executions/handoff');
-    assert.deepEqual(delivered.body, {
-      executionStateId,
-      workspaceId,
-      requestId,
-      providerInstanceId: outputProviderId,
-      dispatchGeneration: 1,
-      actorUserId: actorId,
-    });
+    assert.equal(delivered.length, parallelWorkspaces);
+    assert.equal(delivered.every((request) => request.validSignature), true, 'all worker handoffs must carry valid HMAC signatures');
+    assert.ok(delivered.every((request) => request.path === '/internal/provider-executions/handoff'));
+    const deliveredIds = delivered.map((request) => request.body.executionStateId).sort();
+    assert.deepEqual(deliveredIds, fixtures.map((fixture) => fixture.executionStateId).sort());
+    for (const fixture of fixtures) {
+      const message = delivered.find((request) => request.body.executionStateId === fixture.executionStateId);
+      assert.deepEqual(message?.body, {
+        executionStateId: fixture.executionStateId,
+        workspaceId: fixture.workspaceId,
+        requestId: fixture.requestId,
+        providerInstanceId: fixture.outputProviderId,
+        dispatchGeneration: 1,
+        actorUserId: fixture.actorId,
+      });
+    }
+
+    handoff.release();
+    const deadline = Date.now() + 15000;
+    while (Date.now() < deadline) {
+      const states = await Promise.all(jobs.map(async (job) => {
+        const current = await queue.getJob(job.id);
+        return current ? current.getState() : 'missing';
+      }));
+      if (states.every((state) => state === 'completed')) break;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    for (const job of jobs) {
+      const current = await queue.getJob(job.id);
+      assert.ok(current, 'completed BullMQ job should remain available for inspection');
+      assert.equal(await current.getState(), 'completed');
+    }
     await new Promise((resolve) => setTimeout(resolve, 750));
-    assert.equal(handoff.requests.length, 1, 'two workers must not duplicate a single BullMQ job');
-    const completedJob = await queue.getJob(jobId);
-    assert.ok(completedJob, 'completed BullMQ job should remain available for inspection');
-    assert.equal(await completedJob.getState(), 'completed');
+    assert.equal(handoff.requests.length, parallelWorkspaces, 'two worker processes must not duplicate a BullMQ job');
   } finally {
+    handoff.release();
     await Promise.all(children.map((child) => child.close().catch(() => undefined)));
     await queue?.close().catch(() => undefined);
     if (queueConnection) await queueConnection.quit().catch(() => undefined);
     await handoff.close().catch(() => undefined);
     if (redisStarted) docker(['rm', '--force', redisContainer]);
     if (seeded) {
+      const workspaceIds = fixtures.map((fixture) => "'" + fixture.workspaceId + "'").join(', ');
+      const actorIds = fixtures.map((fixture) => "'" + fixture.actorId + "'").join(', ');
       const cleanup = [
         'BEGIN;',
-        "DELETE FROM workspaces WHERE id = '" + workspaceId + "';",
-        "DELETE FROM platform_users WHERE id = '" + actorId + "';",
+        'DELETE FROM workspaces WHERE id IN (' + workspaceIds + ');',
+        'DELETE FROM platform_users WHERE id IN (' + actorIds + ');',
         'COMMIT;',
       ].join('\n');
       runSql(postgresContainer, cleanup);
