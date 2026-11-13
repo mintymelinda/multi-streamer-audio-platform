@@ -22,6 +22,7 @@ type LeaseContext = {
   actorId?: string;
   ownerId: string;
   expiresAt: Date;
+  fencingToken?: number;
 };
 
 type OperationRow = {
@@ -216,8 +217,8 @@ function mapOperation(row: OperationRow): PlaybackOperation {
           releaseLease: async (key, context) => {
             const identity = decodeLeaseKey(key);
             const input = { ...identity, ...(context as LeaseContext) };
-            if (!input.actorId) {
-              throw new Error('An authenticated workspace user is required for playback.');
+            if (!input.actorId || input.fencingToken === undefined) {
+              throw new Error('Authenticated playback lease owner and fencing token are required.');
             }
             await database.transaction(
               {
@@ -228,8 +229,14 @@ function mapOperation(row: OperationRow): PlaybackOperation {
                 client.query(
                   `UPDATE playback_leases SET expires_at = now(), updated_at = now()
                     WHERE workspace_id = $1 AND provider_instance_id = $2
-                      AND player_id = $3 AND lease_owner_id = $4`,
-                  [input.workspaceId, input.providerInstanceId, input.playerId, input.ownerId],
+                      AND player_id = $3 AND lease_owner_id = $4 AND fencing_token = $5`,
+                  [
+                    input.workspaceId,
+                    input.providerInstanceId,
+                    input.playerId,
+                    input.ownerId,
+                    input.fencingToken,
+                  ],
                 ),
             );
           },
