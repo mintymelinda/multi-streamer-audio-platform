@@ -163,6 +163,9 @@ async function databaseEnvironment() {
   if (!['postgres:', 'postgresql:'].includes(connection.protocol)) {
     throw new Error('PLATFORM_BACKUP_DATABASE_URL must be a PostgreSQL connection URL.');
   }
+  if (connection.password) {
+    throw new Error('PLATFORM_BACKUP_DATABASE_URL must not contain a password; use PGPASSFILE.');
+  }
   if (!process.env.PGPASSFILE) {
     throw new Error('Set PGPASSFILE to a protected backup-user password file; passwords are not read from the URL.');
   }
@@ -170,8 +173,10 @@ async function databaseEnvironment() {
   if ((details.mode & 0o077) !== 0) {
     throw new Error('PGPASSFILE permissions must be 0600 or stricter.');
   }
+  const childEnvironment = { ...process.env };
+  delete childEnvironment.PLATFORM_BACKUP_DATABASE_URL;
   return {
-    ...process.env,
+    ...childEnvironment,
     PGHOST: connection.hostname,
     PGPORT: connection.port || '5432',
     PGDATABASE: decodeURIComponent(connection.pathname.slice(1)),
