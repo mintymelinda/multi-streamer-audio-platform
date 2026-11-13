@@ -143,9 +143,9 @@ BEGIN
         FROM public.logical_queue_entries q
        WHERE q.workspace_id = p_workspace_id AND q.request_id = p_request_id
     )
-    -- A provider job may only start the current logical queue head. Keep
-    -- active requests in the ordering calculation until their queue entry is
-    -- removed on a confirmed terminal transition.
+    -- A provider job may not bypass an earlier queued/resolving/ready request.
+    -- Playing requests occupy only their assigned output lane, allowing other
+    -- configured outputs to serve later logical queue entries concurrently.
     AND NOT EXISTS (
       SELECT 1
         FROM public.logical_queue_entries earlier_queue
@@ -157,7 +157,7 @@ BEGIN
          AND current_queue.request_id = p_request_id
        WHERE earlier_queue.workspace_id = p_workspace_id
          AND earlier_queue.request_id <> p_request_id
-         AND earlier_request.status IN ('queued', 'resolving', 'ready', 'playing')
+         AND earlier_request.status IN ('queued', 'resolving', 'ready')
          AND (
            earlier_queue.priority > current_queue.priority
            OR (
