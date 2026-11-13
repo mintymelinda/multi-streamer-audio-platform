@@ -18,6 +18,7 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       REDIS_URL: redis://127.0.0.1:6379
+      API_INTERNAL_URL: http://127.0.0.1:3300
     services:
       postgres:
         image: postgres:18.6
