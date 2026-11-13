@@ -61,7 +61,7 @@ export class ProviderPlaybackMonitorController {
       },
       async (client) => {
         const result = await client.query<ActivePlaybackRow>(
-          `SELECT assignment.output_id, assignment.player_id, latest_play.provider_playback_id
+          `SELECT assignment.output_id, assignment.player_id, play_operation.provider_playback_id
              FROM provider_execution_states execution
              JOIN media_requests request
                ON request.workspace_id = execution.workspace_id AND request.id = execution.request_id
@@ -72,19 +72,16 @@ export class ProviderPlaybackMonitorController {
                ON assignment.workspace_id = execution.workspace_id
               AND assignment.provider_instance_id = execution.provider_instance_id
               AND assignment.active = true
-             LEFT JOIN LATERAL (
-               SELECT operation.provider_playback_id
-                 FROM playback_operations operation
-                WHERE operation.workspace_id = execution.workspace_id
-                  AND operation.request_id = execution.request_id
-                  AND operation.provider_instance_id = execution.provider_instance_id
-                  AND operation.output_id = assignment.output_id
-                  AND operation.player_id = assignment.player_id
-                  AND operation.command = 'play'
-                  AND operation.status IN ('completed', 'reconciled')
-                ORDER BY operation.created_at DESC
-                LIMIT 1
-             ) latest_play ON true
+             LEFT JOIN playback_operations play_operation
+               ON play_operation.workspace_id = execution.workspace_id
+              AND play_operation.request_id = execution.request_id
+              AND play_operation.provider_instance_id = execution.provider_instance_id
+              AND play_operation.output_id = assignment.output_id
+              AND play_operation.player_id = assignment.player_id
+              AND play_operation.idempotency_key =
+                'provider-execution:' || execution.id::text || ':' || execution.dispatch_generation::text
+              AND play_operation.command = 'play'
+              AND play_operation.status IN ('completed', 'reconciled')
             WHERE execution.id = $1
               AND execution.workspace_id = $2
               AND execution.request_id = $3
