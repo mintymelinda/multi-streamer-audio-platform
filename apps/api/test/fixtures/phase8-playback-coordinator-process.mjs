@@ -1,3 +1,4 @@
+import 'reflect-metadata';
 import { createInterface } from 'node:readline';
 
 function send(value) {
@@ -24,20 +25,73 @@ process.on('exit', (code) => {
 
 async function main() {
   send({ type: 'booting', stage: 'reflect-metadata', pid: process.pid });
-  await import('reflect-metadata');
   send({ type: 'booting', stage: 'nestjs-core', pid: process.pid });
   const { NestFactory } = await import('@nestjs/core');
+  const { Module } = await import('@nestjs/common');
+  const { FastifyAdapter } = await import('@nestjs/platform-fastify');
   send({ type: 'booting', stage: 'api-modules', pid: process.pid });
-  const { PlaybackCoordinatorModule } = await import('../../dist/playback/playback-coordinator.module.js');
-  const { PlaybackCoordinatorService } = await import('../../dist/playback/playback-coordinator.service.js');
-  send({ type: 'booting', stage: 'nest-context', pid: process.pid });
+  const { PlaybackCoordinatorModule } = await import(
+    '../../dist/playback/playback-coordinator.module.js'
+  );
+  const { PlaybackCoordinatorService } = await import(
+    '../../dist/playback/playback-coordinator.service.js'
+  );
+  const { DatabaseModule } = await import('../../dist/database/database.module.js');
+  const { WorkspaceRealtimeGateway } = await import(
+    '../../dist/realtime/workspace-realtime.gateway.js'
+  );
+  const { AuthService } = await import('../../dist/identity/auth.service.js');
+  const { RedisIoAdapter } = await import('../../dist/realtime/redis-io.adapter.js');
 
-  const app = await NestFactory.createApplicationContext(PlaybackCoordinatorModule, {
+  const userId = process.env.PHASE8_REALTIME_USER_ID;
+  const workspaceId = process.env.PHASE8_REALTIME_WORKSPACE_ID;
+  const sessionToken = process.env.PHASE8_REALTIME_SESSION_TOKEN;
+  if (!userId || !workspaceId || !sessionToken || !process.env.REDIS_URL) {
+    throw new Error('Phase 8 API process identity or Redis configuration is incomplete.');
+  }
+
+  const auth = {
+    async resolveSession(token) {
+      return token === sessionToken ? { id: userId } : null;
+    },
+  };
+  class Phase8RealtimeModule {}
+  Module({
+    imports: [PlaybackCoordinatorModule, DatabaseModule],
+    providers: [WorkspaceRealtimeGateway, { provide: AuthService, useValue: auth }],
+  })(Phase8RealtimeModule);
+
+  send({ type: 'booting', stage: 'nest-context', pid: process.pid });
+  const app = await NestFactory.create(Phase8RealtimeModule, new FastifyAdapter(), {
     logger: false,
     abortOnError: false,
   });
   const coordinator = app.get(PlaybackCoordinatorService);
-  send({ type: 'ready', pid: process.pid });
+  const gateway = app.get(WorkspaceRealtimeGateway);
+  gateway.handleConnection = async (socket) => {
+    socket.data.userId = userId;
+    socket.data.sessionToken = sessionToken;
+    socket.on('phase8:subscribe', async (body) => {
+      try {
+        const result = await gateway.subscribe(socket, body);
+        socket.emit('phase8:ready', result);
+      } catch (error) {
+        socket.emit('phase8:error', {
+          message: error instanceof Error ? error.message : 'subscription-failed',
+        });
+      }
+    });
+  };
+  const adapter = new RedisIoAdapter(app);
+  await adapter.connect(process.env.REDIS_URL);
+  app.useWebSocketAdapter(adapter);
+  await app.listen(0, '127.0.0.1');
+
+  const address = app.getHttpServer().address();
+  if (!address || typeof address === 'string') {
+    throw new Error('Socket.IO server did not bind to a TCP port.');
+  }
+  send({ type: 'ready', pid: process.pid, port: address.port });
 
   const lines = createInterface({ input: process.stdin });
   for await (const line of lines) {
@@ -50,6 +104,13 @@ async function main() {
     }
 
     if (message?.type === 'close') break;
+    if (message?.type === 'broadcast' && typeof message.eventId === 'string') {
+      gateway.server.to(`workspace:${workspaceId}`).emit('phase8:redis-probe', {
+        id: message.eventId,
+      });
+      send({ type: 'broadcasted', eventId: message.eventId });
+      continue;
+    }
     if (message?.type !== 'execute' || typeof message.commandId !== 'string') {
       send({ type: 'protocol-error', message: 'invalid-command' });
       continue;
@@ -74,9 +135,7 @@ async function main() {
         type: 'command-error',
         commandId: message.commandId,
         message: error instanceof Error ? error.message : 'unknown-error',
-        code: error && typeof error === 'object' && 'code' in error
-          ? error.code
-          : undefined,
+        code: error && typeof error === 'object' && 'code' in error ? error.code : undefined,
       });
     }
   }

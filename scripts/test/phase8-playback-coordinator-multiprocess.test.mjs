@@ -58,6 +58,16 @@ function deferred() {
   return { promise, resolve };
 }
 
+function withTimeout(promise, label, timeoutMs = 15000) {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error('Timed out waiting for ' + label)), timeoutMs);
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
+
 function listen(server) {
   return new Promise((resolve, reject) => {
     server.once('error', reject);
@@ -95,11 +105,13 @@ function createProviderFixtures() {
       title: 'Two-process playback fixture',
       author: 'Phase 8 test',
       lengthSeconds: 60,
-      adaptiveFormats: [{
-        type: 'audio/webm; codecs=opus',
-        url: 'https://media.example.test/fixture.webm',
-        bitrate: 128000,
-      }],
+      adaptiveFormats: [
+        {
+          type: 'audio/webm; codecs=opus',
+          url: 'https://media.example.test/fixture.webm',
+          bitrate: 128000,
+        },
+      ],
     });
   });
 
@@ -142,10 +154,7 @@ function createProviderFixtures() {
     releasePlay: releasePlay.resolve,
     releaseStatus: releaseStatus.resolve,
     async start() {
-      const [invidiousUrl, lyrionUrl] = await Promise.all([
-        listen(invidious),
-        listen(lyrion),
-      ]);
+      const [invidiousUrl, lyrionUrl] = await Promise.all([listen(invidious), listen(lyrion)]);
       return {
         invidiousUrl,
         lyrionBaseUrl: lyrionUrl + '/jsonrpc.js',
@@ -215,9 +224,18 @@ function startApiProcess(environment) {
   child.on('exit', (code, signal) => {
     for (const waiter of waiters.splice(0)) {
       clearTimeout(waiter.timer);
-      waiter.reject(new Error(
-        'API coordinator child exited before replying (' + code + '/' + signal + '). stdout=' + stdout + ' stderr=' + stderr,
-      ));
+      waiter.reject(
+        new Error(
+          'API coordinator child exited before replying (' +
+            code +
+            '/' +
+            signal +
+            '). stdout=' +
+            stdout +
+            ' stderr=' +
+            stderr,
+        ),
+      );
     }
   });
 
@@ -254,9 +272,106 @@ function startApiProcess(environment) {
   };
 }
 
-test('two API coordinator processes preserve a completed playback operation against stale reconciliation', async (t) => {
+function connectWorkspaceSocket(port, workspaceId) {
+  const socket = new WebSocket('ws://127.0.0.1:' + port + '/socket.io/?EIO=4&transport=websocket');
+  const received = [];
+  const waiters = [];
+  const packets = [];
+  let namespaceRequested = false;
+
+  function deliver(name, payload) {
+    const index = waiters.findIndex((waiter) => waiter.name === name && waiter.predicate(payload));
+    if (index >= 0) {
+      const waiter = waiters.splice(index, 1)[0];
+      clearTimeout(waiter.timer);
+      waiter.resolve(payload);
+    } else {
+      received.push({ name, payload });
+    }
+  }
+
+  socket.addEventListener('error', () => {
+    deliver('phase8:transport-error', 'WebSocket transport error');
+  });
+  socket.addEventListener('close', (event) => {
+    deliver('phase8:transport-close', { code: event.code, reason: event.reason });
+  });
+  socket.addEventListener('message', (event) => {
+    const packet = String(event.data);
+    packets.push(packet);
+    if (packet.startsWith('0')) {
+      if (!namespaceRequested) {
+        namespaceRequested = true;
+        socket.send('40/workspace,');
+      }
+      return;
+    }
+    if (packet === '2') {
+      socket.send('3');
+      return;
+    }
+    if (packet.startsWith('40/workspace,')) {
+      socket.send('42/workspace,' + JSON.stringify(['phase8:subscribe', { workspaceId }]));
+      return;
+    }
+    if (packet.startsWith('42/workspace,')) {
+      try {
+        const [name, payload] = JSON.parse(packet.slice('42/workspace,'.length));
+        if (typeof name === 'string') deliver(name, payload);
+      } catch {
+        deliver('phase8:protocol-error', packet);
+      }
+      return;
+    }
+    if (packet.startsWith('44/workspace,')) {
+      deliver('phase8:connect-error', packet);
+    }
+  });
+
+  return {
+    waitForEvent(name, predicate = () => true, timeoutMs = 15000) {
+      const index = received.findIndex((event) => event.name === name && predicate(event.payload));
+      if (index >= 0) return Promise.resolve(received.splice(index, 1)[0].payload);
+      return new Promise((resolve, reject) => {
+        const waiter = {
+          name,
+          predicate,
+          resolve,
+          reject,
+          timer: setTimeout(() => {
+            const current = waiters.indexOf(waiter);
+            if (current >= 0) waiters.splice(current, 1);
+            reject(
+              new Error(
+                'Timed out waiting for Socket.IO event ' +
+                  name +
+                  '; readyState=' +
+                  socket.readyState +
+                  '; packets=' +
+                  packets.slice(-8).join('|'),
+              ),
+            );
+          }, timeoutMs),
+        };
+        waiters.push(waiter);
+      });
+    },
+    async close() {
+      if (socket.readyState === WebSocket.CLOSED) return;
+      const closed = new Promise((resolve) => {
+        socket.addEventListener('close', resolve, { once: true });
+      });
+      socket.close();
+      await Promise.race([closed, new Promise((resolve) => setTimeout(resolve, 1000))]);
+    },
+  };
+}
+
+test('two API processes coordinate one playback start and deliver Redis and outbox events once', async (t) => {
   if (process.env.CI !== 'true' && process.env.GITHUB_ACTIONS !== 'true') {
-    t.skip('Runs in CI against the PostgreSQL service container; local tests do not require Docker.');
+    t.skip(
+      'Runs in CI against the PostgreSQL service container; local tests do not require Docker.',
+    );
     return;
   }
   const containerId = findPostgresContainer();
@@ -265,6 +380,7 @@ test('two API coordinator processes preserve a completed playback operation agai
     return;
   }
 
+  assert.ok(process.env.REDIS_URL, 'CI must provide the Redis service URL.');
   const actorId = randomUUID();
   const workspaceId = randomUUID();
   const providerId = randomUUID();
@@ -272,9 +388,11 @@ test('two API coordinator processes preserve a completed playback operation agai
   const playerId = 'phase8-player-' + randomUUID();
   const outputId = 'phase8-output-' + randomUUID();
   const idempotencyKey = 'phase8-play-' + randomUUID();
+  const sessionToken = 'phase8-session-' + randomUUID();
   const twitchId = String(Date.now()) + String(Math.floor(Math.random() * 1_000_000));
   const fixtures = createProviderFixtures();
   const processes = [];
+  const sockets = [];
   let seeded = false;
 
   try {
@@ -282,11 +400,43 @@ test('two API coordinator processes preserve a completed playback operation agai
     const baseUrl = endpoints.lyrionBaseUrl.replaceAll("'", "''");
     const seedSql = [
       'BEGIN;',
-      "INSERT INTO platform_users (id, twitch_user_id) VALUES ('" + actorId + "', '" + twitchId + "');",
-      "INSERT INTO workspaces (id, name, owner_user_id, broadcaster_twitch_user_id) VALUES ('" + workspaceId + "', 'Phase 8 playback race', '" + actorId + "', '" + twitchId + "');",
-      "INSERT INTO workspace_memberships (workspace_id, user_id, role) VALUES ('" + workspaceId + "', '" + actorId + "', 'owner');",
-      "INSERT INTO provider_instances (id, workspace_id, provider_id, instance_key, contract_version, capabilities, connection_health, enabled, configuration) VALUES ('" + providerId + "', '" + workspaceId + "', 'lyrion', 'phase8-" + providerId + "', 1, '{\"playback\":true}'::jsonb, 'healthy', true, jsonb_build_object('baseUrl', '" + baseUrl + "'));",
-      "INSERT INTO provider_output_assignments (workspace_id, provider_instance_id, output_id, player_id, assigned_by, active) VALUES ('" + workspaceId + "', '" + providerId + "', '" + outputId + "', '" + playerId + "', '" + actorId + "', true);",
+      "INSERT INTO platform_users (id, twitch_user_id) VALUES ('" +
+        actorId +
+        "', '" +
+        twitchId +
+        "');",
+      "INSERT INTO workspaces (id, name, owner_user_id, broadcaster_twitch_user_id) VALUES ('" +
+        workspaceId +
+        "', 'Phase 8 playback race', '" +
+        actorId +
+        "', '" +
+        twitchId +
+        "');",
+      "INSERT INTO workspace_memberships (workspace_id, user_id, role) VALUES ('" +
+        workspaceId +
+        "', '" +
+        actorId +
+        "', 'owner');",
+      "INSERT INTO provider_instances (id, workspace_id, provider_id, instance_key, contract_version, capabilities, connection_health, enabled, configuration) VALUES ('" +
+        providerId +
+        "', '" +
+        workspaceId +
+        "', 'lyrion', 'phase8-" +
+        providerId +
+        "', 1, '{\"playback\":true}'::jsonb, 'healthy', true, jsonb_build_object('baseUrl', '" +
+        baseUrl +
+        "'));",
+      "INSERT INTO provider_output_assignments (workspace_id, provider_instance_id, output_id, player_id, assigned_by, active) VALUES ('" +
+        workspaceId +
+        "', '" +
+        providerId +
+        "', '" +
+        outputId +
+        "', '" +
+        playerId +
+        "', '" +
+        actorId +
+        "', true);",
       'COMMIT;',
     ].join('\n');
     runSql(containerId, 'platform_bootstrap', 'ci-bootstrap-only', seedSql);
@@ -298,6 +448,10 @@ test('two API coordinator processes preserve a completed playback operation agai
       DATABASE_URL: 'postgresql://platform_runtime:local-runtime-only@127.0.0.1:5432/platform',
       INVIDIOUS_INSTANCE_URL: endpoints.invidiousUrl,
       LYRION_ALLOWED_HOSTS: '127.0.0.1',
+      REDIS_URL: process.env.REDIS_URL,
+      PHASE8_REALTIME_USER_ID: actorId,
+      PHASE8_REALTIME_WORKSPACE_ID: workspaceId,
+      PHASE8_REALTIME_SESSION_TOKEN: sessionToken,
     };
     const processA = startApiProcess(environment);
     const processB = startApiProcess(environment);
@@ -308,6 +462,18 @@ test('two API coordinator processes preserve a completed playback operation agai
     ]);
     assert.equal(readyA.type, 'ready', readyA.message);
     assert.equal(readyB.type, 'ready', readyB.message);
+    assert.ok(Number.isInteger(readyA.port) && readyA.port > 0);
+    assert.ok(Number.isInteger(readyB.port) && readyB.port > 0);
+
+    const socketA = connectWorkspaceSocket(readyA.port, workspaceId);
+    const socketB = connectWorkspaceSocket(readyB.port, workspaceId);
+    sockets.push(socketA, socketB);
+    const [subscriptionA, subscriptionB] = await Promise.all([
+      socketA.waitForEvent('phase8:ready'),
+      socketB.waitForEvent('phase8:ready'),
+    ]);
+    assert.equal(subscriptionA.workspaceId, workspaceId);
+    assert.equal(subscriptionB.workspaceId, workspaceId);
 
     const input = {
       workspaceId,
@@ -324,10 +490,10 @@ test('two API coordinator processes preserve a completed playback operation agai
       },
     };
     processA.send({ type: 'execute', commandId: 'first', input });
-    await fixtures.playSeen;
+    await withTimeout(fixtures.playSeen, 'the first provider play command');
 
     processB.send({ type: 'execute', commandId: 'duplicate', input });
-    await fixtures.statusSeen;
+    await withTimeout(fixtures.statusSeen, 'the duplicate provider status reconciliation');
 
     fixtures.releasePlay();
     const first = await processA.waitFor(
@@ -335,13 +501,13 @@ test('two API coordinator processes preserve a completed playback operation agai
     );
     assert.equal(first.result.status, 'completed');
 
-    const completedSql = "SELECT status || ':' || COALESCE(result->>'outcome', '') || ':' || fencing_token::text FROM playback_operations WHERE workspace_id = '" + workspaceId + "' AND idempotency_key = '" + idempotencyKey + "'";
-    const completed = runSql(
-      containerId,
-      'platform_bootstrap',
-      'ci-bootstrap-only',
-      completedSql,
-    );
+    const completedSql =
+      "SELECT status || ':' || COALESCE(result->>'outcome', '') || ':' || fencing_token::text FROM playback_operations WHERE workspace_id = '" +
+      workspaceId +
+      "' AND idempotency_key = '" +
+      idempotencyKey +
+      "'";
+    const completed = runSql(containerId, 'platform_bootstrap', 'ci-bootstrap-only', completedSql);
     assert.match(completed, /^completed:started:\d+$/);
 
     fixtures.releaseStatus();
@@ -351,18 +517,69 @@ test('two API coordinator processes preserve a completed playback operation agai
     assert.equal(duplicate.result.status, 'completed');
     assert.equal(duplicate.result.result?.outcome, 'started');
 
-    const finalState = runSql(
-      containerId,
-      'platform_bootstrap',
-      'ci-bootstrap-only',
-      completedSql,
-    );
+    const finalState = runSql(containerId, 'platform_bootstrap', 'ci-bootstrap-only', completedSql);
     assert.match(finalState, /^completed:started:\d+$/);
     assert.equal(fixtures.commands.filter((command) => command[0] === 'play').length, 1);
     assert.equal(fixtures.commands.filter((command) => command[0] === 'status').length, 1);
+
+    const redisProbeId = randomUUID();
+    processA.send({ type: 'broadcast', eventId: redisProbeId });
+    await processA.waitFor(
+      (message) => message.type === 'broadcasted' && message.eventId === redisProbeId,
+    );
+    const [redisProbeA, redisProbeB] = await Promise.all([
+      socketA.waitForEvent('phase8:redis-probe', (payload) => payload?.id === redisProbeId),
+      socketB.waitForEvent('phase8:redis-probe', (payload) => payload?.id === redisProbeId),
+    ]);
+    assert.equal(redisProbeA.id, redisProbeId);
+    assert.equal(redisProbeB.id, redisProbeId);
+    await Promise.all([
+      assert.rejects(
+        socketA.waitForEvent('phase8:redis-probe', (payload) => payload?.id === redisProbeId, 250),
+        /Timed out waiting for Socket.IO event/,
+      ),
+      assert.rejects(
+        socketB.waitForEvent('phase8:redis-probe', (payload) => payload?.id === redisProbeId, 250),
+        /Timed out waiting for Socket.IO event/,
+      ),
+    ]);
+
+    const outboxEventId = randomUUID();
+    const outboxPayload = JSON.stringify({
+      id: outboxEventId,
+      workspaceId,
+      type: 'request.status.changed',
+      payload: { requestId, from: 'playing', to: 'completed' },
+    }).replaceAll("'", "''");
+    runSql(
+      containerId,
+      'platform_bootstrap',
+      'ci-bootstrap-only',
+      "SELECT pg_notify('platform_outbox_event', '" + outboxPayload + "')",
+    );
+    const [outboxA, outboxB] = await Promise.all([
+      socketA.waitForEvent('workspace:event', (payload) => payload?.id === outboxEventId),
+      socketB.waitForEvent('workspace:event', (payload) => payload?.id === outboxEventId),
+    ]);
+    for (const event of [outboxA, outboxB]) {
+      assert.equal(event.type, 'request.status.changed');
+      assert.deepEqual(event.payload, { requestId, from: 'playing', to: 'completed' });
+      assert.equal(event.refreshRequired, false);
+    }
+    await Promise.all([
+      assert.rejects(
+        socketA.waitForEvent('workspace:event', (payload) => payload?.id === outboxEventId, 250),
+        /Timed out waiting for Socket.IO event/,
+      ),
+      assert.rejects(
+        socketB.waitForEvent('workspace:event', (payload) => payload?.id === outboxEventId, 250),
+        /Timed out waiting for Socket.IO event/,
+      ),
+    ]);
   } finally {
     fixtures.releasePlay();
     fixtures.releaseStatus();
+    await Promise.all(sockets.map((socket) => socket.close().catch(() => undefined)));
     await Promise.all(processes.map((process) => process.close().catch(() => undefined)));
     await fixtures.close();
     if (seeded) {

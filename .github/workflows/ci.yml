@@ -16,6 +16,8 @@ jobs:
   quality:
     name: Quality gates
     runs-on: ubuntu-24.04
+    env:
+      REDIS_URL: redis://127.0.0.1:6379
     services:
       postgres:
         image: postgres:18.6
@@ -29,6 +31,15 @@ jobs:
           --health-cmd "pg_isready -U platform_bootstrap -d platform"
           --health-interval 5s
           --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7.4-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
           --health-retries 20
     steps:
       - name: Check out source
@@ -62,6 +73,12 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Check formatting of multi-process integration tests
+        run: >-
+          pnpm exec biome format
+          apps/api/test/fixtures/phase8-playback-coordinator-process.mjs
+          scripts/test/phase8-playback-coordinator-multiprocess.test.mjs
 
       - name: Validate deletion-ledger recovery tooling
         run: |
