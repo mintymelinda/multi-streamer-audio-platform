@@ -326,7 +326,15 @@ export class ProviderExecutionHandoffController {
               WHERE id = $1 AND workspace_id = $2 AND request_id = $3
                 AND provider_instance_id = $4 AND dispatch_generation = $5
                 AND state IN ('queued', 'retry_wait')
-                AND (next_attempt_at IS NULL OR next_attempt_at <= now())`,
+                AND (next_attempt_at IS NULL OR next_attempt_at <= now())
+                AND EXISTS (
+                  SELECT 1 FROM media_requests r
+                   WHERE r.workspace_id = $2 AND r.id = $3 AND r.status = 'queued'
+                )
+                AND EXISTS (
+                  SELECT 1 FROM logical_queue_entries q
+                   WHERE q.workspace_id = $2 AND q.request_id = $3
+                )`,
             [
               input.executionStateId,
               input.workspaceId,
