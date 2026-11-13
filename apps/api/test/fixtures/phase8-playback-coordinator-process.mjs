@@ -132,9 +132,7 @@ async function main() {
         type: 'command-error',
         commandId: message.commandId,
         message: error instanceof Error ? error.message : 'unknown-error',
-        code: error && typeof error === 'object' && 'code' in error
-          ? error.code
-          : undefined,
+        code: error && typeof error === 'object' && 'code' in error ? error.code : undefined,
       });
     }
   }
