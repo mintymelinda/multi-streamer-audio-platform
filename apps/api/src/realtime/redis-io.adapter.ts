@@ -1,9 +1,8 @@
-import { createAdapter } from '@socket.io/redis-adapter';
 import { Logger } from '@nestjs/common';
 import { IoAdapter } from '@nestjs/platform-socket.io';
 import type { INestApplication } from '@nestjs/common';
-import Redis from 'ioredis';
-import type { Server } from 'socket.io';
+import { createAdapter } from '@socket.io/redis-adapter';
+import { Redis } from 'ioredis';
 
 export class RedisIoAdapter extends IoAdapter {
   private readonly logger = new Logger(RedisIoAdapter.name);
@@ -15,7 +14,7 @@ export class RedisIoAdapter extends IoAdapter {
   }
 
   async connect(redisUrl: string): Promise<void> {
-    if (!/^rediss?:\/\//i.test(redisUrl)) {
+    if (!/^rediss?:\\/\\//i.test(redisUrl)) {
       throw new Error('REDIS_URL must use the redis:// or rediss:// protocol.');
     }
     if (this.pubClient || this.subClient) {
@@ -31,8 +30,12 @@ export class RedisIoAdapter extends IoAdapter {
     };
     const pubClient = new Redis(redisUrl, options);
     const subClient = new Redis(redisUrl, options);
-    pubClient.on('error', (error) => this.logger.error('Socket.IO Redis publisher error', error));
-    subClient.on('error', (error) => this.logger.error('Socket.IO Redis subscriber error', error));
+    pubClient.on('error', (error: Error) =>
+      this.logger.error('Socket.IO Redis publisher error', error.stack),
+    );
+    subClient.on('error', (error: Error) =>
+      this.logger.error('Socket.IO Redis subscriber error', error.stack),
+    );
 
     try {
       await Promise.all([pubClient.connect(), subClient.connect()]);
@@ -47,8 +50,11 @@ export class RedisIoAdapter extends IoAdapter {
     }
   }
 
-  createIOServer(port: number, options?: Record<string, unknown>): Server {
-    const server = super.createIOServer(port, options) as Server;
+  override createIOServer(
+    port: number,
+    options?: Parameters<IoAdapter['createIOServer']>[1],
+  ): ReturnType<IoAdapter['createIOServer']> {
+    const server = super.createIOServer(port, options);
     if (!this.pubClient || !this.subClient) {
       throw new Error('The Socket.IO Redis adapter must connect before the server is created.');
     }
@@ -62,11 +68,14 @@ export class RedisIoAdapter extends IoAdapter {
     return server;
   }
 
-  async close(server: Server): Promise<void> {
+  override close(server: Parameters<IoAdapter['close']>[0]): void {
     super.close(server);
-    const clients = [this.pubClient, this.subClient].filter((client): client is Redis => Boolean(client));
+    for (const client of [this.pubClient, this.subClient]) {
+      if (client) {
+        void client.quit().catch(() => client.disconnect());
+      }
+    }
     this.pubClient = undefined;
     this.subClient = undefined;
-    await Promise.allSettled(clients.map((client) => client.quit()));
   }
 }
