@@ -1,3 +1,4 @@
+import 'reflect-metadata';
 import { createInterface } from 'node:readline';
 
 function send(value) {
@@ -24,16 +25,17 @@ process.on('exit', (code) => {
 
 async function main() {
   send({ type: 'booting', stage: 'reflect-metadata', pid: process.pid });
-  await import('reflect-metadata');
   send({ type: 'booting', stage: 'nestjs-core', pid: process.pid });
   const { NestFactory } = await import('@nestjs/core');
+  const { Module } = await import('@nestjs/common');
+  const { FastifyAdapter } = await import('@nestjs/platform-fastify');
   send({ type: 'booting', stage: 'api-modules', pid: process.pid });
   const { PlaybackCoordinatorModule } = await import('../../dist/playback/playback-coordinator.module.js');
   const { PlaybackCoordinatorService } = await import('../../dist/playback/playback-coordinator.service.js');
+  const { DatabaseModule } = await import('../../dist/database/database.module.js');
   const { DatabaseService } = await import('../../dist/database/database.service.js');
   const { WorkspaceRealtimeGateway } = await import('../../dist/realtime/workspace-realtime.gateway.js');
   const { RedisIoAdapter } = await import('../../dist/realtime/redis-io.adapter.js');
-  send({ type: 'booting', stage: 'nest-context', pid: process.pid });
 
   const userId = process.env.PHASE8_REALTIME_USER_ID;
   const workspaceId = process.env.PHASE8_REALTIME_WORKSPACE_ID;
@@ -42,43 +44,52 @@ async function main() {
     throw new Error('Phase 8 API process identity or Redis configuration is incomplete.');
   }
 
-  const { FastifyAdapter } = await import('@nestjs/platform-fastify');
-  const app = await NestFactory.create(PlaybackCoordinatorModule, new FastifyAdapter(), {
+  class Phase8RealtimeModule {}
+  Module({
+    imports: [PlaybackCoordinatorModule, DatabaseModule],
+    providers: [
+      {
+        provide: WorkspaceRealtimeGateway,
+        inject: [DatabaseService],
+        useFactory(database) {
+          const auth = {
+            async resolveSession(token) {
+              return token === sessionToken ? { id: userId } : null;
+            },
+          };
+          const gateway = new WorkspaceRealtimeGateway(database, auth);
+          gateway.handleConnection = async (socket) => {
+            socket.data.userId = userId;
+            socket.data.sessionToken = sessionToken;
+            socket.on('phase8:subscribe', async (body) => {
+              try {
+                const result = await gateway.subscribe(socket, body);
+                socket.emit('phase8:ready', result);
+              } catch (error) {
+                socket.emit('phase8:error', {
+                  message: error instanceof Error ? error.message : 'subscription-failed',
+                });
+              }
+            });
+          };
+          return gateway;
+        },
+      },
+    ],
+  })(Phase8RealtimeModule);
+
+  send({ type: 'booting', stage: 'nest-context', pid: process.pid });
+  const app = await NestFactory.create(Phase8RealtimeModule, new FastifyAdapter(), {
     logger: false,
     abortOnError: false,
   });
   const coordinator = app.get(PlaybackCoordinatorService);
-  const database = app.get(DatabaseService);
   const adapter = new RedisIoAdapter(app);
   await adapter.connect(process.env.REDIS_URL);
   app.useWebSocketAdapter(adapter);
-  const io = adapter.createIOServer(0, { transports: ['websocket'] });
-  const namespace = io.of('/workspace');
-  const auth = {
-    async resolveSession(token) {
-      return token === sessionToken ? { id: userId } : null;
-    },
-  };
-  const gateway = new WorkspaceRealtimeGateway(database, auth);
-  gateway.server = namespace;
-  await gateway.onModuleInit();
-
-  namespace.on('connection', (socket) => {
-    socket.data.userId = userId;
-    socket.data.sessionToken = sessionToken;
-    socket.on('workspace:subscribe', async (body) => {
-      try {
-        const result = await gateway.subscribe(socket, body);
-        socket.emit('phase8:ready', result);
-      } catch (error) {
-        socket.emit('phase8:error', {
-          message: error instanceof Error ? error.message : 'subscription-failed',
-        });
-      }
-    });
-  });
-
   await app.listen(0, '127.0.0.1');
+
+  const gateway = app.get(WorkspaceRealtimeGateway);
   const address = app.getHttpServer().address();
   if (!address || typeof address === 'string') {
     throw new Error('Socket.IO server did not bind to a TCP port.');
@@ -97,7 +108,7 @@ async function main() {
 
     if (message?.type === 'close') break;
     if (message?.type === 'broadcast' && typeof message.eventId === 'string') {
-      namespace.to(`workspace:${workspaceId}`).emit('phase8:redis-probe', {
+      gateway.server.to(`workspace:${workspaceId}`).emit('phase8:redis-probe', {
         id: message.eventId,
       });
       send({ type: 'broadcasted', eventId: message.eventId });
@@ -134,8 +145,6 @@ async function main() {
     }
   }
 
-  await gateway.onModuleDestroy();
-  await adapter.close(io);
   await app.close();
 }
 
