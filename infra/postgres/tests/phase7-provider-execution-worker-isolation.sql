@@ -21,7 +21,7 @@ BEGIN
   (workspace_id,user_request_id,0,1),(workspace_id,twitch_request_id,0,2);
  INSERT INTO provider_execution_states (id,workspace_id,request_id,provider_instance_id,state,dispatch_generation) VALUES
   (user_execution_id,workspace_id,user_request_id,provider_id,'queued',3),
-  (twitch_execution_id,workspace_id,twitch_request_id,provider_id,'resolving',4);
+  (twitch_execution_id,workspace_id,twitch_request_id,provider_id,'queued',4);
  INSERT INTO twitch_eventsub_subscriptions (subscription_id,workspace_id,event_type,event_version,status,secret_envelope,service_actor_user_id)
  VALUES ('provider-worker-subscription',workspace_id,'channel.channel_points_custom_reward_redemption.add','1','enabled','{"formatVersion":1}'::jsonb,owner_id);
  INSERT INTO twitch_eventsub_deliveries (id,workspace_id,subscription_id,message_id,message_type,payload,status,service_actor_user_id,processed_at)
@@ -75,6 +75,8 @@ UPDATE public.provider_execution_states SET state='completed'
 UPDATE public.media_requests SET status='skipped'
  WHERE id=current_setting('test.user_request_id')::uuid
    AND workspace_id=current_setting('test.workspace_id')::uuid;
+UPDATE public.provider_execution_states SET state='resolving'
+ WHERE id=current_setting('test.twitch_execution_id')::uuid;
 SET LOCAL SESSION AUTHORIZATION platform_provider_worker;
 DO $$
 DECLARE workspace_id uuid:=current_setting('test.workspace_id')::uuid; provider_id uuid:=current_setting('test.provider_id')::uuid;
