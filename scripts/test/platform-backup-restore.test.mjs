@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash, randomBytes } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
-import { once } from 'node:events';
 import { createServer } from 'node:http';
 import {
   chmod,
@@ -316,19 +315,24 @@ test('restores and validates a PostgreSQL base archive before generating PITR co
       const archiveKey = backupPrefix + '/postgres/' + backupId + '/base.tar.gz.msapbk';
       const manifestKey = backupPrefix + '/postgres/' + backupId + '/manifest.json';
       mock.put(backupBucket, archiveKey, await readFile(encryptedPath));
-      mock.put(backupBucket, manifestKey, Buffer.from(JSON.stringify({
-        format: 'multi-streamer-audio-platform.postgres-backup',
-        version: 1,
-        backupId,
-        createdAt: new Date().toISOString(),
-        pgBaseBackupVersion: 'pg_basebackup (PostgreSQL) 18',
-        keyId: 'backup-test',
-        walMethod: 'stream',
-        manifestChecksums: 'SHA256',
-        archive: archiveKey,
-        archiveSha256: encrypted.sha256,
-        plaintextBytes: encrypted.plaintextBytes,
-      }), 'application/json');
+      mock.put(
+        backupBucket,
+        manifestKey,
+        Buffer.from(JSON.stringify({
+          format: 'multi-streamer-audio-platform.postgres-backup',
+          version: 1,
+          backupId,
+          createdAt: new Date().toISOString(),
+          pgBaseBackupVersion: 'pg_basebackup (PostgreSQL) 18',
+          keyId: 'backup-test',
+          walMethod: 'stream',
+          manifestChecksums: 'SHA256',
+          archive: archiveKey,
+          archiveSha256: encrypted.sha256,
+          plaintextBytes: encrypted.plaintextBytes,
+        })),
+        'application/json',
+      );
 
       const binDirectory = join(directory, 'bin');
       await mkdir(binDirectory);
