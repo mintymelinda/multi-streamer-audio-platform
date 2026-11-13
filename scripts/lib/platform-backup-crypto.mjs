@@ -1,9 +1,8 @@
 import { createHash, createCipheriv, createDecipheriv, randomBytes, randomUUID } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
-import { open, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { link, open, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { dirname } from 'node:path';
 
 const MAGIC = Buffer.from('MSAPBK01');
 const HEADER_LENGTH_BYTES = 4;
@@ -165,7 +164,7 @@ export async function decryptBackupFile({ sourcePath, destinationPath, key, keyI
     if (count.bytes !== header.plaintextBytes || hash.digest('hex') !== header.sha256) {
       throw new Error('Backup archive integrity check failed.');
     }
-    await writeFile(destinationPath, await readFile(temporaryPath), { flag: 'wx', mode: 0o600 });
+    await link(temporaryPath, destinationPath);
     return header;
   } catch (error) {
     throw error;
