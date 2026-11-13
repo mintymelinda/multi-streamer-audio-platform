@@ -547,6 +547,18 @@ export class RequestsService {
         const current = await this.getRequestForUpdate(client, workspace.id, requestId);
         const target: RequestStatus =
           action === 'approve' ? 'approved' : action === 'reject' ? 'rejected' : 'held';
+        if (action !== 'approve') {
+          const activeExecution = await client.query<{ state: string }>(
+            `SELECT state FROM provider_execution_states
+              WHERE workspace_id = $1 AND request_id = $2
+                AND state IN ('resolving', 'ready', 'playing')
+              FOR UPDATE`,
+            [workspace.id, requestId],
+          );
+          if (activeExecution.rows[0]) {
+            throw new ConflictException('Playback has already started resolving. Use the playback skip action instead.');
+          }
+        }
         assertRequestTransition(current.status, target);
         if (target === 'approved') {
           const queued = await client.query<{ count: string }>(
@@ -571,6 +583,17 @@ export class RequestsService {
           'moderator',
           reason,
         );
+        if (target !== 'approved') {
+          await client.query(
+            'DELETE FROM logical_queue_entries WHERE workspace_id = $1 AND request_id = $2',
+            [workspace.id, requestId],
+          );
+          await client.query(
+            `UPDATE provider_execution_states SET state = 'cancelled', updated_at = now()
+              WHERE workspace_id = $1 AND request_id = $2 AND state IN ('queued', 'retry_wait')`,
+            [workspace.id, requestId],
+          );
+        }
         if (target === 'approved') {
           await this.enqueue(client, workspace.id, requestId, current.priority, actor.id);
           await client.query(
