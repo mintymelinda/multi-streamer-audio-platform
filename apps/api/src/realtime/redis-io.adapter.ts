@@ -14,7 +14,7 @@ export class RedisIoAdapter extends IoAdapter {
   }
 
   async connect(redisUrl: string): Promise<void> {
-    if (!/^rediss?:\\/\\//i.test(redisUrl)) {
+    if (!redisUrl.startsWith('redis://') && !redisUrl.startsWith('rediss://')) {
       throw new Error('REDIS_URL must use the redis:// or rediss:// protocol.');
     }
     if (this.pubClient || this.subClient) {
