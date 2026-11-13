@@ -47,6 +47,12 @@ BEGIN
  IF NOT has_function_privilege(session_user, 'public.platform_defer_provider_execution_job(uuid,uuid,uuid,uuid,integer)', 'EXECUTE')
    OR has_function_privilege('platform_runtime', 'public.platform_defer_provider_execution_job(uuid,uuid,uuid,uuid,integer)', 'EXECUTE')
  THEN RAISE EXCEPTION 'provider job deferral function grants are incorrect'; END IF;
+ IF NOT has_function_privilege(session_user, 'public.platform_list_active_provider_playback()', 'EXECUTE')
+   OR has_function_privilege('platform_runtime', 'public.platform_list_active_provider_playback()', 'EXECUTE')
+ THEN RAISE EXCEPTION 'provider playback monitor function grants are incorrect'; END IF;
+ IF has_schema_privilege('platform_provider_execution_owner', 'public', 'CREATE')
+ THEN RAISE EXCEPTION 'provider execution function owner retained schema creation privileges'; END IF;
+ PERFORM * FROM platform_list_active_provider_playback();
  IF NOT EXISTS (SELECT 1 FROM platform_validate_provider_execution_job(user_execution_id,workspace_id,user_request_id,provider_id,3) v
    WHERE v.actor_user_id=submitter_id AND v.request_source='dashboard') THEN RAISE EXCEPTION 'user request actor path failed'; END IF;
  IF EXISTS (SELECT 1 FROM platform_validate_provider_execution_job(twitch_execution_id,workspace_id,twitch_request_id,provider_id,4))
