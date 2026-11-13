@@ -70,7 +70,9 @@ export class RedisIoAdapter extends IoAdapter {
 
   override async close(server: Parameters<IoAdapter['close']>[0]): Promise<void> {
     await super.close(server);
-    const clients = [this.pubClient, this.subClient].filter((client): client is Redis => Boolean(client));
+    const clients = [this.pubClient, this.subClient].filter(
+      (client): client is Redis => Boolean(client),
+    );
     this.pubClient = undefined;
     this.subClient = undefined;
     await Promise.allSettled(clients.map((client) => client.quit()));
