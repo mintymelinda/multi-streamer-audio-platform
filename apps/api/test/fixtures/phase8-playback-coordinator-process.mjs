@@ -34,6 +34,7 @@ async function main() {
 
   const app = await NestFactory.createApplicationContext(PlaybackCoordinatorModule, {
     logger: false,
+    abortOnError: false,
   });
   const coordinator = app.get(PlaybackCoordinatorService);
   send({ type: 'ready', pid: process.pid });
