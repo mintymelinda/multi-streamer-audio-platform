@@ -60,6 +60,9 @@ END $$;
 RESET SESSION AUTHORIZATION;
 UPDATE public.provider_execution_states SET state='playing'
  WHERE id=current_setting('test.user_execution_id')::uuid;
+UPDATE public.media_requests SET status='skipped'
+ WHERE id=current_setting('test.user_request_id')::uuid
+   AND workspace_id=current_setting('test.workspace_id')::uuid;
 DELETE FROM public.logical_queue_entries
  WHERE workspace_id=current_setting('test.workspace_id')::uuid
    AND request_id=current_setting('test.user_request_id')::uuid;
@@ -77,9 +80,6 @@ END $$;
 RESET SESSION AUTHORIZATION;
 UPDATE public.provider_execution_states SET state='completed'
  WHERE id=current_setting('test.user_execution_id')::uuid;
-UPDATE public.media_requests SET status='skipped'
- WHERE id=current_setting('test.user_request_id')::uuid
-   AND workspace_id=current_setting('test.workspace_id')::uuid;
 SET LOCAL SESSION AUTHORIZATION platform_provider_worker;
 DO $$
 DECLARE workspace_id uuid:=current_setting('test.workspace_id')::uuid; provider_id uuid:=current_setting('test.provider_id')::uuid;
