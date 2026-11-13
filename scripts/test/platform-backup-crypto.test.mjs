@@ -8,6 +8,7 @@ import {
   decryptBackupFile,
   encryptBackupFile,
   loadBackupKey,
+  loadBackupKeyRing,
 } from '../lib/platform-backup-crypto.mjs';
 
 async function withTemporaryDirectory(action) {
@@ -155,5 +156,45 @@ test('requires a private 32-byte key file and an explicit versioned key ID', asy
       loadBackupKey({ keyFile, keyId: 'key-a' }),
       /exactly 32 raw bytes/,
     );
+  });
+});
+
+
+test('loads a private versioned key ring and selects historical keys by archive metadata', async () => {
+  await withTemporaryDirectory(async (directory) => {
+    const sourcePath = join(directory, 'source.dump');
+    const encryptedPath = join(directory, 'source.dump.msapbk');
+    const decryptedPath = join(directory, 'restored.dump');
+    const keyFile = join(directory, 'backup-keyring.json');
+    const oldKey = randomBytes(32);
+    const activeKey = randomBytes(32);
+    const keyRingDocument = {
+      format: 'multi-streamer-audio-platform.backup-keyring',
+      version: 1,
+      activeKeyId: 'backup-2026-11',
+      keys: {
+        'backup-2026-07': oldKey.toString('hex'),
+        'backup-2026-11': activeKey.toString('hex'),
+      },
+    };
+    const source = Buffer.from('backup encrypted under a key that is no longer active');
+    await writeFile(sourcePath, source);
+    await writeFile(keyFile, JSON.stringify(keyRingDocument), { mode: 0o600 });
+
+    const keyRing = await loadBackupKeyRing({ keyFile });
+    await encryptBackupFile({
+      sourcePath,
+      destinationPath: encryptedPath,
+      key: keyRing.keys.get('backup-2026-07'),
+      keyId: 'backup-2026-07',
+      context: 'postgres:historical-backup',
+    });
+    await decryptBackupFile({
+      sourcePath: encryptedPath,
+      destinationPath: decryptedPath,
+      keyRing: keyRing.keys,
+    });
+    assert.equal(keyRing.activeKeyId, 'backup-2026-11');
+    assert.deepEqual(await readFile(decryptedPath), source);
   });
 });
