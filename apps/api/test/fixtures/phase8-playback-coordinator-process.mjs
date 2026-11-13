@@ -1,4 +1,5 @@
 import { createInterface } from 'node:readline';
+import { createServer } from 'node:http';
 
 function send(value) {
   process.stdout.write(JSON.stringify(value) + '\n');
@@ -48,16 +49,13 @@ async function main() {
   });
   const coordinator = app.get(PlaybackCoordinatorService);
   const database = app.get(DatabaseService);
-  const adapter = new RedisIoAdapter({ getHttpServer: () => null });
+  const httpServer = createServer();
+  const adapter = new RedisIoAdapter({ getHttpServer: () => httpServer });
   await adapter.connect(process.env.REDIS_URL);
   const io = adapter.createIOServer(0, { transports: ['websocket'] });
   await new Promise((resolve, reject) => {
-    if (io.httpServer.listening) {
-      resolve();
-      return;
-    }
-    io.httpServer.once('listening', resolve);
-    io.httpServer.once('error', reject);
+    httpServer.once('error', reject);
+    httpServer.listen(0, '127.0.0.1', resolve);
   });
   const namespace = io.of('/workspace');
   const auth = {
@@ -84,7 +82,7 @@ async function main() {
     });
   });
 
-  const address = io.httpServer.address();
+  const address = httpServer.address();
   if (!address || typeof address === 'string') {
     throw new Error('Socket.IO server did not bind to a TCP port.');
   }
