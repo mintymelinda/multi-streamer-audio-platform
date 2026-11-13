@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createProviderExecutionHandoffSignature, handoffValidatedProviderExecution, parseProviderExecutionJob, validateProviderExecutionJob, deferProviderExecutionJob } from '../dist/provider-execution-consumer.service.js';
+import { createProviderExecutionHandoffSignature, handoffValidatedProviderExecution, parseProviderExecutionJob, validateProviderExecutionJob, deferProviderExecutionJob, listActiveProviderPlayback, monitorProviderPlayback } from '../dist/provider-execution-consumer.service.js';
 const job={executionStateId:'10000000-0000-4000-8000-000000000001',workspaceId:'20000000-0000-4000-8000-000000000002',requestId:'30000000-0000-4000-8000-000000000003',providerInstanceId:'40000000-0000-4000-8000-000000000004',dispatchGeneration:7};
 test('parses complete UUID-bound jobs with a positive generation',()=>{
  assert.deepEqual(parseProviderExecutionJob(job),job);
@@ -65,4 +65,21 @@ test('does not acknowledge a failed API handoff', async () => {
   }),
   /provider_execution_handoff_http_503/,
  );
+});
+
+test('lists active provider playback through the restricted database function',async()=>{
+ const row={execution_state_id:'10000000-0000-4000-8000-000000000001',workspace_id:'20000000-0000-4000-8000-000000000002',request_id:'30000000-0000-4000-8000-000000000003',provider_instance_id:'40000000-0000-4000-8000-000000000004',dispatch_generation:3,actor_user_id:'50000000-0000-4000-8000-000000000005'};
+ let query;
+ const rows=await listActiveProviderPlayback({query:async(sql)=>{query=sql;return {rows:[row]};}});
+ assert.match(query,/platform_list_active_provider_playback/);
+ assert.deepEqual(rows,[row]);
+});
+test('signs provider playback monitor requests and validates the response',async()=>{
+ const input={execution_state_id:'10000000-0000-4000-8000-000000000001',workspace_id:'20000000-0000-4000-8000-000000000002',request_id:'30000000-0000-4000-8000-000000000003',provider_instance_id:'40000000-0000-4000-8000-000000000004',dispatch_generation:3,actor_user_id:'50000000-0000-4000-8000-000000000005'};
+ let request;
+ const result=await monitorProviderPlayback(input,{url:'https://api.example.test/internal/provider-executions/monitor',secret:'test-secret',now:()=>1762900000000,fetchImpl:async(url,options)=>{request={url,options,body:JSON.parse(options.body)};return {ok:true,json:async()=>({accepted:true,status:'completed'})};}});
+ assert.deepEqual(result,{accepted:true,status:'completed'});
+ assert.equal(request.url,'https://api.example.test/internal/provider-executions/monitor');
+ assert.equal(request.options.headers['x-provider-execution-signature'],createProviderExecutionHandoffSignature('test-secret','1762900000',request.body));
+ assert.deepEqual(request.body,{executionStateId:input.execution_state_id,workspaceId:input.workspace_id,requestId:input.request_id,providerInstanceId:input.provider_instance_id,dispatchGeneration:3,actorUserId:input.actor_user_id});
 });
