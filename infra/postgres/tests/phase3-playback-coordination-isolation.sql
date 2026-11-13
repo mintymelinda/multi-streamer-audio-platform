@@ -53,10 +53,10 @@ BEGIN
     workspace_a, provider_a, 'output-a', 'player-a', actor_a
   );
   INSERT INTO playback_operations (
-    id, workspace_id, provider_instance_id, player_id, request_id, requested_by,
+    id, workspace_id, provider_instance_id, player_id, output_id, request_id, requested_by,
     command, idempotency_key, status, result
   ) VALUES (
-    operation_a, workspace_a, provider_a, 'player-a', request_a, actor_a,
+    operation_a, workspace_a, provider_a, 'player-a', 'output-a', request_a, actor_a,
     'play', 'playback-command-a', 'completed', '{"outcome":"started"}'::jsonb
   );
   INSERT INTO playback_sessions (
