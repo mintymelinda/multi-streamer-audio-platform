@@ -127,7 +127,7 @@ type ExecutionRow = {
                            WHERE active_assignment.workspace_id = assignment.workspace_id
                              AND active_assignment.output_id = assignment.output_id
                              AND active_execution.state IN ('resolving', 'ready', 'playing')
-                                            )
+                        )
                         AND NOT EXISTS (
                           SELECT 1
                             FROM playback_operations active_operation
