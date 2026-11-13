@@ -1,3 +1,4 @@
+import 'reflect-metadata';
 import { Module } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { createInterface } from 'node:readline';
