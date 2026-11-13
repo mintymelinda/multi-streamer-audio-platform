@@ -195,6 +195,7 @@ export function createPlatformBackupS3Client(options) {
     secretKey,
     region = 'us-east-1',
     allowInsecureHttp = false,
+    allowPlaintextRestore = false,
     nodeEnv = process.env.NODE_ENV,
     fetchImpl = fetch,
   } = options ?? {};
@@ -292,6 +293,71 @@ export function createPlatformBackupS3Client(options) {
     }
   }
 
+  async function putRestoredFile(key, filePath, options = {}) {
+    if (!allowPlaintextRestore) {
+      throw new Error('Plaintext object restore uploads are disabled for this S3 client.');
+    }
+    if (typeof constants.O_NOFOLLOW !== 'number') {
+      throw new Error('Secure no-follow restored-file opening is unavailable on this platform.');
+    }
+
+    const file = await open(filePath, constants.O_RDONLY | constants.O_NOFOLLOW);
+    try {
+      const before = await file.stat({ bigint: true });
+      if (!before.isFile() || before.nlink !== 1n || (before.mode & 0o077n) !== 0n) {
+        throw new Error('Restored objects must be regular, singly linked private files.');
+      }
+      if (before.size > BigInt(Number.MAX_SAFE_INTEGER)) {
+        throw new Error('Restored object exceeds the supported upload size.');
+      }
+
+      const contentType = options.contentType ?? 'application/octet-stream';
+      if (
+        typeof contentType !== 'string' ||
+        contentType.length > 255 ||
+        /[\r\n]/.test(contentType)
+      ) {
+        throw new Error('Restored object Content-Type is invalid.');
+      }
+
+      const hash = createHash('sha256');
+      let bytes = 0;
+      for await (const chunk of file.createReadStream({ start: 0, autoClose: false })) {
+        hash.update(chunk);
+        bytes += chunk.length;
+      }
+      const details = { sha256: hash.digest('hex'), bytes };
+      const afterDigest = await file.stat({ bigint: true });
+      if (!sameFileSnapshot(before, afterDigest) || bytes !== Number(before.size)) {
+        throw new Error('Restored object changed while its upload digest was being calculated.');
+      }
+
+      // Intentional restore transfer: this operation is only enabled on the separately configured
+      // recovery-bucket client and uploads bytes only after authenticated archive decryption.
+      const response = await request('PUT', key, {
+        payloadHash: details.sha256,
+        contentType,
+        contentLength: Number(before.size),
+        ifNoneMatch: '*',
+        metadata: { 'x-amz-meta-content-sha256': details.sha256 },
+        body: file.createReadStream({ start: 0, autoClose: false }),
+      });
+      const afterUpload = await file.stat({ bigint: true });
+      if (!sameFileSnapshot(before, afterUpload)) {
+        throw new Error('Restored object changed while it was being uploaded.');
+      }
+      if (response.status === 412 || response.status === 409) {
+        throw new Error('Restore target object already exists; use a new empty recovery bucket.');
+      }
+      if (!response.ok) {
+        throw new Error('Restored object upload failed (' + response.status + ').');
+      }
+      return { ...details, alreadyPresent: false };
+    } finally {
+      await file.close();
+    }
+  }
+
   async function putObject(key, value, options = {}) {
     const body = Buffer.isBuffer(value) ? value : Buffer.from(value);
     const sha256 = createHash('sha256').update(body).digest('hex');
@@ -347,5 +413,5 @@ export function createPlatformBackupS3Client(options) {
     return listResult(await response.text());
   }
 
-  return { getFile, getObject, headObject, listObjects, putFile, putObject };
+  return { getFile, getObject, headObject, listObjects, putFile, putObject, putRestoredFile };
 }
