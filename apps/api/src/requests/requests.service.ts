@@ -617,10 +617,25 @@ export class RequestsService {
         ) {
           throw new NotFoundException('Request not found.');
         }
+        const activeExecution = await client.query<{ state: string }>(
+          `SELECT state FROM provider_execution_states
+            WHERE workspace_id = $1 AND request_id = $2
+              AND state IN ('resolving', 'ready', 'playing')
+            FOR UPDATE`,
+          [workspace.id, requestId],
+        );
+        if (activeExecution.rows[0]) {
+          throw new ConflictException('Playback has already started resolving. Ask a moderator to skip it instead.');
+        }
         assertRequestTransition(current.status, 'cancelled');
         await client.query(
           "UPDATE media_requests SET status = 'cancelled', updated_at = now() WHERE id = $1",
           [requestId],
+        );
+        await client.query(
+          `UPDATE provider_execution_states SET state = 'cancelled', updated_at = now()
+            WHERE workspace_id = $1 AND request_id = $2 AND state IN ('queued', 'retry_wait')`,
+          [workspace.id, requestId],
         );
         await client.query('DELETE FROM logical_queue_entries WHERE request_id = $1', [requestId]);
         await this.recordTransition(
