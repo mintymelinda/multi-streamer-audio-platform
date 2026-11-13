@@ -10,6 +10,18 @@ const MAX_HEADER_BYTES = 16 * 1024;
 const FORMAT = 'multi-streamer-audio-platform.backup';
 const VERSION = 1;
 
+function sameFileSnapshot(before, after) {
+  return before.isFile() &&
+    after.isFile() &&
+    before.dev === after.dev &&
+    before.ino === after.ino &&
+    before.nlink === after.nlink &&
+    before.size === after.size &&
+    before.mode === after.mode &&
+    before.mtimeNs === after.mtimeNs &&
+    before.ctimeNs === after.ctimeNs;
+}
+
 async function readProtectedKeyFile(filePath, { encoding, expectedBytes, maximumBytes }) {
   if (typeof constants.O_NOFOLLOW !== 'number') {
     throw new Error('Secure no-follow file opening is unavailable on this platform.');
@@ -175,72 +187,79 @@ export async function encryptBackupFile({ sourcePath, destinationPath, key, keyI
 }
 
 export async function decryptBackupFile({ sourcePath, destinationPath, key, keyRing, keyId, context }) {
-  const file = await open(sourcePath, 'r');
-  let header;
-  let payloadOffset;
+  if (typeof constants.O_NOFOLLOW !== 'number') {
+    throw new Error('Secure no-follow archive opening is unavailable on this platform.');
+  }
+  const file = await open(sourcePath, constants.O_RDONLY | constants.O_NOFOLLOW);
+  const temporaryPath = destinationPath + '.decrypt-' + randomUUID();
   try {
+    const before = await file.stat({ bigint: true });
+    if (!before.isFile() || before.nlink !== 1n) {
+      throw new Error('Backup archive must be a regular, singly linked file.');
+    }
+
     const prefix = Buffer.alloc(MAGIC.length + HEADER_LENGTH_BYTES);
     const prefixRead = await file.read(prefix, 0, prefix.length, 0);
     if (prefixRead.bytesRead !== prefix.length || !prefix.subarray(0, MAGIC.length).equals(MAGIC)) {
       throw new Error('Backup archive header is invalid.');
     }
     const headerLength = prefix.readUInt32BE(MAGIC.length);
-    if (headerLength < 2 || headerLength > MAX_HEADER_BYTES) {
+    if (headerLength < 2 || headerLength > MAX_HEADER_BYTES || before.size < BigInt(prefix.length + headerLength)) {
       throw new Error('Backup archive header length is invalid.');
     }
     const headerBytes = Buffer.alloc(headerLength);
     const headerRead = await file.read(headerBytes, 0, headerLength, prefix.length);
     if (headerRead.bytesRead !== headerLength) throw new Error('Backup archive header is truncated.');
+    let header;
     try {
       header = JSON.parse(headerBytes.toString('utf8'));
     } catch {
       throw new Error('Backup archive metadata is invalid.');
     }
-    payloadOffset = prefix.length + headerLength;
-  } finally {
-    await file.close();
-  }
 
-  if (
-    header?.format !== FORMAT ||
-    header.version !== VERSION ||
-    header.algorithm !== 'aes-256-gcm' ||
-    typeof header.keyId !== 'string' ||
-    typeof header.context !== 'string' ||
-    !/^[a-f0-9]{24}$/i.test(header.nonce) ||
-    !/^[a-f0-9]{32}$/i.test(header.tag) ||
-    !/^[a-f0-9]{64}$/i.test(header.sha256) ||
-    !Number.isSafeInteger(header.plaintextBytes) ||
-    header.plaintextBytes < 0 ||
-    (keyId !== undefined && header.keyId !== keyId) ||
-    (context !== undefined && header.context !== context)
-  ) {
-    throw new Error('Backup archive metadata or key ID is invalid.');
-  }
+    if (
+      header?.format !== FORMAT ||
+      header.version !== VERSION ||
+      header.algorithm !== 'aes-256-gcm' ||
+      typeof header.keyId !== 'string' ||
+      typeof header.context !== 'string' ||
+      !/^[a-f0-9]{24}$/i.test(header.nonce) ||
+      !/^[a-f0-9]{32}$/i.test(header.tag) ||
+      !/^[a-f0-9]{64}$/i.test(header.sha256) ||
+      !Number.isSafeInteger(header.plaintextBytes) ||
+      header.plaintextBytes < 0 ||
+      (keyId !== undefined && header.keyId !== keyId) ||
+      (context !== undefined && header.context !== context)
+    ) {
+      throw new Error('Backup archive metadata or key ID is invalid.');
+    }
 
-  const selectedKey = key ?? keyRing?.get(header.keyId);
-  validateKey(selectedKey);
-  const decipher = createDecipheriv('aes-256-gcm', selectedKey, Buffer.from(header.nonce, 'hex'));
-  decipher.setAAD(additionalData(header.keyId, header.context));
-  decipher.setAuthTag(Buffer.from(header.tag, 'hex'));
-  const hash = createHash('sha256');
-  const count = { bytes: 0 };
-  const temporaryPath = destinationPath + '.decrypt-' + randomUUID();
-  try {
+    const selectedKey = key ?? keyRing?.get(header.keyId);
+    validateKey(selectedKey);
+    const decipher = createDecipheriv('aes-256-gcm', selectedKey, Buffer.from(header.nonce, 'hex'));
+    decipher.setAAD(additionalData(header.keyId, header.context));
+    decipher.setAuthTag(Buffer.from(header.tag, 'hex'));
+    const hash = createHash('sha256');
+    const count = { bytes: 0 };
+    const payloadOffset = prefix.length + headerLength;
+
     await pipeline(
-      createReadStream(sourcePath, { start: payloadOffset }),
+      file.createReadStream({ start: payloadOffset, autoClose: false }),
       decipher,
       createHashingTransform(hash, count),
       createWriteStream(temporaryPath, { flags: 'wx', mode: 0o600 }),
     );
+    const after = await file.stat({ bigint: true });
+    if (!sameFileSnapshot(before, after)) {
+      throw new Error('Backup archive changed while it was being decrypted.');
+    }
     if (count.bytes !== header.plaintextBytes || hash.digest('hex') !== header.sha256) {
       throw new Error('Backup archive integrity check failed.');
     }
     await link(temporaryPath, destinationPath);
     return header;
-  } catch (error) {
-    throw error;
   } finally {
+    await file.close();
     await rm(temporaryPath, { force: true });
   }
 }
