@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
-import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -160,6 +160,34 @@ test('rejects modified ciphertext and unauthenticated metadata', async () => {
         keyId: 'retired-key',
       }),
       /key ID is invalid/,
+    );
+  });
+});
+
+
+test('refuses symlinked backup key and key-ring paths', async () => {
+  await withTemporaryDirectory(async (directory) => {
+    const realKeyPath = join(directory, 'real-backup.key');
+    const realRingPath = join(directory, 'real-keyring.json');
+    const keyLinkPath = join(directory, 'backup.key');
+    const ringLinkPath = join(directory, 'keyring.json');
+    await writeFile(realKeyPath, randomBytes(32), { mode: 0o600 });
+    await writeFile(realRingPath, JSON.stringify({
+      format: 'multi-streamer-audio-platform.backup-keyring',
+      version: 1,
+      activeKeyId: 'key-a',
+      keys: { 'key-a': randomBytes(32).toString('hex') },
+    }), { mode: 0o600 });
+    await symlink(realKeyPath, keyLinkPath);
+    await symlink(realRingPath, ringLinkPath);
+
+    await assert.rejects(
+      loadBackupKey({ keyFile: keyLinkPath, keyId: 'key-a' }),
+      (error) => error.code === 'ELOOP',
+    );
+    await assert.rejects(
+      loadBackupKeyRing({ keyFile: ringLinkPath }),
+      (error) => error.code === 'ELOOP',
     );
   });
 });
