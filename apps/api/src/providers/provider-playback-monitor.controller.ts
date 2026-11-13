@@ -240,7 +240,7 @@ export class ProviderPlaybackMonitorController {
 
   private async completeRequest(
     payload: PlaybackMonitorPayload,
-    observation: ProviderObservation,
+    observation: Pick<ProviderObservation, 'positionMs' | 'durationMs'>,
   ): Promise<boolean> {
     return this.database.transaction(
       { userId: payload.actorUserId, verifiedWorkspaceId: payload.workspaceId as VerifiedWorkspaceId },

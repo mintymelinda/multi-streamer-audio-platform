@@ -30,6 +30,7 @@ function harness({sessionStatus='playing',observation,sessionExists=true}={}){
     if(sql.includes('FROM public.playback_sessions session')){
      return {rows:sessionExists?[{
       id:payload.playbackSessionId,status:sessionStatus,expected_duration_ms:'180000',
+      observed_position_ms:null,observed_duration_ms:null,observed_status:null,observed_at:null,
       queue_advance_pending:sessionStatus==='completed',output_id:'output-a',player_id:'player-a',
      }]:[],rowCount:sessionExists?1:0};
     }
@@ -104,5 +105,35 @@ test('retries queue advancement for a completed session whose acknowledgement is
 test('does not complete or advance a paused provider observation',async()=>{
  const h=harness({observation:{status:'paused',positionMs:80000,durationMs:180000}});
  assert.deepEqual(await invoke(h.controller),{accepted:true,status:'paused'});
+ assert.equal(h.dispatches.length,0);
+});
+
+
+test('uses a recent near-end observation from the same durable session when stop resets provider time',async()=>{
+ const h=harness({observation:{status:'stopped',positionMs:0,durationMs:0}});
+ const load=h.controller.loadSession;
+ h.controller.loadSession=async(payloadValue)=>{
+  const session=await load.call(h.controller,payloadValue);
+  return session?{
+   ...session,observed_position_ms:'179000',observed_duration_ms:'180000',
+   observed_status:'playing',observed_at:new Date().toISOString(),
+  }:null;
+ };
+ assert.deepEqual(await invoke(h.controller),{accepted:true,status:'completed'});
+ assert.equal(h.queries.some(({sql,values})=>
+  sql?.includes("observed_status = 'stopped'") && values?.[0]===179000),true);
+});
+
+test('does not infer completion from a stale previously observed near-end sample',async()=>{
+ const h=harness({observation:{status:'stopped',positionMs:0,durationMs:0}});
+ const load=h.controller.loadSession;
+ h.controller.loadSession=async(payloadValue)=>{
+  const session=await load.call(h.controller,payloadValue);
+  return session?{
+   ...session,observed_position_ms:'179000',observed_duration_ms:'180000',
+   observed_status:'playing',observed_at:new Date(Date.now()-30_000).toISOString(),
+  }:null;
+ };
+ assert.deepEqual(await invoke(h.controller),{accepted:true,status:'stopped_before_end'});
  assert.equal(h.dispatches.length,0);
 });
