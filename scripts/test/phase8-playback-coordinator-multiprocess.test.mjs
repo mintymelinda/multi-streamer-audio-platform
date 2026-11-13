@@ -58,6 +58,16 @@ function deferred() {
   return { promise, resolve };
 }
 
+function withTimeout(promise, label, timeoutMs = 15000) {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error('Timed out waiting for ' + label)), timeoutMs);
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
+
 function listen(server) {
   return new Promise((resolve, reject) => {
     server.once('error', reject);
@@ -327,8 +337,11 @@ function connectWorkspaceSocket(port, workspaceId) {
     },
     async close() {
       if (socket.readyState === WebSocket.CLOSED) return;
+      const closed = new Promise((resolve) => {
+        socket.addEventListener('close', resolve, { once: true });
+      });
       socket.close();
-      await new Promise((resolve) => socket.addEventListener('close', resolve, { once: true }));
+      await Promise.race([closed, new Promise((resolve) => setTimeout(resolve, 1000))]);
     },
   };
 }
@@ -422,10 +435,10 @@ test('two API processes coordinate one playback start and deliver Redis and outb
       },
     };
     processA.send({ type: 'execute', commandId: 'first', input });
-    await fixtures.playSeen;
+    await withTimeout(fixtures.playSeen, 'the first provider play command');
 
     processB.send({ type: 'execute', commandId: 'duplicate', input });
-    await fixtures.statusSeen;
+    await withTimeout(fixtures.statusSeen, 'the duplicate provider status reconciliation');
 
     fixtures.releasePlay();
     const first = await processA.waitFor(
