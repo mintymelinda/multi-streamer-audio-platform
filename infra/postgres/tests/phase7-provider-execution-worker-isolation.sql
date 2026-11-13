@@ -44,10 +44,15 @@ BEGIN
  IF (SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname=session_user) THEN RAISE EXCEPTION 'provider worker login must not bypass RLS'; END IF;
  IF has_table_privilege(session_user,'media_requests','SELECT') OR has_table_privilege(session_user,'provider_credentials','SELECT')
    OR has_table_privilege(session_user,'provider_execution_states','UPDATE') THEN RAISE EXCEPTION 'worker has direct tenant-table access'; END IF;
+ IF NOT has_function_privilege(session_user, 'public.platform_defer_provider_execution_job(uuid,uuid,uuid,uuid,integer)', 'EXECUTE')
+   OR has_function_privilege('platform_runtime', 'public.platform_defer_provider_execution_job(uuid,uuid,uuid,uuid,integer)', 'EXECUTE')
+ THEN RAISE EXCEPTION 'provider job deferral function grants are incorrect'; END IF;
  IF NOT EXISTS (SELECT 1 FROM platform_validate_provider_execution_job(user_execution_id,workspace_id,user_request_id,provider_id,3) v
    WHERE v.actor_user_id=submitter_id AND v.request_source='dashboard') THEN RAISE EXCEPTION 'user request actor path failed'; END IF;
  IF EXISTS (SELECT 1 FROM platform_validate_provider_execution_job(twitch_execution_id,workspace_id,twitch_request_id,provider_id,4))
  THEN RAISE EXCEPTION 'a later logical queue item was accepted before the queue head'; END IF;
+ IF NOT platform_defer_provider_execution_job(twitch_execution_id,workspace_id,twitch_request_id,provider_id,4)
+ THEN RAISE EXCEPTION 'a blocked queued job was not deferred for Queue Manager rescheduling'; END IF;
 END $$;
 
 -- Simulate queue removal while the old output is still playing. The output
@@ -55,6 +60,9 @@ END $$;
 RESET SESSION AUTHORIZATION;
 UPDATE public.provider_execution_states SET state='playing'
  WHERE id=current_setting('test.user_execution_id')::uuid;
+UPDATE public.media_requests SET status='skipped'
+ WHERE id=current_setting('test.user_request_id')::uuid
+   AND workspace_id=current_setting('test.workspace_id')::uuid;
 DELETE FROM public.logical_queue_entries
  WHERE workspace_id=current_setting('test.workspace_id')::uuid
    AND request_id=current_setting('test.user_request_id')::uuid;
@@ -72,19 +80,14 @@ END $$;
 RESET SESSION AUTHORIZATION;
 UPDATE public.provider_execution_states SET state='completed'
  WHERE id=current_setting('test.user_execution_id')::uuid;
-UPDATE public.media_requests SET status='skipped'
- WHERE id=current_setting('test.user_request_id')::uuid
-   AND workspace_id=current_setting('test.workspace_id')::uuid;
-UPDATE public.provider_execution_states SET state='resolving'
- WHERE id=current_setting('test.twitch_execution_id')::uuid;
 SET LOCAL SESSION AUTHORIZATION platform_provider_worker;
 DO $$
 DECLARE workspace_id uuid:=current_setting('test.workspace_id')::uuid; provider_id uuid:=current_setting('test.provider_id')::uuid;
  twitch_request_id uuid:=current_setting('test.twitch_request_id')::uuid; twitch_execution_id uuid:=current_setting('test.twitch_execution_id')::uuid;
 BEGIN
  IF NOT EXISTS (SELECT 1 FROM platform_validate_provider_execution_job(twitch_execution_id,workspace_id,twitch_request_id,provider_id,4) v
-   WHERE v.actor_user_id=current_setting('test.owner_id')::uuid AND v.request_source='twitch_reward' AND v.state='resolving')
- THEN RAISE EXCEPTION 'Twitch resolving handoff replay path failed after safe queue advancement'; END IF;
+   WHERE v.actor_user_id=current_setting('test.owner_id')::uuid AND v.request_source='twitch_reward' AND v.state='retry_wait')
+ THEN RAISE EXCEPTION 'Twitch retry-wait handoff path failed after safe queue advancement'; END IF;
  IF EXISTS (SELECT 1 FROM platform_validate_provider_execution_job(twitch_execution_id,workspace_id,twitch_request_id,provider_id,2))
  THEN RAISE EXCEPTION 'stale dispatch generation was accepted'; END IF;
  IF EXISTS (SELECT 1 FROM platform_validate_provider_execution_job(twitch_execution_id,gen_random_uuid(),twitch_request_id,provider_id,4))

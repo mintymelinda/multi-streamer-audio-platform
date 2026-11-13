@@ -101,6 +101,15 @@ export async function handoffValidatedProviderExecution(
   return result as { accepted: true; operationId: string | null; status: string };
 }
 
+export async function deferProviderExecutionJob(pool: Pool, value: unknown): Promise<boolean> {
+  const job = parseProviderExecutionJob(value);
+  const result = await pool.query<{ deferred: boolean }>(
+    'SELECT public.platform_defer_provider_execution_job($1, $2, $3, $4, $5) AS deferred',
+    [job.executionStateId, job.workspaceId, job.requestId, job.providerInstanceId, job.dispatchGeneration],
+  );
+  return result.rows[0]?.deferred === true;
+}
+
 export async function validateProviderExecutionJob(pool: Pool, value: unknown): Promise<ValidatedProviderExecution | null> {
   const job = parseProviderExecutionJob(value);
   const result = await pool.query<ValidatedProviderExecution>(
@@ -123,10 +132,14 @@ export class ProviderExecutionConsumerService implements OnModuleInit, OnModuleD
   private worker: Worker<ProviderExecutionJob> | undefined;
   async onModuleInit(): Promise<void> {
     await this.pool.query('SELECT 1');
-    const permission = await this.pool.query<{ can_validate: boolean }>(
-      "SELECT has_function_privilege(current_user, 'public.platform_validate_provider_execution_job(uuid,uuid,uuid,uuid,integer)', 'EXECUTE') AS can_validate",
+    const permission = await this.pool.query<{ can_validate: boolean; can_defer: boolean }>(
+      `SELECT
+         has_function_privilege(current_user, 'public.platform_validate_provider_execution_job(uuid,uuid,uuid,uuid,integer)', 'EXECUTE') AS can_validate,
+         has_function_privilege(current_user, 'public.platform_defer_provider_execution_job(uuid,uuid,uuid,uuid,integer)', 'EXECUTE') AS can_defer`,
     );
-    if (permission.rows[0]?.can_validate !== true) throw new Error('Provider execution database identity cannot validate jobs.');
+    if (permission.rows[0]?.can_validate !== true || permission.rows[0]?.can_defer !== true) {
+      throw new Error('Provider execution database identity cannot validate and defer jobs.');
+    }
     this.worker = new Worker<ProviderExecutionJob>(
       'provider-execution', async (job: Job<ProviderExecutionJob>) => this.process(job),
       { connection: this.redis, concurrency: 4, lockDuration: 30_000, limiter: { max: 20, duration: 1_000 } },
@@ -143,7 +156,12 @@ export class ProviderExecutionConsumerService implements OnModuleInit, OnModuleD
   private async process(job: Job<ProviderExecutionJob>): Promise<void> {
     const validated = await validateProviderExecutionJob(this.pool, job.data);
     if (!validated) {
-      this.logger.warn(`Discarded stale or unauthorized provider execution job ${job.id ?? 'unknown'}.`);
+      const deferred = await deferProviderExecutionJob(this.pool, job.data);
+      if (deferred) {
+        this.logger.log(`Deferred blocked provider execution job ${job.id ?? 'unknown'} for Queue Manager rescheduling.`);
+      } else {
+        this.logger.warn(`Discarded stale or unauthorized provider execution job ${job.id ?? 'unknown'}.`);
+      }
       return;
     }
     const url = process.env.PROVIDER_EXECUTION_HANDOFF_URL?.trim();
@@ -153,6 +171,12 @@ export class ProviderExecutionConsumerService implements OnModuleInit, OnModuleD
       'PROVIDER_EXECUTION_HANDOFF_SECRET',
     );
     const result = await handoffValidatedProviderExecution(validated, { url, secret });
+    if (result.status === 'stale_or_unauthorized') {
+      const deferred = await deferProviderExecutionJob(this.pool, job.data);
+      if (deferred) {
+        this.logger.log(`Deferred stale provider execution ${job.id ?? 'unknown'} for Queue Manager rescheduling.`);
+      }
+    }
     this.logger.log(
       `Provider execution ${validated.execution_state_id} handed to coordinator: ${result.status}.`,
     );

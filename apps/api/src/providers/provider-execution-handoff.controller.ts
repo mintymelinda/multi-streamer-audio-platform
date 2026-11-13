@@ -8,9 +8,11 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import type { PoolClient } from 'pg';
 import { readFileSync } from 'node:fs';
 import { DatabaseService } from '../database/database.service.js';
 import { PlaybackCoordinatorService } from '../playback/playback-coordinator.service.js';
+import { QueueManagerService } from '../queues/queue-manager.service.js';
 
 type HandoffPayload = {
   executionStateId: string;
@@ -83,6 +85,45 @@ export function verifyProviderExecutionHandoffSignature(input: {
   return expected.length === supplied.length && timingSafeEqual(expected, supplied);
 }
 
+async function transitionRequestStatus(
+  client: PoolClient,
+  input: {
+    workspaceId: string;
+    requestId: string;
+    actorUserId: string;
+    from: string;
+    to: string;
+    operationId: string;
+  },
+): Promise<void> {
+  const updated = await client.query(
+    `UPDATE media_requests SET status = $4, updated_at = now()
+      WHERE workspace_id = $1 AND id = $2 AND status = $3`,
+    [input.workspaceId, input.requestId, input.from, input.to],
+  );
+  if (updated.rowCount !== 1) {
+    throw new Error('Request lifecycle changed before the provider outcome was persisted.');
+  }
+  await client.query(
+    `INSERT INTO request_state_history
+      (workspace_id, request_id, from_status, to_status, actor_user_id, actor_type)
+     VALUES ($1, $2, $3, $4, $5, 'system')`,
+    [input.workspaceId, input.requestId, input.from, input.to, input.actorUserId],
+  );
+  await client.query(
+    `INSERT INTO outbox_events
+      (workspace_id, event_type, aggregate_type, aggregate_id, idempotency_key, payload)
+     VALUES ($1, 'request.status.changed', 'media_request', $2, $3, $4::jsonb)
+     ON CONFLICT (workspace_id, idempotency_key) DO NOTHING`,
+    [
+      input.workspaceId,
+      input.requestId,
+      `request.status:${input.requestId}:${input.from}:${input.to}:${input.operationId}`,
+      JSON.stringify({ requestId: input.requestId, from: input.from, to: input.to }),
+    ],
+  );
+}
+
 function parsePayload(value: unknown): HandoffPayload {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new BadRequestException('Invalid provider execution handoff.');
@@ -111,6 +152,7 @@ export class ProviderExecutionHandoffController {
   constructor(
     private readonly database: DatabaseService,
     private readonly coordinator: PlaybackCoordinatorService,
+    private readonly queueManager: QueueManagerService,
   ) {}
 
   @Post('handoff')
@@ -232,15 +274,11 @@ export class ProviderExecutionHandoffController {
                     ON active_output.workspace_id = active_execution.workspace_id
                    AND active_output.provider_instance_id = active_execution.provider_instance_id
                    AND active_output.active = true
-                  JOIN media_requests active_request
-                    ON active_request.workspace_id = active_execution.workspace_id
-                   AND active_request.id = active_execution.request_id
                  WHERE active_execution.workspace_id = r.workspace_id
                    AND active_output.output_id = o.output_id
                    AND active_execution.request_id <> r.id
                    AND active_execution.state IN ('resolving', 'ready', 'playing')
-                   AND active_request.status IN ('queued', 'resolving', 'ready', 'playing')
-              )
+                        )
               AND NOT EXISTS (
                 SELECT 1
                   FROM playback_operations active_operation
@@ -288,15 +326,23 @@ export class ProviderExecutionHandoffController {
               WHERE id = $1 AND workspace_id = $2 AND request_id = $3
                 AND provider_instance_id = $4 AND dispatch_generation = $5
                 AND state IN ('queued', 'retry_wait')
-                AND (next_attempt_at IS NULL OR next_attempt_at <= now())`,
-          [
-            input.executionStateId,
-            input.workspaceId,
-            input.requestId,
-            input.providerInstanceId,
-            input.dispatchGeneration,
-          ],
-        );
+                AND (next_attempt_at IS NULL OR next_attempt_at <= now())
+                AND EXISTS (
+                  SELECT 1 FROM media_requests r
+                   WHERE r.workspace_id = $2 AND r.id = $3 AND r.status = 'queued'
+                )
+                AND EXISTS (
+                  SELECT 1 FROM logical_queue_entries q
+                   WHERE q.workspace_id = $2 AND q.request_id = $3
+                )`,
+            [
+              input.executionStateId,
+              input.workspaceId,
+              input.requestId,
+              input.providerInstanceId,
+              input.dispatchGeneration,
+            ],
+          );
           if (claimed.rowCount !== 1) return null;
         }
         return row;
@@ -334,19 +380,85 @@ export class ProviderExecutionHandoffController {
         : 'resolving';
     await this.database.transaction(
       { userId: input.actorUserId, verifiedWorkspaceId: input.workspaceId as never },
-      (client) => client.query(
-        `UPDATE provider_execution_states
-            SET state = $1, last_error_code = $2, updated_at = now()
-          WHERE id = $3 AND workspace_id = $4 AND dispatch_generation = $5`,
-        [
-          executionState,
-          operation.errorCode ?? null,
-          input.executionStateId,
-          input.workspaceId,
-          input.dispatchGeneration,
-        ],
-      ),
+      async (client) => {
+        const persisted = await client.query(
+          `UPDATE provider_execution_states
+              SET state = $1, last_error_code = $2, updated_at = now()
+            WHERE id = $3 AND workspace_id = $4 AND dispatch_generation = $5
+            RETURNING id`,
+          [
+            executionState,
+            operation.errorCode ?? null,
+            input.executionStateId,
+            input.workspaceId,
+            input.dispatchGeneration,
+          ],
+        );
+        if (persisted.rowCount !== 1) {
+          throw new Error('Provider execution generation changed before its outcome was persisted.');
+        }
+
+        if (executionState === 'playing' || executionState === 'failed') {
+          const request = await client.query<{ status: string }>(
+            `SELECT status FROM media_requests
+              WHERE workspace_id = $1 AND id = $2 FOR UPDATE`,
+            [input.workspaceId, input.requestId],
+          );
+          let status = request.rows[0]?.status;
+          if (!status) throw new Error('The authoritative request disappeared during playback handoff.');
+
+          if (status === 'queued') {
+            await transitionRequestStatus(client, {
+              workspaceId: input.workspaceId,
+              requestId: input.requestId,
+              actorUserId: input.actorUserId,
+              from: 'queued',
+              to: 'resolving',
+              operationId: operation.id ?? input.executionStateId,
+            });
+            status = 'resolving';
+          }
+          if (executionState === 'playing') {
+            if (status === 'resolving') {
+              await transitionRequestStatus(client, {
+                workspaceId: input.workspaceId,
+                requestId: input.requestId,
+                actorUserId: input.actorUserId,
+                from: 'resolving',
+                to: 'ready',
+                operationId: operation.id ?? input.executionStateId,
+              });
+              status = 'ready';
+            }
+            if (status === 'ready') {
+              await transitionRequestStatus(client, {
+                workspaceId: input.workspaceId,
+                requestId: input.requestId,
+                actorUserId: input.actorUserId,
+                from: 'ready',
+                to: 'playing',
+                operationId: operation.id ?? input.executionStateId,
+              });
+            }
+          } else if (status === 'resolving' || status === 'ready') {
+            await transitionRequestStatus(client, {
+              workspaceId: input.workspaceId,
+              requestId: input.requestId,
+              actorUserId: input.actorUserId,
+              from: status,
+              to: 'failed',
+              operationId: operation.id ?? input.executionStateId,
+            });
+          }
+        }
+      },
     );
+    if (executionState === 'playing' || executionState === 'failed') {
+      await this.queueManager.dispatchNext({
+        workspaceId: input.workspaceId,
+        actorId: input.actorUserId,
+      });
+    }
     return { accepted: true, operationId: operation.id ?? null, status: operation.status };
   }
 }

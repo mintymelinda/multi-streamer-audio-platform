@@ -5,6 +5,7 @@ import type { PoolClient } from 'pg';
 import { DatabaseService } from '../database/database.service.js';
 import type { AuthenticatedUser, WorkspaceRequestContext } from '../identity/http.types.js';
 import { OutboxService } from '../outbox/outbox.service.js';
+import { QueueManagerService } from '../queues/queue-manager.service.js';
 import { isExactQueuePermutation, moveQueueItem } from './queue-ordering.js';
 import {
   assertRequestTransition,
@@ -35,6 +36,7 @@ export class RequestsService {
   constructor(
     @Inject(DatabaseService) private readonly database: DatabaseService,
     @Inject(OutboxService) private readonly outbox: OutboxService,
+    @Inject(QueueManagerService) private readonly queueManager: QueueManagerService,
   ) {}
 
   async submit(input: IntakeInput) {
@@ -52,7 +54,7 @@ export class RequestsService {
       throw new ConflictException('Media URL must use HTTP or HTTPS.');
     }
     const databaseUserId = input.actor?.id ?? input.serviceActorUserId;
-    return this.database.transaction(
+    const result = await this.database.transaction(
       {
         ...(databaseUserId ? { userId: databaseUserId } : {}),
         verifiedWorkspaceId: input.workspace.id,
@@ -219,6 +221,13 @@ export class RequestsService {
         return result.rows[0];
       },
     );
+    if (result?.status === 'queued' && databaseUserId) {
+      await this.queueManager.dispatchNext({
+        workspaceId: input.workspace.id,
+        actorId: databaseUserId,
+      });
+    }
+    return result;
   }
 
   async getSettings(workspace: WorkspaceRequestContext, userId: string) {
@@ -327,7 +336,7 @@ export class RequestsService {
     actor: AuthenticatedUser,
     requestIds: string[],
   ) {
-    return this.database.transaction(
+    const result = await this.database.transaction(
       { userId: actor.id, verifiedWorkspaceId: workspace.id },
       async (client) => {
         await this.lockQueueSettings(client, workspace.id);
@@ -345,6 +354,8 @@ export class RequestsService {
         return { requestIds };
       },
     );
+    await this.queueManager.dispatchNext({ workspaceId: workspace.id, actorId: actor.id });
+    return result;
   }
 
   async promoteQueueRequest(
@@ -352,7 +363,7 @@ export class RequestsService {
     actor: AuthenticatedUser,
     requestId: string,
   ) {
-    return this.database.transaction(
+    const result = await this.database.transaction(
       { userId: actor.id, verifiedWorkspaceId: workspace.id },
       async (client) => {
         await this.lockQueueSettings(client, workspace.id);
@@ -373,6 +384,8 @@ export class RequestsService {
         return { requestId, position: 1 };
       },
     );
+    await this.queueManager.dispatchNext({ workspaceId: workspace.id, actorId: actor.id });
+    return result;
   }
 
   async specialInsertQueueRequest(
@@ -381,7 +394,7 @@ export class RequestsService {
     requestId: string,
     position: 'front' | 'back',
   ) {
-    return this.database.transaction(
+    const result = await this.database.transaction(
       { userId: actor.id, verifiedWorkspaceId: workspace.id },
       async (client) => {
         await this.lockQueueSettings(client, workspace.id);
@@ -407,6 +420,8 @@ export class RequestsService {
         return { requestId, position };
       },
     );
+    await this.queueManager.dispatchNext({ workspaceId: workspace.id, actorId: actor.id });
+    return result;
   }
 
   private async lockQueueSettings(client: PoolClient, workspaceId: VerifiedWorkspaceId) {
@@ -518,7 +533,7 @@ export class RequestsService {
     action: 'approve' | 'reject' | 'hold',
     reason?: string,
   ) {
-    return this.database.transaction(
+    const result = await this.database.transaction(
       { userId: actor.id, verifiedWorkspaceId: workspace.id },
       async (client) => {
         await client.query(
@@ -532,6 +547,18 @@ export class RequestsService {
         const current = await this.getRequestForUpdate(client, workspace.id, requestId);
         const target: RequestStatus =
           action === 'approve' ? 'approved' : action === 'reject' ? 'rejected' : 'held';
+        if (action !== 'approve') {
+          const activeExecution = await client.query<{ state: string }>(
+            `SELECT state FROM provider_execution_states
+              WHERE workspace_id = $1 AND request_id = $2
+                AND state IN ('resolving', 'ready', 'playing')
+              FOR UPDATE`,
+            [workspace.id, requestId],
+          );
+          if (activeExecution.rows[0]) {
+            throw new ConflictException('Playback has already started resolving. Use the playback skip action instead.');
+          }
+        }
         assertRequestTransition(current.status, target);
         if (target === 'approved') {
           const queued = await client.query<{ count: string }>(
@@ -556,6 +583,17 @@ export class RequestsService {
           'moderator',
           reason,
         );
+        if (target !== 'approved') {
+          await client.query(
+            'DELETE FROM logical_queue_entries WHERE workspace_id = $1 AND request_id = $2',
+            [workspace.id, requestId],
+          );
+          await client.query(
+            `UPDATE provider_execution_states SET state = 'cancelled', updated_at = now()
+              WHERE workspace_id = $1 AND request_id = $2 AND state IN ('queued', 'retry_wait')`,
+            [workspace.id, requestId],
+          );
+        }
         if (target === 'approved') {
           await this.enqueue(client, workspace.id, requestId, current.priority, actor.id);
           await client.query(
@@ -586,10 +624,12 @@ export class RequestsService {
         return updated.rows[0];
       },
     );
+    await this.queueManager.dispatchNext({ workspaceId: workspace.id, actorId: actor.id });
+    return result;
   }
 
   async cancel(workspace: WorkspaceRequestContext, actor: AuthenticatedUser, requestId: string) {
-    return this.database.transaction(
+    const result = await this.database.transaction(
       { userId: actor.id, verifiedWorkspaceId: workspace.id },
       async (client) => {
         await this.lockQueueSettings(client, workspace.id);
@@ -600,10 +640,25 @@ export class RequestsService {
         ) {
           throw new NotFoundException('Request not found.');
         }
+        const activeExecution = await client.query<{ state: string }>(
+          `SELECT state FROM provider_execution_states
+            WHERE workspace_id = $1 AND request_id = $2
+              AND state IN ('resolving', 'ready', 'playing')
+            FOR UPDATE`,
+          [workspace.id, requestId],
+        );
+        if (activeExecution.rows[0]) {
+          throw new ConflictException('Playback has already started resolving. Ask a moderator to skip it instead.');
+        }
         assertRequestTransition(current.status, 'cancelled');
         await client.query(
           "UPDATE media_requests SET status = 'cancelled', updated_at = now() WHERE id = $1",
           [requestId],
+        );
+        await client.query(
+          `UPDATE provider_execution_states SET state = 'cancelled', updated_at = now()
+            WHERE workspace_id = $1 AND request_id = $2 AND state IN ('queued', 'retry_wait')`,
+          [workspace.id, requestId],
         );
         await client.query('DELETE FROM logical_queue_entries WHERE request_id = $1', [requestId]);
         await this.recordTransition(
@@ -626,6 +681,8 @@ export class RequestsService {
         return { id: requestId, status: 'cancelled' };
       },
     );
+    await this.queueManager.dispatchNext({ workspaceId: workspace.id, actorId: actor.id });
+    return result;
   }
 
   private async getRequestForUpdate(
