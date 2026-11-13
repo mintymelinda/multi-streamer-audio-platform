@@ -378,6 +378,10 @@ export class ProviderExecutionHandoffController {
       : operation.status === 'completed' || operation.status === 'reconciled'
         ? 'playing'
         : 'resolving';
+    const playbackOperationId = operation.id;
+    if (executionState === 'playing' && !playbackOperationId) {
+      throw new Error('Playback coordinator did not return a durable operation identity.');
+    }
     await this.database.transaction(
       { userId: input.actorUserId, verifiedWorkspaceId: input.workspaceId as never },
       async (client) => {
@@ -452,7 +456,7 @@ export class ProviderExecutionHandoffController {
           }
         }
 
-        if (executionState === 'playing' && operation.id) {
+        if (executionState === 'playing' && playbackOperationId) {
           await client.query(
             `INSERT INTO playback_sessions (
                workspace_id, request_id, provider_instance_id, execution_state_id,
@@ -469,7 +473,7 @@ export class ProviderExecutionHandoffController {
               input.providerInstanceId,
               input.executionStateId,
               input.dispatchGeneration,
-              operation.id,
+              playbackOperationId,
               input.actorUserId,
               execution.output_id,
               execution.player_id,
