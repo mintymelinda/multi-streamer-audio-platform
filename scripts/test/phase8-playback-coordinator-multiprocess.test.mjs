@@ -500,7 +500,7 @@ test('two API processes coordinate one playback start and deliver Redis and outb
     ]);
     for (const event of [outboxA, outboxB]) {
       assert.equal(event.type, 'request.status.changed');
-      assert.deepEqual(event.payload, { from: 'playing', to: 'completed' });
+      assert.deepEqual(event.payload, { requestId, from: 'playing', to: 'completed' });
       assert.equal(event.refreshRequired, false);
     }
     await Promise.all([
