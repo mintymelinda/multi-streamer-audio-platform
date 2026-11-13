@@ -197,6 +197,50 @@ export class ProviderExecutionHandoffController {
                 SELECT 1 FROM logical_queue_entries q
                  WHERE q.workspace_id = r.workspace_id AND q.request_id = r.id
               )
+              AND NOT EXISTS (
+                SELECT 1
+                  FROM logical_queue_entries earlier_queue
+                  JOIN media_requests earlier_request
+                    ON earlier_request.workspace_id = earlier_queue.workspace_id
+                   AND earlier_request.id = earlier_queue.request_id
+                  JOIN logical_queue_entries current_queue
+                    ON current_queue.workspace_id = r.workspace_id
+                   AND current_queue.request_id = r.id
+                 WHERE earlier_queue.workspace_id = r.workspace_id
+                   AND earlier_queue.request_id <> r.id
+                   AND earlier_request.status IN ('queued', 'resolving', 'ready', 'playing')
+                   AND (
+                     earlier_queue.priority > current_queue.priority
+                     OR (
+                       earlier_queue.priority = current_queue.priority
+                       AND earlier_queue.sequence < current_queue.sequence
+                     )
+                   )
+              )
+              AND NOT EXISTS (
+                SELECT 1
+                  FROM provider_execution_states active_execution
+                  JOIN provider_output_assignments active_output
+                    ON active_output.workspace_id = active_execution.workspace_id
+                   AND active_output.provider_instance_id = active_execution.provider_instance_id
+                   AND active_output.active = true
+                  JOIN media_requests active_request
+                    ON active_request.workspace_id = active_execution.workspace_id
+                   AND active_request.id = active_execution.request_id
+                 WHERE active_execution.workspace_id = r.workspace_id
+                   AND active_output.output_id = o.output_id
+                   AND active_execution.request_id <> r.id
+                   AND active_execution.state IN ('resolving', 'ready', 'playing')
+                   AND active_request.status IN ('queued', 'resolving', 'ready', 'playing')
+              )
+              AND NOT EXISTS (
+                SELECT 1
+                  FROM playback_operations active_operation
+                 WHERE active_operation.workspace_id = r.workspace_id
+                   AND active_operation.output_id = o.output_id
+                   AND active_operation.request_id <> r.id
+                   AND active_operation.status IN ('pending', 'executing', 'uncertain')
+              )
               AND (p.provider_id <> 'spotify' OR EXISTS (
                 SELECT 1 FROM provider_credentials credential
                  WHERE credential.workspace_id = p.workspace_id
