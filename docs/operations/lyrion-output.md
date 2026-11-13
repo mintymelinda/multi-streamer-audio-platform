@@ -35,4 +35,6 @@ The Lyrion adapter resolves YouTube media through the configured Invidious resol
 
 A matching LMS stream URL confirms only the media identity, not the logical request identity. Because repeat requests for the same media are allowed, the adapter never treats a URL match alone as proof that a particular request generation started. If the outcome of a command is ambiguous, the Coordinator keeps it uncertain rather than risking a duplicate start.
 
+After a confirmed start, the adapter records LMS `playlist_timestamp` as a provider-session marker. It is not a logical request ID: the monitor compares it with the stored play-operation result and refuses to complete a request if the playlist has changed. The worker polls active Lyrion sessions every 5 seconds by default (`PROVIDER_PLAYBACK_MONITOR_INTERVAL_MS` can set 1,000–60,000 ms). Automatic completion requires the same playlist marker, a stopped player, and reported progress within 1.5 seconds or 5% of the reported track duration. If the marker or timing data is missing, or the playlist changes, the request stays active for moderator recovery rather than being guessed complete.
+
 This first output adapter supports YouTube/Invidious source media. It does not enable Spotify catalog playback, and it does not change either metadata adapter's declared playback capability.
