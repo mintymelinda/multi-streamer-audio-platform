@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { once } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
@@ -204,6 +203,7 @@ function startApiProcess(environment) {
   child.stderr.on('data', (chunk) => {
     stderr = (stderr + chunk).slice(-6000);
   });
+  child.stdin.on('error', () => undefined);
   child.on('error', (error) => {
     for (const waiter of waiters.splice(0)) {
       clearTimeout(waiter.timer);
