@@ -154,10 +154,7 @@ function createProviderFixtures() {
     releasePlay: releasePlay.resolve,
     releaseStatus: releaseStatus.resolve,
     async start() {
-      const [invidiousUrl, lyrionUrl] = await Promise.all([
-        listen(invidious),
-        listen(lyrion),
-      ]);
+      const [invidiousUrl, lyrionUrl] = await Promise.all([listen(invidious), listen(lyrion)]);
       return {
         invidiousUrl,
         lyrionBaseUrl: lyrionUrl + '/jsonrpc.js',
@@ -229,7 +226,14 @@ function startApiProcess(environment) {
       clearTimeout(waiter.timer);
       waiter.reject(
         new Error(
-          'API coordinator child exited before replying (' + code + '/' + signal + '). stdout=' + stdout + ' stderr=' + stderr,
+          'API coordinator child exited before replying (' +
+            code +
+            '/' +
+            signal +
+            '). stdout=' +
+            stdout +
+            ' stderr=' +
+            stderr,
         ),
       );
     }
@@ -269,18 +273,14 @@ function startApiProcess(environment) {
 }
 
 function connectWorkspaceSocket(port, workspaceId) {
-  const socket = new WebSocket(
-    'ws://127.0.0.1:' + port + '/socket.io/?EIO=4&transport=websocket',
-  );
+  const socket = new WebSocket('ws://127.0.0.1:' + port + '/socket.io/?EIO=4&transport=websocket');
   const received = [];
   const waiters = [];
   const packets = [];
   let namespaceRequested = false;
 
   function deliver(name, payload) {
-    const index = waiters.findIndex(
-      (waiter) => waiter.name === name && waiter.predicate(payload),
-    );
+    const index = waiters.findIndex((waiter) => waiter.name === name && waiter.predicate(payload));
     if (index >= 0) {
       const waiter = waiters.splice(index, 1)[0];
       clearTimeout(waiter.timer);
@@ -311,10 +311,7 @@ function connectWorkspaceSocket(port, workspaceId) {
       return;
     }
     if (packet.startsWith('40/workspace,')) {
-      socket.send('42/workspace,' + JSON.stringify([
-        'phase8:subscribe',
-        { workspaceId },
-      ]));
+      socket.send('42/workspace,' + JSON.stringify(['phase8:subscribe', { workspaceId }]));
       return;
     }
     if (packet.startsWith('42/workspace,')) {
@@ -333,9 +330,7 @@ function connectWorkspaceSocket(port, workspaceId) {
 
   return {
     waitForEvent(name, predicate = () => true, timeoutMs = 15000) {
-      const index = received.findIndex(
-        (event) => event.name === name && predicate(event.payload),
-      );
+      const index = received.findIndex((event) => event.name === name && predicate(event.payload));
       if (index >= 0) return Promise.resolve(received.splice(index, 1)[0].payload);
       return new Promise((resolve, reject) => {
         const waiter = {
@@ -348,8 +343,12 @@ function connectWorkspaceSocket(port, workspaceId) {
             if (current >= 0) waiters.splice(current, 1);
             reject(
               new Error(
-                'Timed out waiting for Socket.IO event ' + name + '; readyState='
-                  + socket.readyState + '; packets=' + packets.slice(-8).join('|'),
+                'Timed out waiting for Socket.IO event ' +
+                  name +
+                  '; readyState=' +
+                  socket.readyState +
+                  '; packets=' +
+                  packets.slice(-8).join('|'),
               ),
             );
           }, timeoutMs),
@@ -370,7 +369,9 @@ function connectWorkspaceSocket(port, workspaceId) {
 
 test('two API processes coordinate one playback start and deliver Redis and outbox events once', async (t) => {
   if (process.env.CI !== 'true' && process.env.GITHUB_ACTIONS !== 'true') {
-    t.skip('Runs in CI against the PostgreSQL service container; local tests do not require Docker.');
+    t.skip(
+      'Runs in CI against the PostgreSQL service container; local tests do not require Docker.',
+    );
     return;
   }
   const containerId = findPostgresContainer();
@@ -399,11 +400,43 @@ test('two API processes coordinate one playback start and deliver Redis and outb
     const baseUrl = endpoints.lyrionBaseUrl.replaceAll("'", "''");
     const seedSql = [
       'BEGIN;',
-      "INSERT INTO platform_users (id, twitch_user_id) VALUES ('" + actorId + "', '" + twitchId + "');",
-      "INSERT INTO workspaces (id, name, owner_user_id, broadcaster_twitch_user_id) VALUES ('" + workspaceId + "', 'Phase 8 playback race', '" + actorId + "', '" + twitchId + "');",
-      "INSERT INTO workspace_memberships (workspace_id, user_id, role) VALUES ('" + workspaceId + "', '" + actorId + "', 'owner');",
-      "INSERT INTO provider_instances (id, workspace_id, provider_id, instance_key, contract_version, capabilities, connection_health, enabled, configuration) VALUES ('" + providerId + "', '" + workspaceId + "', 'lyrion', 'phase8-" + providerId + "', 1, '{\"playback\":true}'::jsonb, 'healthy', true, jsonb_build_object('baseUrl', '" + baseUrl + "'));",
-      "INSERT INTO provider_output_assignments (workspace_id, provider_instance_id, output_id, player_id, assigned_by, active) VALUES ('" + workspaceId + "', '" + providerId + "', '" + outputId + "', '" + playerId + "', '" + actorId + "', true);",
+      "INSERT INTO platform_users (id, twitch_user_id) VALUES ('" +
+        actorId +
+        "', '" +
+        twitchId +
+        "');",
+      "INSERT INTO workspaces (id, name, owner_user_id, broadcaster_twitch_user_id) VALUES ('" +
+        workspaceId +
+        "', 'Phase 8 playback race', '" +
+        actorId +
+        "', '" +
+        twitchId +
+        "');",
+      "INSERT INTO workspace_memberships (workspace_id, user_id, role) VALUES ('" +
+        workspaceId +
+        "', '" +
+        actorId +
+        "', 'owner');",
+      "INSERT INTO provider_instances (id, workspace_id, provider_id, instance_key, contract_version, capabilities, connection_health, enabled, configuration) VALUES ('" +
+        providerId +
+        "', '" +
+        workspaceId +
+        "', 'lyrion', 'phase8-" +
+        providerId +
+        "', 1, '{\"playback\":true}'::jsonb, 'healthy', true, jsonb_build_object('baseUrl', '" +
+        baseUrl +
+        "'));",
+      "INSERT INTO provider_output_assignments (workspace_id, provider_instance_id, output_id, player_id, assigned_by, active) VALUES ('" +
+        workspaceId +
+        "', '" +
+        providerId +
+        "', '" +
+        outputId +
+        "', '" +
+        playerId +
+        "', '" +
+        actorId +
+        "', true);",
       'COMMIT;',
     ].join('\n');
     runSql(containerId, 'platform_bootstrap', 'ci-bootstrap-only', seedSql);
@@ -468,13 +501,13 @@ test('two API processes coordinate one playback start and deliver Redis and outb
     );
     assert.equal(first.result.status, 'completed');
 
-    const completedSql = "SELECT status || ':' || COALESCE(result->>'outcome', '') || ':' || fencing_token::text FROM playback_operations WHERE workspace_id = '" + workspaceId + "' AND idempotency_key = '" + idempotencyKey + "'";
-    const completed = runSql(
-      containerId,
-      'platform_bootstrap',
-      'ci-bootstrap-only',
-      completedSql,
-    );
+    const completedSql =
+      "SELECT status || ':' || COALESCE(result->>'outcome', '') || ':' || fencing_token::text FROM playback_operations WHERE workspace_id = '" +
+      workspaceId +
+      "' AND idempotency_key = '" +
+      idempotencyKey +
+      "'";
+    const completed = runSql(containerId, 'platform_bootstrap', 'ci-bootstrap-only', completedSql);
     assert.match(completed, /^completed:started:\d+$/);
 
     fixtures.releaseStatus();
@@ -484,12 +517,7 @@ test('two API processes coordinate one playback start and deliver Redis and outb
     assert.equal(duplicate.result.status, 'completed');
     assert.equal(duplicate.result.result?.outcome, 'started');
 
-    const finalState = runSql(
-      containerId,
-      'platform_bootstrap',
-      'ci-bootstrap-only',
-      completedSql,
-    );
+    const finalState = runSql(containerId, 'platform_bootstrap', 'ci-bootstrap-only', completedSql);
     assert.match(finalState, /^completed:started:\d+$/);
     assert.equal(fixtures.commands.filter((command) => command[0] === 'play').length, 1);
     assert.equal(fixtures.commands.filter((command) => command[0] === 'status').length, 1);
