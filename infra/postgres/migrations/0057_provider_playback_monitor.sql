@@ -44,7 +44,6 @@ BEGIN
     AND workspace.status = 'active'
     AND provider.provider_id = 'lyrion'
     AND provider.enabled = true
-    AND provider.connection_health = 'healthy'
     AND CASE
       WHEN request.source = 'twitch_reward' THEN workspace.owner_user_id
       ELSE request.submitted_by_user_id
