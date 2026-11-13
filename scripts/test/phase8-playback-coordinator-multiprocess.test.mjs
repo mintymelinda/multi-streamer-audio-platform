@@ -169,6 +169,7 @@ function startApiProcess(environment) {
     stdio: ['pipe', 'pipe', 'pipe'],
   });
   let buffer = '';
+  let stdout = '';
   let stderr = '';
   const messages = [];
   const waiters = [];
@@ -187,6 +188,7 @@ function startApiProcess(environment) {
   child.stdout.setEncoding('utf8');
   child.stderr.setEncoding('utf8');
   child.stdout.on('data', (chunk) => {
+    stdout = (stdout + chunk).slice(-6000);
     buffer += chunk;
     let newline;
     while ((newline = buffer.indexOf('\n')) >= 0) {
@@ -214,7 +216,7 @@ function startApiProcess(environment) {
     for (const waiter of waiters.splice(0)) {
       clearTimeout(waiter.timer);
       waiter.reject(new Error(
-        'API coordinator child exited before replying (' + code + '/' + signal + '): ' + stderr,
+        'API coordinator child exited before replying (' + code + '/' + signal + '). stdout=' + stdout + ' stderr=' + stderr,
       ));
     }
   });
