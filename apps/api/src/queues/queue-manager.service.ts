@@ -90,7 +90,7 @@ export class QueueManagerService {
         const existing = await client.query<{ state: string }>(
           `SELECT state FROM provider_execution_states
             WHERE workspace_id = $1 AND request_id = $2
-              AND state <> 'retry_wait'
+              AND (state <> 'retry_wait' OR next_attempt_at > now())
             ORDER BY updated_at DESC
             LIMIT 1`,
           [workspaceId, candidate.id],
