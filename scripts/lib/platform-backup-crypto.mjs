@@ -1,6 +1,6 @@
 import { createHash, createCipheriv, createDecipheriv, randomBytes, randomUUID } from 'node:crypto';
-import { createReadStream, createWriteStream } from 'node:fs';
-import { link, open, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { constants, createReadStream, createWriteStream } from 'node:fs';
+import { link, open, readFile, rm, writeFile } from 'node:fs/promises';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
@@ -10,6 +10,43 @@ const MAX_HEADER_BYTES = 16 * 1024;
 const FORMAT = 'multi-streamer-audio-platform.backup';
 const VERSION = 1;
 
+async function readProtectedKeyFile(filePath, { encoding, expectedBytes, maximumBytes }) {
+  if (typeof constants.O_NOFOLLOW !== 'number') {
+    throw new Error('Secure no-follow file opening is unavailable on this platform.');
+  }
+  const file = await open(filePath, constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    const before = await file.stat({ bigint: true });
+    if (!before.isFile() || before.nlink !== 1n || (before.mode & 0o077n) !== 0n) {
+      throw new Error('Backup key files must be regular, singly linked files with 0600 permissions or stricter.');
+    }
+    if (
+      (expectedBytes !== undefined && before.size !== BigInt(expectedBytes)) ||
+      (maximumBytes !== undefined && before.size > BigInt(maximumBytes))
+    ) {
+      throw new Error('Backup key file size is invalid.');
+    }
+
+    const contents = await file.readFile(encoding ? { encoding } : undefined);
+    const after = await file.stat({ bigint: true });
+    if (
+      !after.isFile() ||
+      after.dev !== before.dev ||
+      after.ino !== before.ino ||
+      after.nlink !== before.nlink ||
+      after.size !== before.size ||
+      after.mode !== before.mode ||
+      after.mtimeNs !== before.mtimeNs ||
+      after.ctimeNs !== before.ctimeNs
+    ) {
+      throw new Error('Backup key file changed while it was being read.');
+    }
+    return contents;
+  } finally {
+    await file.close();
+  }
+}
+
 export async function loadBackupKey({ keyFile, keyId }) {
   if (typeof keyFile !== 'string' || !keyFile.trim()) {
     throw new TypeError('A backup encryption key file is required.');
@@ -18,12 +55,8 @@ export async function loadBackupKey({ keyFile, keyId }) {
     throw new TypeError('Backup key ID must contain 1 to 64 letters, numbers, dots, underscores, or hyphens.');
   }
 
-  const details = await stat(keyFile);
-  if ((details.mode & 0o077) !== 0) {
-    throw new Error('Backup encryption key file permissions must be 0600 or stricter.');
-  }
-  const key = await readFile(keyFile);
-  if (key.length !== 32) {
+  const key = await readProtectedKeyFile(keyFile, { expectedBytes: 32 });
+  if (!Buffer.isBuffer(key) || key.length !== 32) {
     throw new Error('Backup encryption key must contain exactly 32 raw bytes.');
   }
   return { key, keyId };
@@ -56,15 +89,14 @@ export async function loadBackupKeyRing({ keyFile }) {
   if (typeof keyFile !== 'string' || !keyFile.trim()) {
     throw new TypeError('A backup key-ring file is required.');
   }
-  const details = await stat(keyFile);
-  if ((details.mode & 0o077) !== 0) {
-    throw new Error('Backup key-ring file permissions must be 0600 or stricter.');
-  }
   let document;
   try {
-    document = JSON.parse((await readFile(keyFile, 'utf8')));
-  } catch {
-    throw new Error('Backup key-ring file is not valid JSON.');
+    document = JSON.parse(await readProtectedKeyFile(keyFile, { encoding: 'utf8', maximumBytes: 64 * 1024 }));
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      throw new Error('Backup key-ring file is not valid JSON.');
+    }
+    throw error;
   }
   if (
     document?.format !== 'multi-streamer-audio-platform.backup-keyring' ||
