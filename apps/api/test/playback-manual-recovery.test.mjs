@@ -145,3 +145,40 @@ test('rejects recovery actions from unauthorized workspace members', async () =>
     }),
   );
 });
+
+
+test('does not audit or close a playing request when the provider skip is unconfirmed', async () => {
+  const request = {
+    id: 'request-playing',
+    workspaceId: 'workspace-a',
+    mediaId: 'media-original',
+    status: 'playing',
+    providerInstanceId: 'lyrion-a',
+    providerExecutionState: 'playing',
+  };
+  const actions = [];
+  const service = new PlaybackRecoveryService({
+    authorize: async () => ({ allowed: true }),
+    getRequest: async () => request,
+    skip: async (item) => {
+      actions.push(['skip', item.id]);
+      throw new Error('Provider outcome is uncertain.');
+    },
+    dismiss: async () => undefined,
+    retry: async () => undefined,
+    reroute: async () => undefined,
+    appendAudit: async (event) => actions.push(['audit', event.action]),
+  });
+
+  await assert.rejects(
+    service.skip({
+      workspaceId: 'workspace-a',
+      requestId: request.id,
+      actorId: 'admin-a',
+      reason: 'Skip requested by streamer',
+    }),
+    /uncertain/,
+  );
+  assert.deepEqual(actions, [['skip', 'request-playing']]);
+  assert.equal(request.status, 'playing');
+});

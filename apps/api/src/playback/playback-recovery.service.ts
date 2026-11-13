@@ -6,6 +6,7 @@ export interface RecoverablePlaybackRequest {
   mediaId: string | null;
   status: string;
   providerInstanceId?: string | null;
+  providerExecutionState?: string | null;
 }
 
 export interface WorkspaceProviderRecoveryPolicy {
