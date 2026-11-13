@@ -10,6 +10,7 @@ The existing repository test command already includes all files matching `script
 |---|---|---|---|
 | Database readiness | `apps/api/test/health.controller.test.mjs` | Liveness stays independent of PostgreSQL; readiness returns 200 after `SELECT 1` and a sanitized 503 on DB failure | Redis, object storage, worker, provider, or end-to-end readiness |
 | Two-process lease contention | `scripts/test/phase8-postgres-multiprocess-lease.test.mjs` | Two independent `psql` processes using `platform_runtime` cannot steal the same live workspace/provider/player lease; the row/fencing token remains owned by the first session | Two actual API/worker deployments coordinating a full playback request across processes |
+| Two API coordinator processes | `scripts/test/phase8-playback-coordinator-multiprocess.test.mjs` | Two independently booted NestJS playback-coordinator module processes share PostgreSQL; a delayed duplicate Lyrion observation cannot downgrade the first process's completed operation or issue a second play | BullMQ worker handoff, Redis Socket.IO cross-instance fan-out, browser journeys, or a live Lyrion device |
 | HTTP load runner | `scripts/test/load-http-workload.test.mjs` | Weighted scenario execution, authorization header handling, per-request identity templates, latency reporting, and failure-budget exit behavior | Platform capacity or SLO targets; tests use a local mock HTTP server |
 | Backup CLI / crypto / S3 / WAL | `scripts/test/platform-backup-*.test.mjs` | Streaming archive primitives, immutable object transport, artifact context, WAL retry idempotency and tamper rejection | Real storage provider behavior, full PostgreSQL PITR, or independent-key restore drill |
 
@@ -63,7 +64,9 @@ Do not infer an SLO from the sample defaults. Derive capacity thresholds from ob
 
 The new two-connection test proves the conflict behavior at the database layer: one session holds the live lease row while another independent process attempts the same key. The second session's conditional upsert must not update the unexpired row. The assertion checks both the fencing token and the original owner after both sessions finish.
 
-The current database integration test still does not run two NestJS API processes or two BullMQ provider consumers. A full multi-process playback acceptance run must use at least two API/worker process instances sharing the same PostgreSQL and Redis, with a single configured Lyrion test output (or a deterministic fake provider output). It must verify:
+The new API coordinator regression test boots two independent NestJS `PlaybackCoordinatorModule` processes against shared PostgreSQL and deterministic local Invidious/Lyrion HTTP fixtures. It deliberately pauses the second process's stale Lyrion status observation until the first process has persisted `completed`, then verifies the duplicate reconciliation cannot downgrade that terminal row and no second `play` is issued. This tests the real API coordinator module and database repository across process boundaries, but it does not run BullMQ consumers or real provider hardware.
+
+The remaining full multi-instance acceptance run must add at least two BullMQ provider consumers sharing PostgreSQL and Redis, with a single configured Lyrion test output (or a deterministic fake provider output). It must verify:
 - concurrent play requests against one output issue at most one provider start;
 - a second instance cannot steal an unexpired lease;
 - an expired lease is reclaimed with a higher fencing token;
@@ -113,7 +116,8 @@ For each run, keep the exact source/artifact digest, environment topology, insta
 
 Phase 8 remains open until:
 - browser-level E2E coverage passes;
-- API/worker/Socket.IO multi-instance correctness is demonstrated with shared PostgreSQL/Redis;
+- two-process API coordinator playback regression passes against shared PostgreSQL;
+- BullMQ worker/Redis and Socket.IO cross-instance multi-instance correctness is demonstrated with shared PostgreSQL/Redis;
 - the load profile produces measured and approved capacity/SLO thresholds;
 - the full application deployment is validated in a non-production environment (the current Compose smoke is infrastructure-only);
 - incident, backup/restore, maintenance, operator, and streamer runbooks are rehearsed;
