@@ -41,12 +41,12 @@ async function main() {
   gateway.server = {
     local: {
       in(room) {
-      return {
-        async fetchSockets() {
-          return rooms.has(room) ? [socket] : [];
-        },
-      };
-    },
+        return {
+          async fetchSockets() {
+            return rooms.has(room) ? [socket] : [];
+          },
+        };
+      },
   };
   await gateway.onModuleInit();
   const subscription = await gateway.subscribe(socket, { workspaceId });
