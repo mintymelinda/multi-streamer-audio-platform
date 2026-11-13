@@ -39,7 +39,7 @@ BEGIN
      AND s.request_id = p_request_id
      AND s.provider_instance_id = p_provider_instance_id
      AND s.dispatch_generation = p_dispatch_generation
-     AND s.state = 'queued'
+     AND s.state IN ('queued', 'resolving')
      AND r.workspace_id = s.workspace_id
      AND r.id = s.request_id
      AND r.status = 'queued'
@@ -48,6 +48,13 @@ BEGIN
          FROM public.logical_queue_entries q
         WHERE q.workspace_id = s.workspace_id
           AND q.request_id = s.request_id
+     )
+     AND NOT EXISTS (
+       SELECT 1
+         FROM public.playback_operations active_operation
+        WHERE active_operation.workspace_id = s.workspace_id
+          AND active_operation.request_id = s.request_id
+          AND active_operation.status IN ('pending', 'executing', 'uncertain')
      )
   RETURNING true INTO v_deferred;
 
