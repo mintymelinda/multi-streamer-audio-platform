@@ -33,6 +33,7 @@ test('creates a deterministic sanitized successful release audit record', () => 
   assert.equal(record.checks.remoteDeploymentAndContainerReadiness, 'success');
   assert.equal(record.checks.publicIngressAndOAuthConfiguration, 'success');
   assert.equal(record.rollback.status, 'not_required');
+  assert.equal(record.checks.rollbackPublicIngressAndOAuthConfiguration, 'skipped');
   assert.equal(JSON.stringify(record).includes('PRIVATE_KEY'), false);
   assert.equal(JSON.stringify(record).includes('STAGING_SSH_HOST'), false);
 });
@@ -48,6 +49,18 @@ test('records an explicit failed rollback after a post-ingress failure', () => {
   assert.equal(record.rollback.status, 'failed');
 });
 
+test('reports rollback as complete only when public ingress also passes', () => {
+  const verified = createReleaseAuditRecord({
+    ...base, JOB_STATUS: 'failure', INGRESS_OUTCOME: 'failure',
+    ROLLBACK_OUTCOME: 'success', ROLLBACK_INGRESS_OUTCOME: 'success',
+  });
+  assert.equal(verified.rollback.status, 'succeeded_and_ingress_verified');
+  const failedIngress = createReleaseAuditRecord({
+    ...base, JOB_STATUS: 'failure', INGRESS_OUTCOME: 'failure',
+    ROLLBACK_OUTCOME: 'success', ROLLBACK_INGRESS_OUTCOME: 'failure',
+  });
+  assert.equal(failedIngress.rollback.status, 'restored_but_ingress_failed');
+});
 test('does not claim an unobservable in-step rollback succeeded', () => {
   const record = createReleaseAuditRecord({
     ...base,
