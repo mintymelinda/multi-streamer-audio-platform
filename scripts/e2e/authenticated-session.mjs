@@ -179,14 +179,14 @@ try {
     PORT: '3100',
     HOSTNAME: '127.0.0.1',
   };
+  // Both Next.js apps use output: 'standalone'; launch the generated server
+  // directly instead of using "next start", which does not support standalone output.
   const dashboardProcess = start('pnpm', [
     '--filter',
     '@platform/dashboard',
-    'start',
-    '--hostname',
-    '127.0.0.1',
-    '--port',
-    '3100',
+    'exec',
+    'node',
+    '.next/standalone/server.js',
   ], dashboardEnvironment);
   await waitFor(dashboardUrl, dashboardProcess);
 
@@ -200,12 +200,9 @@ try {
   const overlayProcess = start('pnpm', [
     '--filter',
     '@platform/overlay',
-    'start',
-    '--',
-    '--hostname',
-    '127.0.0.1',
-    '--port',
-    '3200',
+    'exec',
+    'node',
+    '.next/standalone/server.js',
   ], overlayEnvironment);
   await waitFor(overlayUrl, overlayProcess);
 
