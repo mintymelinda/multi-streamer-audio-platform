@@ -684,7 +684,7 @@ try {
         'content-type': 'application/json',
         'x-csrf-token': csrfToken,
       },
-      body: JSON.stringify({ state: recoveredState, expectedRevision: 2 }),
+      body: JSON.stringify({ state: recoveredState, expectedRevision: 1 }),
     },
   );
   assert.equal(draftResponse.status, 200, 'The API must accept a scene draft while the overlay browser is offline.');
@@ -697,7 +697,7 @@ try {
         'content-type': 'application/json',
         'x-csrf-token': csrfToken,
       },
-      body: JSON.stringify({ expectedRevision: 3 }),
+      body: JSON.stringify({ expectedRevision: 2 }),
     },
   );
   assert.equal(publishResponse.status, 201, 'The API must publish the new scene while the overlay browser is offline.');
