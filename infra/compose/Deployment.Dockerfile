@@ -19,6 +19,14 @@ ENV API_INTERNAL_URL=$API_INTERNAL_URL
 
 RUN pnpm install --frozen-lockfile
 RUN pnpm build
+RUN for app in dashboard overlay; do \
+      mkdir -p "apps/$app/.next/standalone/.next"; \
+      cp -a "apps/$app/.next/static/." "apps/$app/.next/standalone/.next/static/"; \
+      if [ -d "apps/$app/public" ]; then \
+        mkdir -p "apps/$app/.next/standalone/public"; \
+        cp -a "apps/$app/public/." "apps/$app/.next/standalone/public/"; \
+      fi; \
+    done
 
 # One immutable application image is reused by API, worker, dashboard, and
 # overlay containers. Commands are selected by the Compose service definition.
