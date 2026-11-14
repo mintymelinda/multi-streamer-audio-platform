@@ -7,3 +7,6 @@
 .env
 .env.*
 !.env.example
+
+# Deployment secret files are supplied by the staging operator.
+infra/compose/secrets/
