@@ -352,13 +352,15 @@ try {
   };
   // Both Next.js apps use output: 'standalone'; launch the generated server
   // directly instead of using "next start", which does not support standalone output.
-  const dashboardProcess = start('pnpm', [
-    '--filter',
-    '@platform/dashboard',
-    'exec',
-    'node',
-    '.next/standalone/apps/dashboard/server.js',
-  ], dashboardEnvironment);
+  const dashboardStandaloneRoot = resolve(
+    process.cwd(),
+    'apps/dashboard/.next/standalone/apps/dashboard',
+  );
+  const dashboardProcess = start(
+    process.execPath,
+    [resolve(dashboardStandaloneRoot, 'server.js')],
+    { ...dashboardEnvironment, cwd: dashboardStandaloneRoot },
+  );
   await waitFor(dashboardUrl, dashboardProcess);
 
   const overlayEnvironment = {
@@ -368,13 +370,15 @@ try {
     PORT: '3200',
     HOSTNAME: '127.0.0.1',
   };
-  const overlayProcess = start('pnpm', [
-    '--filter',
-    '@platform/overlay',
-    'exec',
-    'node',
-    '.next/standalone/apps/overlay/server.js',
-  ], overlayEnvironment);
+  const overlayStandaloneRoot = resolve(
+    process.cwd(),
+    'apps/overlay/.next/standalone/apps/overlay',
+  );
+  const overlayProcess = start(
+    process.execPath,
+    [resolve(overlayStandaloneRoot, 'server.js')],
+    { ...overlayEnvironment, cwd: overlayStandaloneRoot },
+  );
   await waitFor(overlayUrl, overlayProcess);
 
   browser = await chromium.launch({ channel: 'chrome', headless: true });
