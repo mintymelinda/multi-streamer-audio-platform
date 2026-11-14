@@ -233,3 +233,4 @@ node scripts/ops/staging-volume-restart-drill.mjs \
 ```
 
 The drill never runs `docker compose down --volumes` and never deletes the named volumes. Run both the application and edge Compose stacks before starting it; Caddy must already have issued its staging certificates. It briefly interrupts staging database, Redis, and object-storage connections while the three containers are recreated. If interrupted before cleanup, the PostgreSQL probe table is removed on the next successful run and Redis/object-storage probes have unique identifiers; inspect any leftover object before manually deleting it. A passing drill proves persistence across container recreation, not backup restoration or disaster recovery.
+

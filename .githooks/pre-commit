@@ -1,7 +1,0 @@
-#!/bin/sh
-set -eu
-
-ROOT="$(git rev-parse --show-toplevel)"
-cd "$ROOT"
-
-node scripts/pre-commit-format.mjs
