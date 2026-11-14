@@ -10,9 +10,12 @@ export function createReleaseAuditRecord(env, recordedAt = new Date().toISOStrin
   const deploy = value(env.DEPLOY_OUTCOME, 'skipped');
   const ingress = value(env.INGRESS_OUTCOME, 'skipped');
   const rollbackStep = value(env.ROLLBACK_OUTCOME, 'skipped');
+  const rollbackIngress = value(env.ROLLBACK_INGRESS_OUTCOME, 'skipped');
   const risk = value(env.RELEASE_RISK);
   let rollbackStatus = 'not_required';
-  if (rollbackStep === 'success') rollbackStatus = 'succeeded';
+  if (rollbackStep === 'success' && rollbackIngress === 'success') rollbackStatus = 'succeeded_and_ingress_verified';
+  else if (rollbackStep === 'success' && rollbackIngress === 'failure') rollbackStatus = 'restored_but_ingress_failed';
+  else if (rollbackStep === 'success') rollbackStatus = 'restored_containers_ingress_not_verified';
   else if (rollbackStep === 'failure') rollbackStatus = 'failed';
   else if (deploy === 'failure' && risk === 'routine') rollbackStatus = 'not_independently_reported';
   else if (deploy === 'failure' && risk === 'approval-required') rollbackStatus = 'manual_recovery_required';
@@ -35,6 +38,7 @@ export function createReleaseAuditRecord(env, recordedAt = new Date().toISOStrin
       imageBuildAndPublish: value(env.BUILD_OUTCOME, 'skipped'),
       remoteDeploymentAndContainerReadiness: deploy,
       publicIngressAndOAuthConfiguration: ingress,
+      rollbackPublicIngressAndOAuthConfiguration: rollbackIngress,
     },
     rollback: {
       status: rollbackStatus,
