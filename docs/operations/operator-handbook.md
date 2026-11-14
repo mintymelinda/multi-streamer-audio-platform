@@ -46,7 +46,25 @@ The API's current readiness endpoint checks PostgreSQL only. It does not assert 
 4. Save sanitized test output and relevant commit/run identifiers. Do not archive credentials, authorization URLs, request headers, or bearer tokens.
 5. Record failures as follow-up issues with the affected service, first observed time, impact, and reproduction steps.
 
-### Useful read-only commands
+#### Staging health probe and alert output
+
+Run the read-only health probe after deployment changes and on a schedule from a trusted staging operator host:
+
+```sh
+node scripts/ops/staging-health-check.mjs \
+  --env-file infra/compose/.env.staging \
+  --api-url https://api.staging.example.net \
+  --dashboard-url https://dashboard.staging.example.net \
+  --overlay-url https://overlay.staging.example.net \
+  --assets-url https://assets.staging.example.net \
+  --i-confirm-non-production
+```
+
+The probe checks the application and edge Compose service states, configured container health checks, API liveness/readiness, dashboard and overlay HTTPS, object-storage readiness through the public asset hostname, and the Socket.IO WebSocket handshake. It prints sanitized JSON with per-check status and actionable alert records, and exits non-zero when any required check fails. A scheduler or external monitoring service can consume the exit code/output; the script does not send notifications or create a hosted dashboard.
+
+Treat a failed check as a signal to start the matching incident runbook below, not as permission to restart or delete state. In particular, do not flush Redis, remove volumes, or replay uncertain playback operations as an automatic response. The worker currently has no application-level health endpoint, so its check proves only that its container is running; queue lag and failed-job trends still require inspection of the job system.
+
+## Useful read-only commands
 
 Run from the repository root and supply the private staging environment file explicitly:
 
