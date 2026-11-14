@@ -58,6 +58,14 @@ export function findNamedVolumeMount(mounts, destination) {
   return mount.Name;
 }
 
+export function buildProbeCleanupSql(probeId, dropTable) {
+  if (!/^[a-z0-9-]{1,64}$/i.test(probeId)) {
+    throw new Error('Probe identifier is invalid.');
+  }
+  const deleteProbe = "DELETE FROM public.staging_volume_probe WHERE probe_id='" + probeId + "'";
+  return dropTable ? deleteProbe + "; DROP TABLE IF EXISTS public.staging_volume_probe" : deleteProbe;
+}
+
 function docker(args, allowFailure = false, extraEnv = {}) {
   const result = spawnSync('docker', args, {
     cwd: repositoryRoot,
@@ -199,7 +207,7 @@ async function main(argv) {
   const objectValue = runMinioClient(options, minioCommandAfter);
   if (objectValue !== token) throw new Error('Object-storage probe data did not survive container recreation.');
 
-  const cleanupSql = "DELETE FROM public.staging_volume_probe WHERE probe_id='" + token + "'; DROP TABLE IF EXISTS public.staging_volume_probe";
+  const cleanupSql = buildProbeCleanupSql(token, createdProbeTable);
   docker([...prefix, 'exec', '-T', 'postgres', 'psql', '-U', 'platform_bootstrap', '-d', 'platform', '-c', cleanupSql]);
   docker([...prefix, 'exec', '-T', 'redis', 'redis-cli', 'DEL', redisKey]);
   const minioCleanup = 'mc alias set local http://object-storage:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null && mc rm local/platform-assets/' + objectKey;

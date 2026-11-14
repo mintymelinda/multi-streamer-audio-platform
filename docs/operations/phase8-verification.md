@@ -271,3 +271,4 @@ Treat a domain change as a coordinated configuration and OAuth change, not just 
 6. Keep the old host routes until DNS caches have expired and existing overlay clients have had time to reconnect. Keep the old asset host available for at least the maximum signed-URL lifetime. Then remove the temporary old-host blocks and retire the old DNS records.
 
 Do not delete Caddy or application data volumes as part of a domain migration. This procedure is for the isolated staging environment; production migration requires a separately approved maintenance and rollback plan.
+

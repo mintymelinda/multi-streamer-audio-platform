@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  buildProbeCleanupSql,
   findNamedVolumeMount,
   parseHttpsOrigin,
   parseOptions,
@@ -24,4 +25,13 @@ test('requires named volumes at the expected container mount point', () => {
   ];
   assert.equal(findNamedVolumeMount(mounts, '/var/lib/postgresql'), 'staging_postgres_data');
   assert.throws(() => findNamedVolumeMount(mounts, '/tmp/config'), /named Docker volume/);
+});
+
+test('drops the probe table only when this run created it', () => {
+  const ownedTableCleanup = buildProbeCleanupSql('probe-123', true);
+  const existingTableCleanup = buildProbeCleanupSql('probe-123', false);
+  assert.match(ownedTableCleanup, /DROP TABLE IF EXISTS/);
+  assert.doesNotMatch(existingTableCleanup, /DROP TABLE/);
+  assert.match(existingTableCleanup, /DELETE FROM public\.staging_volume_probe/);
+  assert.throws(() => buildProbeCleanupSql("probe'; DROP TABLE users; --", false), /identifier is invalid/);
 });

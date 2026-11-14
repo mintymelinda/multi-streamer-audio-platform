@@ -1,8 +1,8 @@
 import { Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import type { VerifiedWorkspaceId } from '@platform/contracts';
-import type { DatabaseService } from '../database/database.service.js';
+import { DatabaseService } from '../database/database.service.js';
 import type { WorkspaceRequestContext } from '../identity/http.types.js';
-import type { RequestsService } from '../requests/requests.service.js';
+import { RequestsService } from '../requests/requests.service.js';
 import { buildTwitchRedemptionRequest } from './twitch-redemption-routing.js';
 
 interface IntakeRow {
