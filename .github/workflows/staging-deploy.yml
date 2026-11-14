@@ -134,6 +134,7 @@ jobs:
           echo "IMAGE=$image" >> "$GITHUB_ENV"
 
       - name: Configure pinned SSH host verification
+        id: ssh_setup
         env:
           STAGING_SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
           STAGING_SSH_KNOWN_HOSTS: ${{ secrets.STAGING_SSH_KNOWN_HOSTS }}
@@ -149,6 +150,7 @@ jobs:
           chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
 
       - name: Deploy image and verify remote containers
+        id: deploy
         env:
           STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
           STAGING_SSH_USER: ${{ secrets.STAGING_SSH_USER }}
@@ -202,34 +204,54 @@ jobs:
                 break
               fi
             done
+            init_container="$(docker compose --env-file "$compose_dir/.env.staging" -f "$compose_dir/docker-compose.staging.yml" -f "$compose_dir/docker-compose.staging.remote.yml" ps -a -q object-storage-init || true)"
+            if [[ -z "$init_container" ]] || [[ "$(docker inspect --format '{{.State.Status}}:{{.State.ExitCode}}' "$init_container")" != "exited:0" ]]; then
+              dependencies_healthy=false
+            fi
             if [[ "$dependencies_healthy" == true ]]; then break; fi
             sleep 5
           done
           if [[ "$dependencies_healthy" != true ]]; then
-            echo "PostgreSQL or Redis did not become healthy before migration." >&2
+            echo "PostgreSQL, Redis, or object-storage initialization did not complete successfully." >&2
             exit 1
           fi
 
-          docker compose --env-file "$compose_dir/.env.staging" -f "$compose_dir/docker-compose.staging.yml" -f "$compose_dir/docker-compose.staging.remote.yml" up -d --force-recreate migrate
-          migration_complete=false
-          for attempt in $(seq 1 60); do
-            migration_container="$(docker compose --env-file "$compose_dir/.env.staging" -f "$compose_dir/docker-compose.staging.yml" -f "$compose_dir/docker-compose.staging.remote.yml" ps -a -q migrate || true)"
-            if [[ -n "$migration_container" ]]; then
-              migration_state="$(docker inspect --format '{{.State.Status}}:{{.State.ExitCode}}' "$migration_container")"
-              if [[ "$migration_state" == "exited:0" ]]; then migration_complete=true; break; fi
-              if [[ "$migration_state" == exited:* ]]; then
-                echo "Database migration failed with state $migration_state." >&2
-                exit 1
+          if [[ "$risk" == "approval-required" ]]; then
+            docker compose --env-file "$compose_dir/.env.staging" -f "$compose_dir/docker-compose.staging.yml" -f "$compose_dir/docker-compose.staging.remote.yml" up -d --force-recreate migrate
+            migration_complete=false
+            for attempt in $(seq 1 60); do
+              migration_container="$(docker compose --env-file "$compose_dir/.env.staging" -f "$compose_dir/docker-compose.staging.yml" -f "$compose_dir/docker-compose.staging.remote.yml" ps -a -q migrate || true)"
+              if [[ -n "$migration_container" ]]; then
+                migration_state="$(docker inspect --format '{{.State.Status}}:{{.State.ExitCode}}' "$migration_container")"
+                if [[ "$migration_state" == "exited:0" ]]; then migration_complete=true; break; fi
+                if [[ "$migration_state" == exited:* ]]; then
+                  echo "Database migration failed with state $migration_state." >&2
+                  exit 1
+                fi
               fi
+              sleep 2
+            done
+            if [[ "$migration_complete" != true ]]; then
+              echo "Database migration did not complete within two minutes." >&2
+              exit 1
             fi
-            sleep 2
-          done
-          if [[ "$migration_complete" != true ]]; then
-            echo "Database migration did not complete within two minutes." >&2
-            exit 1
           fi
 
-          PLATFORM_IMAGE="$image" docker compose --env-file "$compose_dir/.env.staging" -f "$compose_dir/docker-compose.staging.yml" -f "$compose_dir/docker-compose.staging.remote.yml" up -d --no-build --no-deps api worker dashboard overlay
+          PLATFORM_IMAGE="$image" docker compose --env-file "$compose_dir/.env.staging" -f "$compose_dir/docker-compose.staging.yml" -f "$compose_dir/docker-compose.staging.remote.yml" up -d --no-build --no-deps api
+          api_healthy=false
+          for attempt in $(seq 1 30); do
+            api_container="$(docker compose --env-file "$compose_dir/.env.staging" -f "$compose_dir/docker-compose.staging.yml" -f "$compose_dir/docker-compose.staging.remote.yml" ps -q api || true)"
+            if [[ -n "$api_container" ]] && [[ "$(docker inspect --format '{{.State.Status}}:{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$api_container")" == "running:healthy" ]]; then
+              api_healthy=true
+              break
+            fi
+            sleep 5
+          done
+          if [[ "$api_healthy" != true ]]; then
+            echo "API did not become healthy; dependent services were not restarted." >&2
+            exit 1
+          fi
+          PLATFORM_IMAGE="$image" docker compose --env-file "$compose_dir/.env.staging" -f "$compose_dir/docker-compose.staging.yml" -f "$compose_dir/docker-compose.staging.remote.yml" up -d --no-build --no-deps worker dashboard overlay
           docker compose --env-file "$compose_dir/.env.staging" -f "$compose_dir/docker-compose.edge.yml" up -d
           docker logout ghcr.io >/dev/null 2>&1 || true
 
@@ -260,6 +282,7 @@ jobs:
           REMOTE
 
       - name: Verify public staging ingress and OAuth callback configuration
+        id: ingress
         env:
           STAGING_API_URL: ${{ secrets.STAGING_API_URL }}
           STAGING_DASHBOARD_URL: ${{ secrets.STAGING_DASHBOARD_URL }}
@@ -275,7 +298,7 @@ jobs:
           node scripts/ops/staging-deployment-smoke.mjs --api-url "$STAGING_API_URL" --dashboard-url "$STAGING_DASHBOARD_URL" --overlay-url "$STAGING_OVERLAY_URL" --assets-url "$STAGING_ASSETS_URL" --twitch-integration-callback-url "$STAGING_TWITCH_INTEGRATION_CALLBACK_URL" --i-confirm-non-production
 
       - name: Roll back a failed routine deployment
-        if: failure() && needs.classify.outputs.risk == 'routine'
+        if: failure() && needs.classify.outputs.risk == 'routine' && steps.deploy.outcome == 'success' && steps.ingress.outcome == 'failure'
         env:
           STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
           STAGING_SSH_USER: ${{ secrets.STAGING_SSH_USER }}
