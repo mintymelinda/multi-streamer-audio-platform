@@ -23,6 +23,12 @@ const sessionToken = randomUUID() + randomUUID();
 const csrfToken = randomUUID() + randomUUID();
 const sessionHash = createHash('sha256').update(sessionToken).digest('hex');
 const csrfHash = createHash('sha256').update(csrfToken).digest('hex');
+const foreignSessionToken = randomUUID() + randomUUID();
+const foreignCsrfToken = randomUUID() + randomUUID();
+const foreignSessionHash = createHash('sha256').update(foreignSessionToken).digest('hex');
+const foreignCsrfHash = createHash('sha256').update(foreignCsrfToken).digest('hex');
+const invitationId = randomUUID();
+const invitationTokenHash = createHash('sha256').update(randomUUID()).digest('hex');
 const children = [];
 let browser;
 let seeded = false;
@@ -122,9 +128,19 @@ function seedSession(containerId) {
     "INSERT INTO workspace_memberships (workspace_id, user_id, role) VALUES ('" + foreignWorkspaceId + "', '" + foreignActorId + "', 'owner');",
     "INSERT INTO user_sessions (user_id, session_token_hash, csrf_token_hash, expires_at) VALUES ('"
       + actorId + "', '" + sessionHash + "', '" + csrfHash + "', now() + interval '10 minutes');",
+    "INSERT INTO user_sessions (user_id, session_token_hash, csrf_token_hash, expires_at) VALUES ('"
+      + foreignActorId + "', '" + foreignSessionHash + "', '" + foreignCsrfHash + "', now() + interval '10 minutes');",
     'COMMIT;',
   ].join('\n'));
   seeded = true;
+}
+
+function seedInvitation(containerId, workspaceId) {
+  sql(containerId, [
+    "INSERT INTO workspace_invitations (id, workspace_id, invited_twitch_user_id, assigned_role, token_hash, invited_by_user_id, expires_at) VALUES ('"
+      + invitationId + "', '" + workspaceId + "', '" + foreignTwitchUserId + "', 'moderator', '"
+      + invitationTokenHash + "', '" + actorId + "', now() + interval '7 days');",
+  ].join('\\n'));
 }
 
 function cleanSession(containerId) {
@@ -236,6 +252,56 @@ try {
   assert.equal(typeof workspace.id, 'string');
   await page.getByRole('heading', { name: 'Browser E2E Workspace' }).waitFor();
 
+  seedInvitation(databaseContainer, workspace.id);
+  const inviteeContext = await browser.newContext();
+  await inviteeContext.addCookies([
+    {
+      name: 'platform_session',
+      value: foreignSessionToken,
+      url: dashboardUrl,
+      httpOnly: true,
+      sameSite: 'Lax',
+    },
+    {
+      name: 'platform_csrf',
+      value: foreignCsrfToken,
+      url: dashboardUrl,
+      sameSite: 'Strict',
+    },
+  ]);
+  const inviteePage = await inviteeContext.newPage();
+  await inviteePage.goto(`${dashboardUrl}/invitations`, { waitUntil: 'networkidle' });
+  await inviteePage.getByRole('heading', { name: 'Invitation inbox' }).waitFor();
+  await inviteePage.getByRole('heading', { name: 'Browser E2E Workspace' }).waitFor();
+  await inviteePage.getByRole('button', { name: 'Accept' }).click();
+  await inviteePage.waitForURL(dashboardUrl + '/');
+  const acceptedMemberships = await inviteePage.evaluate(async () => {
+    const response = await fetch('/api/workspaces', { credentials: 'include', cache: 'no-store' });
+    return { status: response.status, body: await response.json() };
+  });
+  assert.equal(acceptedMemberships.status, 200);
+  assert.ok(acceptedMemberships.body.some((item) =>
+    item.id === workspace.id && item.role === 'moderator',
+  ), 'The invitation must grant only its assigned Moderator role.');
+
+  const revokedMembership = await page.evaluate(async ({ workspaceId, memberId, token }) => {
+    const response = await fetch(`/api/workspaces/${workspaceId}/members/${memberId}`, {
+      method: 'DELETE',
+      credentials: 'include',
+      headers: { 'x-csrf-token': token },
+    });
+    return response.status;
+  }, { workspaceId: workspace.id, memberId: foreignActorId, token: csrfToken });
+  assert.equal(revokedMembership, 200);
+  const afterRevocation = await inviteePage.evaluate(async (workspaceId) => {
+    const response = await fetch(`/api/workspaces/${workspaceId}`, {
+      credentials: 'include',
+      cache: 'no-store',
+    });
+    return response.status;
+  }, workspace.id);
+  assert.equal(afterRevocation, 404, 'Membership revocation must immediately remove workspace access.');
+
   const workspaceBoundary = await page.evaluate(async (foreignId) => {
     const listed = await fetch('/api/workspaces', { credentials: 'include', cache: 'no-store' });
     const listedBody = await listed.json();
@@ -263,6 +329,7 @@ try {
   assert.equal(workspaceBoundary.foreignReadStatus, 404);
   assert.ok(!workspaceBoundary.foreignReadBody.includes('Isolation Canary Workspace'));
   assert.equal(workspaceBoundary.foreignMutationStatus, 404);
+  await inviteeContext.close();
 
   const starter = await page.evaluate(async ({ workspaceId, token }) => {
     const response = await fetch(`/api/workspaces/${workspaceId}/scenes/starter`, {
