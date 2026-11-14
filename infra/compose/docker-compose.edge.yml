@@ -1,0 +1,31 @@
+name: streamer-audio-platform-edge
+
+services:
+  edge:
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    init: true
+    environment:
+      DASHBOARD_DOMAIN: ${DASHBOARD_DOMAIN:?Set DASHBOARD_DOMAIN in the edge environment file}
+      OVERLAY_DOMAIN: ${OVERLAY_DOMAIN:?Set OVERLAY_DOMAIN in the edge environment file}
+      API_DOMAIN: ${API_DOMAIN:?Set API_DOMAIN in the edge environment file}
+      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL in the edge environment file}
+    ports:
+      - "${HTTP_BIND_ADDRESS:-0.0.0.0}:80:80"
+      - "${HTTPS_BIND_ADDRESS:-0.0.0.0}:443:443"
+      - "${HTTPS_BIND_ADDRESS:-0.0.0.0}:443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - platform
+
+volumes:
+  caddy_data:
+  caddy_config:
+
+networks:
+  platform:
+    external: true
+    name: ${PLATFORM_NETWORK_NAME:-platform-staging}
