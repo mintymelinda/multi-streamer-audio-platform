@@ -9,6 +9,7 @@ services:
       DASHBOARD_DOMAIN: ${DASHBOARD_DOMAIN:?Set DASHBOARD_DOMAIN in the edge environment file}
       OVERLAY_DOMAIN: ${OVERLAY_DOMAIN:?Set OVERLAY_DOMAIN in the edge environment file}
       API_DOMAIN: ${API_DOMAIN:?Set API_DOMAIN in the edge environment file}
+      ASSET_DOMAIN: ${ASSET_DOMAIN:?Set ASSET_DOMAIN in the edge environment file}
       ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL in the edge environment file}
     ports:
       - "${HTTP_BIND_ADDRESS:-0.0.0.0}:80:80"

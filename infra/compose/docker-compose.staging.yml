@@ -1,0 +1,247 @@
+name: streamer-audio-platform-staging
+
+services:
+  postgres:
+    image: postgres:18.6
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: platform
+      POSTGRES_USER: platform_bootstrap
+      POSTGRES_PASSWORD: ${POSTGRES_BOOTSTRAP_PASSWORD:?Set POSTGRES_BOOTSTRAP_PASSWORD}
+      PLATFORM_MIGRATOR_PASSWORD: ${PLATFORM_MIGRATOR_PASSWORD:?Set PLATFORM_MIGRATOR_PASSWORD}
+      PLATFORM_RUNTIME_PASSWORD: ${PLATFORM_RUNTIME_PASSWORD:?Set PLATFORM_RUNTIME_PASSWORD}
+      PLATFORM_WORKER_PASSWORD: ${PLATFORM_WORKER_PASSWORD:?Set PLATFORM_WORKER_PASSWORD}
+      PLATFORM_PROVIDER_WORKER_PASSWORD: ${PLATFORM_PROVIDER_WORKER_PASSWORD:?Set PLATFORM_PROVIDER_WORKER_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql
+      - ../postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U platform_bootstrap -d platform"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - data
+
+  redis:
+    image: redis:8.10.3
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - data
+
+  object-storage:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?Set MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD}
+    volumes:
+      - object_storage_data:/data
+    networks:
+      - app
+
+  object-storage-init:
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+    depends_on:
+      object-storage:
+        condition: service_started
+    entrypoint: ["/bin/sh", "-lc"]
+    command: >-
+      until mc alias set local http://object-storage:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"; do sleep 2; done &&
+      mc mb --ignore-existing local/platform-assets &&
+      mc mb --with-lock --ignore-existing local/platform-deletion-ledger &&
+      mc retention set --default COMPLIANCE 36500d local/platform-deletion-ledger &&
+      mc anonymous set none local/platform-deletion-ledger &&
+      printf '{"CORSRules":[{"AllowedOrigins":["https://%s","https://%s"],"AllowedMethods":["PUT","GET","HEAD"],"AllowedHeaders":["*"],"ExposeHeaders":["ETag","Content-Length","Content-Type"],"MaxAgeSeconds":3600}]}' "$DASHBOARD_DOMAIN" "$OVERLAY_DOMAIN" > /tmp/assets-cors.json &&
+      mc cors set local/platform-assets /tmp/assets-cors.json &&
+      mc anonymous set none local/platform-assets
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?Set MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD}
+      DASHBOARD_DOMAIN: ${DASHBOARD_DOMAIN:?Set DASHBOARD_DOMAIN}
+      OVERLAY_DOMAIN: ${OVERLAY_DOMAIN:?Set OVERLAY_DOMAIN}
+    networks:
+      - app
+
+  migrate:
+    image: postgres:18.6
+    restart: "no"
+    environment:
+      PGPASSWORD: ${PLATFORM_MIGRATOR_PASSWORD:?Set PLATFORM_MIGRATOR_PASSWORD}
+    volumes:
+      - ../postgres/migrations:/migrations:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command:
+      - sh
+      - -ec
+      - |
+        for migration in /migrations/*.sql; do
+          psql -h postgres -U platform_migrator -d platform -v ON_ERROR_STOP=1 -f "$migration"
+        done
+    networks:
+      - data
+
+  api:
+    image: platform-staging-app:local
+    build:
+      context: ../..
+      dockerfile: infra/compose/Deployment.Dockerfile
+      target: runtime
+      args:
+        API_INTERNAL_URL: http://api:3000
+    restart: unless-stopped
+    init: true
+    command: ["node", "apps/api/dist/main.js"]
+    environment:
+      NODE_ENV: production
+      API_PORT: "3000"
+      DATABASE_URL_FILE: /run/secrets/api_database_url
+      REDIS_URL: redis://redis:6379
+      TWITCH_CLIENT_ID: ${TWITCH_CLIENT_ID:?Set TWITCH_CLIENT_ID}
+      TWITCH_REDIRECT_URI: ${TWITCH_REDIRECT_URI:?Set TWITCH_REDIRECT_URI}
+      TWITCH_INTEGRATION_REDIRECT_URI: ${TWITCH_INTEGRATION_REDIRECT_URI:?Set TWITCH_INTEGRATION_REDIRECT_URI}
+      TWITCH_CLIENT_SECRET_FILE: /run/secrets/twitch_client_secret
+      INTEGRATION_KEK_RING_FILE: /run/secrets/integration_kek_ring
+      PROVIDER_EXECUTION_HANDOFF_SECRET_FILE: /run/secrets/provider_execution_handoff_secret
+      OVERLAY_ALLOWED_ORIGINS: https://${OVERLAY_DOMAIN:?Set OVERLAY_DOMAIN}
+      OBJECT_STORAGE_ENDPOINT: https://${ASSET_DOMAIN:?Set ASSET_DOMAIN}
+      OBJECT_STORAGE_INTERNAL_ENDPOINT: http://object-storage:9000
+      OBJECT_STORAGE_BUCKET: platform-assets
+      OBJECT_STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:?Set MINIO_ROOT_USER}
+      OBJECT_STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD}
+      OBJECT_STORAGE_REGION: us-east-1
+      INVIDIOUS_INSTANCE_URL: ${INVIDIOUS_INSTANCE_URL:-}
+      LYRION_ALLOWED_HOSTS: ${LYRION_ALLOWED_HOSTS:-}
+    secrets:
+      - api_database_url
+      - twitch_client_secret
+      - integration_kek_ring
+      - provider_execution_handoff_secret
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      object-storage-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/health/ready').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    networks:
+      - app
+      - data
+
+  worker:
+    image: platform-staging-app:local
+    restart: unless-stopped
+    init: true
+    command: ["node", "apps/worker/dist/main.js"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL_FILE: /run/secrets/worker_database_url
+      REDIS_URL_FILE: /run/secrets/redis_url
+      PROVIDER_EXECUTION_DATABASE_URL_FILE: /run/secrets/provider_execution_database_url
+      PROVIDER_EXECUTION_HANDOFF_SECRET_FILE: /run/secrets/provider_execution_handoff_secret
+      PROVIDER_EXECUTION_HANDOFF_URL: http://api:3000/internal/provider-executions/handoff
+    secrets:
+      - worker_database_url
+      - redis_url
+      - provider_execution_database_url
+      - provider_execution_handoff_secret
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - app
+      - data
+
+  dashboard:
+    image: platform-staging-app:local
+    restart: unless-stopped
+    init: true
+    command:
+      - sh
+      - -lc
+      - >-
+        server="$(find apps/dashboard/.next/standalone -type d -name node_modules -prune -o -type f -name server.js -print -quit)" &&
+        test -n "$server" &&
+        exec node "$server"
+    environment:
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0
+      PORT: "3000"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    networks:
+      - app
+
+  overlay:
+    image: platform-staging-app:local
+    restart: unless-stopped
+    init: true
+    command:
+      - sh
+      - -lc
+      - >-
+        server="$(find apps/overlay/.next/standalone -type d -name node_modules -prune -o -type f -name server.js -print -quit)" &&
+        test -n "$server" &&
+        exec node "$server"
+    environment:
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0
+      PORT: "3001"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3001/').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    networks:
+      - app
+
+volumes:
+  postgres_data:
+  redis_data:
+  object_storage_data:
+
+networks:
+  app:
+    name: ${PLATFORM_NETWORK_NAME:-platform-staging}
+  data:
+    internal: true
+
+secrets:
+  api_database_url:
+    file: ${API_DATABASE_URL_SECRET_FILE:?Set API_DATABASE_URL_SECRET_FILE}
+  worker_database_url:
+    file: ${WORKER_DATABASE_URL_SECRET_FILE:?Set WORKER_DATABASE_URL_SECRET_FILE}
+  provider_execution_database_url:
+    file: ${PROVIDER_EXECUTION_DATABASE_URL_SECRET_FILE:?Set PROVIDER_EXECUTION_DATABASE_URL_SECRET_FILE}
+  redis_url:
+    file: ${REDIS_URL_SECRET_FILE:?Set REDIS_URL_SECRET_FILE}
+  twitch_client_secret:
+    file: ${TWITCH_CLIENT_SECRET_FILE_SOURCE:?Set TWITCH_CLIENT_SECRET_FILE_SOURCE}
+  integration_kek_ring:
+    file: ${INTEGRATION_KEK_RING_FILE_SOURCE:?Set INTEGRATION_KEK_RING_FILE_SOURCE}
+  provider_execution_handoff_secret:
+    file: ${PROVIDER_EXECUTION_HANDOFF_SECRET_FILE_SOURCE:?Set PROVIDER_EXECUTION_HANDOFF_SECRET_FILE_SOURCE}
