@@ -26,4 +26,5 @@ export interface HttpReply {
   header(name: string, value: string | string[]): this;
   redirect(url: string): this;
   code(statusCode: number): this;
+  send(payload?: unknown): this;
 }
