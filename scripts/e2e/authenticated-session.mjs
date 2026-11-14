@@ -81,7 +81,7 @@ function start(command, args, env) {
   const child = spawn(command, args, {
     cwd: process.cwd(),
     env,
-    stdio: 'ignore',
+    stdio: 'inherit',
   });
   children.push(child);
   return child;
@@ -177,7 +177,6 @@ try {
     '--filter',
     '@platform/dashboard',
     'start',
-    '--',
     '--hostname',
     '127.0.0.1',
     '--port',
