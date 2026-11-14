@@ -58,7 +58,11 @@ jobs:
           CURRENT_RUN_CREATED_AT: ${{ github.event.workflow_run.created_at }}
         run: |
           set -euo pipefail
-          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+          latest_main_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+          if [[ "$latest_main_sha" != "$HEAD_SHA" ]]; then
+            risk="stale"
+            reason="A newer commit is already on main; refusing to deploy an outdated CI run."
+          elif [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
             successful_ci="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$HEAD_SHA&per_page=100" --jq '[.workflow_runs[] | select(.event == "push" and .head_branch == "main" and .conclusion == "success")] | length > 0')"
             if [[ "$successful_ci" != "true" ]]; then
               echo "::error::The selected main commit does not have a successful CI push run."
@@ -164,10 +168,10 @@ jobs:
           fi
 
           target="$STAGING_SSH_USER@$STAGING_SSH_HOST"
-          ssh -i "$HOME/.ssh/id_ed25519" -o BatchMode=yes "$target" "mkdir -p '$STAGING_DEPLOY_PATH/infra/compose' '$STAGING_DEPLOY_PATH/infra/postgres/init' '$STAGING_DEPLOY_PATH/infra/postgres/migrations'"
+          ssh -i "$HOME/.ssh/id_ed25519" -o BatchMode=yes -o StrictHostKeyChecking=yes "$target" "mkdir -p '$STAGING_DEPLOY_PATH/infra/compose' '$STAGING_DEPLOY_PATH/infra/postgres/init' '$STAGING_DEPLOY_PATH/infra/postgres/migrations'"
 
-          scp -i "$HOME/.ssh/id_ed25519" -o BatchMode=yes infra/compose/docker-compose.staging.yml infra/compose/docker-compose.staging.remote.yml infra/compose/docker-compose.edge.yml infra/compose/Caddyfile "$target:$STAGING_DEPLOY_PATH/infra/compose/"
-          scp -r -i "$HOME/.ssh/id_ed25519" -o BatchMode=yes infra/postgres/init infra/postgres/migrations "$target:$STAGING_DEPLOY_PATH/infra/postgres/"
+          scp -i "$HOME/.ssh/id_ed25519" -o BatchMode=yes -o StrictHostKeyChecking=yes infra/compose/docker-compose.staging.yml infra/compose/docker-compose.staging.remote.yml infra/compose/docker-compose.edge.yml infra/compose/Caddyfile "$target:$STAGING_DEPLOY_PATH/infra/compose/"
+          scp -r -i "$HOME/.ssh/id_ed25519" -o BatchMode=yes -o StrictHostKeyChecking=yes infra/postgres/init infra/postgres/migrations "$target:$STAGING_DEPLOY_PATH/infra/postgres/"
 
           printf '%s' "$STAGING_GHCR_READ_TOKEN" | ssh -i "$HOME/.ssh/id_ed25519" -o BatchMode=yes "$target" "docker login ghcr.io --username '$STAGING_GHCR_USERNAME' --password-stdin"
 
@@ -186,7 +190,46 @@ jobs:
           printf '%s\n' "$previous_image" > "$deploy_path/.previous-staging-image"
 
           PLATFORM_IMAGE="$image" docker compose --env-file "$compose_dir/.env.staging" -f "$compose_dir/docker-compose.staging.yml" -f "$compose_dir/docker-compose.staging.remote.yml" pull
-          PLATFORM_IMAGE="$image" docker compose --env-file "$compose_dir/.env.staging" -f "$compose_dir/docker-compose.staging.yml" -f "$compose_dir/docker-compose.staging.remote.yml" up -d --no-build
+          docker compose --env-file "$compose_dir/.env.staging" -f "$compose_dir/docker-compose.staging.yml" -f "$compose_dir/docker-compose.staging.remote.yml" up -d postgres redis object-storage object-storage-init
+
+          dependencies_healthy=false
+          for attempt in $(seq 1 30); do
+            dependencies_healthy=true
+            for service in postgres redis; do
+              container="$(docker compose --env-file "$compose_dir/.env.staging" -f "$compose_dir/docker-compose.staging.yml" -f "$compose_dir/docker-compose.staging.remote.yml" ps -q "$service" || true)"
+              if [[ -z "$container" ]] || [[ "$(docker inspect --format '{{.State.Status}}:{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$container")" != "running:healthy" ]]; then
+                dependencies_healthy=false
+                break
+              fi
+            done
+            if [[ "$dependencies_healthy" == true ]]; then break; fi
+            sleep 5
+          done
+          if [[ "$dependencies_healthy" != true ]]; then
+            echo "PostgreSQL or Redis did not become healthy before migration." >&2
+            exit 1
+          fi
+
+          docker compose --env-file "$compose_dir/.env.staging" -f "$compose_dir/docker-compose.staging.yml" -f "$compose_dir/docker-compose.staging.remote.yml" up -d --force-recreate migrate
+          migration_complete=false
+          for attempt in $(seq 1 60); do
+            migration_container="$(docker compose --env-file "$compose_dir/.env.staging" -f "$compose_dir/docker-compose.staging.yml" -f "$compose_dir/docker-compose.staging.remote.yml" ps -a -q migrate || true)"
+            if [[ -n "$migration_container" ]]; then
+              migration_state="$(docker inspect --format '{{.State.Status}}:{{.State.ExitCode}}' "$migration_container")"
+              if [[ "$migration_state" == "exited:0" ]]; then migration_complete=true; break; fi
+              if [[ "$migration_state" == exited:* ]]; then
+                echo "Database migration failed with state $migration_state." >&2
+                exit 1
+              fi
+            fi
+            sleep 2
+          done
+          if [[ "$migration_complete" != true ]]; then
+            echo "Database migration did not complete within two minutes." >&2
+            exit 1
+          fi
+
+          PLATFORM_IMAGE="$image" docker compose --env-file "$compose_dir/.env.staging" -f "$compose_dir/docker-compose.staging.yml" -f "$compose_dir/docker-compose.staging.remote.yml" up -d --no-build --no-deps api worker dashboard overlay
           docker compose --env-file "$compose_dir/.env.staging" -f "$compose_dir/docker-compose.edge.yml" up -d
           docker logout ghcr.io >/dev/null 2>&1 || true
 
@@ -202,13 +245,15 @@ jobs:
             done
             edge_container="$(docker compose --env-file "$compose_dir/.env.staging" -f "$compose_dir/docker-compose.edge.yml" ps -q edge || true)"
             if [[ -z "$edge_container" ]] || [[ "$(docker inspect --format '{{.State.Status}}' "$edge_container")" != "running" ]]; then healthy=false; fi
-            migration_container="$(docker compose --env-file "$compose_dir/.env.staging" -f "$compose_dir/docker-compose.staging.yml" -f "$compose_dir/docker-compose.staging.remote.yml" ps -a -q migrate || true)"
-            if [[ -z "$migration_container" ]] || [[ "$(docker inspect --format '{{.State.Status}}:{{.State.ExitCode}}' "$migration_container")" != "exited:0" ]]; then healthy=false; fi
             if [[ "$healthy" == true ]]; then break; fi
             sleep 5
           done
 
           if [[ "$healthy" != true ]]; then
+            if [[ "$risk" == "routine" && -n "$previous_image" ]]; then
+              PLATFORM_IMAGE="$previous_image" docker compose --env-file "$compose_dir/.env.staging" -f "$compose_dir/docker-compose.staging.yml" -f "$compose_dir/docker-compose.staging.remote.yml" up -d --no-build --no-deps api worker dashboard overlay --no-deps api worker dashboard overlay
+              echo "Routine deployment rolled back to $previous_image." >&2
+            fi
             echo "Staging containers did not become healthy. Previous image: $previous_image; release risk: $risk" >&2
             exit 1
           fi
