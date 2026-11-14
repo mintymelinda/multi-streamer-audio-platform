@@ -675,6 +675,12 @@ try {
       animation: { enter: 'none', exit: 'none', durationMs: 0, delayMs: 0, trigger: 'always' },
     }],
   };
+  const editorStateResponse = await fetch(
+    `${apiUrl}/workspaces/${workspace.id}/scenes/${starter.body.scene.id}/editor`,
+    { headers: { cookie: cookieHeader }, cache: 'no-store' },
+  );
+  assert.equal(editorStateResponse.status, 200, 'The editor must expose the current scene draft revision.');
+  const editorState = await editorStateResponse.json();
   const draftResponse = await fetch(
     `${apiUrl}/workspaces/${workspace.id}/scenes/${starter.body.scene.id}/draft`,
     {
@@ -684,10 +690,12 @@ try {
         'content-type': 'application/json',
         'x-csrf-token': csrfToken,
       },
-      body: JSON.stringify({ state: recoveredState, expectedRevision: 1 }),
+      body: JSON.stringify({ state: recoveredState, expectedRevision: editorState.draftRevision }),
     },
   );
   assert.equal(draftResponse.status, 200, 'The API must accept a scene draft while the overlay browser is offline.');
+  const savedDraft = await draftResponse.json();
+  assert.equal(savedDraft.draftRevision, editorState.draftRevision + 1, 'Saving the offline draft must advance the revision exactly once.');
   const publishResponse = await fetch(
     `${apiUrl}/workspaces/${workspace.id}/scenes/${starter.body.scene.id}/publish`,
     {
@@ -697,7 +705,7 @@ try {
         'content-type': 'application/json',
         'x-csrf-token': csrfToken,
       },
-      body: JSON.stringify({ expectedRevision: 2 }),
+      body: JSON.stringify({ expectedRevision: savedDraft.draftRevision }),
     },
   );
   assert.equal(publishResponse.status, 201, 'The API must publish the new scene while the overlay browser is offline.');
