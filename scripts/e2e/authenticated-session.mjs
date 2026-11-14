@@ -644,6 +644,8 @@ try {
     DATABASE_URL: 'postgresql://platform_worker:local-worker-only@127.0.0.1:5432/platform',
     PROVIDER_EXECUTION_DATABASE_URL: 'postgresql://platform_provider_worker:local-provider-worker-only@127.0.0.1:5432/platform',
     REDIS_URL: apiEnvironment.REDIS_URL,
+    INVIDIOUS_INSTANCE_URL: providerFixture.url,
+    LYRION_ALLOWED_HOSTS: '127.0.0.1',
     PROVIDER_EXECUTION_HANDOFF_URL: `${apiUrl}/internal/provider-executions/handoff`,
     PROVIDER_EXECUTION_HANDOFF_SECRET: handoffSecret,
   };
