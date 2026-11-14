@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
 const documentationPattern = /^(?:docs\/|[^/]+\.md$|README(?:\.|$)|CHANGELOG(?:\.|$))/i;
-const staticPresentationPattern = /^(?:apps\/(?:dashboard|overlay)\/(?:public\/.*\.(?:css|svg|png|jpe?g|webp|gif|ico|woff2?)|.*\.(?:css|scss)))$/i;
+const staticPresentationPattern = /^(?:apps\/(?:dashboard|overlay)\/(?:public\/.*\.(?:css|png|jpe?g|webp|gif|ico|woff2?)|.*\.(?:css|scss)))$/i;
 
 export function classifyChangedFiles(files) {
   if (!Array.isArray(files) || files.length === 0) {
