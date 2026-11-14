@@ -58,6 +58,6 @@ export class AuthController {
     if (!user) throw new UnauthorizedException('Sign-in is required.');
     await this.auth.revokeSession(user.sessionId);
     reply.header('Set-Cookie', clearSessionCookies());
-    return reply.code(204);
+    return reply.code(204).send();
   }
 }
