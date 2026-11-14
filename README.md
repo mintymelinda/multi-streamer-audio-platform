@@ -6,6 +6,8 @@ The architecture and product decisions are maintained in [GitHub Issue #3](https
 
 ## Project status
 
-Architecture planning has been approved. Phase 0 (repository baseline and engineering foundation) is in progress. This repository is being initialized from an empty baseline; no production deployment is configured or authorized by this work.
+The repository now contains the core API, worker, dashboard, OBS overlay runtime, provider/playback foundations, workspace administration, privacy/recovery tooling, and staging deployment workflows. Implementation has progressed through the Phase 8 release-verification work.
 
-See [docs/development/README.md](docs/development/README.md) for the planned local development workflow as Phase 0 lands.
+**Public launch is not approved.** The final readiness review in [docs/operations/final-launch-readiness.md](docs/operations/final-launch-readiness.md) tracks the remaining browser journey, provider/legal approvals, staging-host rehearsal, capacity/SLO evidence, multi-instance recovery, and independent backup/restore acceptance. Passing CI or merging implementation work does not authorize production or NAS deployment.
+
+See [GitHub Issue #3](https://github.com/mintymelinda/multi-streamer-audio-platform/issues/3) for the agreed product scope and implementation sequence, and [docs/development/README.md](docs/development/README.md) for local development guidance.
