@@ -5,7 +5,13 @@
 
 {$DASHBOARD_DOMAIN} {
 	encode zstd gzip
-	reverse_proxy dashboard:3000
+	@api_callbacks path /auth/twitch/callback /auth/twitch/integration/callback /webhooks/twitch/eventsub
+	handle @api_callbacks {
+		reverse_proxy api:3000
+	}
+	handle {
+		reverse_proxy dashboard:3000
+	}
 }
 
 {$OVERLAY_DOMAIN} {
