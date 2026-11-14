@@ -5,6 +5,7 @@ import {
   parseComposePsOutput,
   parseHttpsOrigin,
   parseOptions,
+  runHealthCheck,
 } from '../ops/staging-health-check.mjs';
 
 const args = [
@@ -57,4 +58,46 @@ test('requires all services to be running and configured healthchecks to be heal
   assert.equal(checks[2].severity, 'critical');
   assert.match(checks[2].message, /unhealthy/);
   assert.match(checks[3].message, /missing/);
+});
+
+test('produces a passing report when container and public endpoint checks succeed', async () => {
+  const options = parseOptions(args, '/workspace');
+  const app = [
+    { Service: 'postgres', State: 'running', Health: 'healthy' },
+    { Service: 'redis', State: 'running', Health: 'healthy' },
+    { Service: 'object-storage', State: 'running' },
+    { Service: 'api', State: 'running', Health: 'healthy' },
+    { Service: 'worker', State: 'running' },
+    { Service: 'dashboard', State: 'running', Health: 'healthy' },
+    { Service: 'overlay', State: 'running', Health: 'healthy' },
+  ];
+  const report = await runHealthCheck(options, {
+    inspectCompose: (file) => file.endsWith('docker-compose.edge.yml')
+      ? [{ Service: 'edge', State: 'running' }]
+      : app,
+    checkHttp: async (name) => ({ name, status: 'passed', severity: 'info', message: 'ok' }),
+    checkSocketIo: async () => ({ name: 'socket.io-websocket', status: 'passed', severity: 'info', message: 'ok' }),
+  });
+  assert.equal(report.status, 'passed');
+  assert.equal(report.summary.failed, 0);
+  assert.equal(report.alerts.length, 0);
+});
+
+test('emits sanitized actionable alerts for failed dependencies and endpoints', async () => {
+  const options = parseOptions(args, '/workspace');
+  const report = await runHealthCheck(options, {
+    inspectCompose: () => [],
+    checkHttp: async (name) => ({
+      name,
+      status: name === 'api-ready' ? 'failed' : 'passed',
+      severity: name === 'api-ready' ? 'critical' : 'info',
+      message: name === 'api-ready' ? 'HTTP endpoint returned 503.' : 'ok',
+    }),
+    checkSocketIo: async () => ({ name: 'socket.io-websocket', status: 'passed', severity: 'info', message: 'ok' }),
+  });
+  assert.equal(report.status, 'failed');
+  assert.ok(report.alerts.some((alert) => alert.check === 'container:postgres'));
+  assert.ok(report.alerts.some((alert) => alert.check === 'api-ready'));
+  assert.ok(report.alerts.every((alert) => alert.action.includes('do not delete volumes')));
+  assert.equal(JSON.stringify(report).includes('secret'), false);
 });
