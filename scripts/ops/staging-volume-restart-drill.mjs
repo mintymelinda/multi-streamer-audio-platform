@@ -8,6 +8,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const composeFile = resolve(repositoryRoot, 'infra/compose/docker-compose.staging.yml');
+const edgeComposeFile = resolve(repositoryRoot, 'infra/compose/docker-compose.edge.yml');
 
 export function parseHttpsOrigin(value, label) {
   let url;
@@ -71,18 +72,18 @@ function docker(args, allowFailure = false, extraEnv = {}) {
   return result.stdout.trim();
 }
 
-function composePrefix(options) {
-  return ['compose', '--env-file', options.envFile, '-f', composeFile];
+function composePrefix(options, file = composeFile) {
+  return ['compose', '--env-file', options.envFile, '-f', file];
 }
 
-function serviceContainer(options, service) {
-  const id = docker([...composePrefix(options), 'ps', '-aq', service]);
+function serviceContainer(options, service, prefix = composePrefix(options)) {
+  const id = docker([...prefix, 'ps', '-aq', service]);
   if (!id) throw new Error('Compose service ' + service + ' is not running.');
   return id.split('\n')[0];
 }
 
-function volumeFor(options, service, destination) {
-  const id = serviceContainer(options, service);
+function volumeFor(options, service, destination, prefix = composePrefix(options)) {
+  const id = serviceContainer(options, service, prefix);
   const mounts = JSON.parse(docker(['inspect', '--format', '{{json .Mounts}}', id]));
   return findNamedVolumeMount(mounts, destination);
 }
@@ -149,6 +150,7 @@ function runMinioClient(options, command) {
 async function main(argv) {
   const options = parseOptions(argv);
   const prefix = composePrefix(options);
+  const edgePrefix = composePrefix(options, edgeComposeFile);
   const token = randomUUID();
   const redisKey = 'staging:volume-drill:' + token;
   const objectKey = 'staging-volume-drill/' + token + '.txt';
@@ -157,6 +159,8 @@ async function main(argv) {
     postgres: volumeFor(options, 'postgres', '/var/lib/postgresql'),
     redis: volumeFor(options, 'redis', '/data'),
     objectStorage: volumeFor(options, 'object-storage', '/data'),
+    caddyData: volumeFor(options, 'edge', '/data', edgePrefix),
+    caddyConfig: volumeFor(options, 'edge', '/config', edgePrefix),
   };
 
   const probeTableExists = docker([...prefix, 'exec', '-T', 'postgres', 'psql', '-U', 'platform_bootstrap', '-d', 'platform', '-Atqc', "SELECT to_regclass('public.staging_volume_probe') IS NOT NULL"]);
@@ -171,12 +175,15 @@ async function main(argv) {
   runMinioClient(options, minioCommand);
 
   docker([...prefix, 'up', '-d', '--force-recreate', 'postgres', 'redis', 'object-storage']);
+  docker([...edgePrefix, 'up', '-d', '--force-recreate', 'edge']);
   const readiness = await waitForServices(options);
 
   const after = {
     postgres: volumeFor(options, 'postgres', '/var/lib/postgresql'),
     redis: volumeFor(options, 'redis', '/data'),
     objectStorage: volumeFor(options, 'object-storage', '/data'),
+    caddyData: volumeFor(options, 'edge', '/data', edgePrefix),
+    caddyConfig: volumeFor(options, 'edge', '/config', edgePrefix),
   };
   for (const service of Object.keys(before)) {
     if (before[service] !== after[service]) {
@@ -204,7 +211,7 @@ async function main(argv) {
     volumes: after,
     initialReadiness,
     readiness,
-    verified: ['postgresql-data', 'redis-aof-data', 'object-storage-data'],
+    verified: ['postgresql-data', 'redis-aof-data', 'object-storage-data', 'caddy-certificate-and-config-volumes'],
     note: 'Containers were recreated without removing named volumes. No docker compose down --volumes command is used.',
   }, null, 2) + '\n');
 }
