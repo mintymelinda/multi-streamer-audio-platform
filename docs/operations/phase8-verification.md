@@ -220,3 +220,17 @@ The runner checks API liveness/readiness, dashboard and overlay HTTP responses, 
 
 Use the exact configured callback from the staging environment file. The probe intentionally requires HTTPS and an explicit non-production confirmation; it is not a production health checker. A passing result is evidence of public ingress only, not full OAuth provider approval, browser behavior, asset upload authorization, or persistence across container recreation.
 
+### Persistent-volume restart drill
+
+Run this only during a quiet staging maintenance window. It recreates the PostgreSQL, Redis, MinIO, and Caddy edge containers but deliberately retains their named volumes. The drill writes temporary probe data to all three stores, recreates the containers, verifies that the same named volumes are reattached and the probe data survives, then removes the probe records:
+
+```sh
+node scripts/ops/staging-volume-restart-drill.mjs \
+  --env-file infra/compose/.env.staging \
+  --api-url https://api.staging.example.net \
+  --assets-url https://assets.staging.example.net \
+  --i-confirm-non-production
+```
+
+The drill never runs `docker compose down --volumes` and never deletes the named volumes. Run both the application and edge Compose stacks before starting it; Caddy must already have issued its staging certificates. It briefly interrupts staging database, Redis, and object-storage connections while the three containers are recreated. If interrupted before cleanup, the PostgreSQL probe table is removed on the next successful run and Redis/object-storage probes have unique identifiers; inspect any leftover object before manually deleting it. A passing drill proves persistence across container recreation, not backup restoration or disaster recovery.
+
