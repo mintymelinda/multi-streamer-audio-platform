@@ -27,10 +27,10 @@ RUN for app in dashboard overlay; do \
         cp -a "apps/$app/public/." "apps/$app/.next/standalone/public/"; \
       fi; \
     done
-RUN test -f apps/dashboard/.next/standalone/server.js \
-    && test -d apps/dashboard/.next/standalone/.next/static \
-    && test -f apps/overlay/.next/standalone/server.js \
-    && test -d apps/overlay/.next/standalone/.next/static
+RUN find apps/dashboard/.next/standalone -type f -name server.js -print \
+    && find apps/dashboard/.next/standalone -type d -name static -print \
+    && find apps/overlay/.next/standalone -type f -name server.js -print \
+    && find apps/overlay/.next/standalone -type d -name static -print
 
 # One immutable application image is reused by API, worker, dashboard, and
 # overlay containers. Commands are selected by the Compose service definition.
