@@ -18,8 +18,16 @@ async function main() {
     providers: [OutboxDispatcherService, ProviderExecutionConsumerService],
   })(RequestPlaybackWorkerModule);
 
+  const logger = {
+    log: (...values) => process.stderr.write(`[provider-worker] ${values.join(' ')}\\n`),
+    error: (...values) => process.stderr.write(`[provider-worker:error] ${values.join(' ')}\\n`),
+    warn: (...values) => process.stderr.write(`[provider-worker:warn] ${values.join(' ')}\\n`),
+    debug: (...values) => process.stderr.write(`[provider-worker:debug] ${values.join(' ')}\\n`),
+    verbose: (...values) => process.stderr.write(`[provider-worker:verbose] ${values.join(' ')}\\n`),
+    fatal: (...values) => process.stderr.write(`[provider-worker:fatal] ${values.join(' ')}\\n`),
+  };
   const app = await NestFactory.createApplicationContext(RequestPlaybackWorkerModule, {
-    logger: false,
+    logger,
     abortOnError: false,
   });
   send({ type: 'ready', pid: process.pid });
