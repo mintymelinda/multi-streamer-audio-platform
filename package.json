@@ -12,7 +12,6 @@
     "dev:infra:down": "docker compose --env-file infra/compose/.env.example -f infra/compose/docker-compose.yml down",
     "lint": "biome lint .",
     "format": "biome format --write .",
-    "format:check": "biome format .",
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "pnpm --filter @platform/api build && pnpm --filter @platform/worker build && node --test packages/contracts/test/*.test.mjs apps/api/test/*.test.mjs apps/worker/test/*.test.mjs scripts/test/*.test.mjs",
     "build": "pnpm -r --if-present build",
