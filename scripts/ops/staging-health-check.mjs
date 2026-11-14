@@ -116,6 +116,7 @@ async function checkHttp(name, url) {
       redirect: 'manual',
       signal: AbortSignal.timeout(10_000),
     });
+    await response.body?.cancel();
     return {
       name,
       status: response.status === 200 ? 'passed' : 'failed',
