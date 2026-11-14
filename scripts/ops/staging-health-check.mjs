@@ -167,6 +167,31 @@ function inspectCompose(options, composeFile) {
   return parseComposePsOutput(result.stdout);
 }
 
+function recommendedAction(checkName) {
+  if (checkName.includes('postgres') || checkName === 'api-ready' || checkName === 'api-live' || checkName === 'container:api') {
+    return 'Follow the API/database unavailable runbook; compare API liveness/readiness with PostgreSQL container health.';
+  }
+  if (checkName.includes('redis')) {
+    return 'Follow the Redis/background-job backlog runbook; inspect Redis health, BullMQ age, and failed jobs before retrying work.';
+  }
+  if (checkName.includes('object-storage') || checkName.includes('assets')) {
+    return 'Follow the object-storage/asset delivery runbook; check MinIO readiness, bucket access, disk capacity, and the asset edge route.';
+  }
+  if (checkName === 'container:worker') {
+    return 'Inspect worker logs and BullMQ oldest-job/failed-job counts; the worker check proves process state only.';
+  }
+  if (checkName === 'container:edge') {
+    return 'Inspect the Caddy edge container, certificate state, DNS, and upstream reachability.';
+  }
+  if (checkName === 'socket.io-websocket') {
+    return 'Follow the Redis/realtime runbook; verify the API WebSocket upgrade route and Redis adapter connectivity.';
+  }
+  if (checkName === 'dashboard-http' || checkName === 'overlay-http' || checkName === 'container:dashboard' || checkName === 'container:overlay') {
+    return 'Check the affected Next.js container health, recent application logs, and the matching Caddy upstream route.';
+  }
+  return 'Inspect the named service and its sanitized logs.';
+}
+
 export async function runHealthCheck(options, dependencies = {}) {
   const inspect = dependencies.inspectCompose ?? ((file) => inspectCompose(options, file));
   const checks = [];
@@ -209,7 +234,7 @@ export async function runHealthCheck(options, dependencies = {}) {
       severity: check.severity,
       check: check.name,
       message: check.message,
-      action: 'Inspect the named service and its sanitized logs; do not delete volumes or flush Redis as a first response.',
+      action: recommendedAction(check.name) + ' Do not delete volumes or flush Redis as a first response.',
     })),
   };
 }
