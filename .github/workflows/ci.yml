@@ -88,7 +88,12 @@ jobs:
           container_id="$(docker ps --filter 'ancestor=postgres:18.6' --format '{{.ID}}' | head -n 1)"
           test -n "$container_id"
           docker cp infra/postgres/init/001-roles.sql "$container_id:/tmp/001-roles.sql"
-          docker exec "$container_id" psql -U platform_bootstrap -d platform -v ON_ERROR_STOP=1 -f /tmp/001-roles.sql
+          docker exec \
+            -e PLATFORM_MIGRATOR_PASSWORD=local-migration-only \
+            -e PLATFORM_RUNTIME_PASSWORD=local-runtime-only \
+            -e PLATFORM_WORKER_PASSWORD=local-worker-only \
+            -e PLATFORM_PROVIDER_WORKER_PASSWORD=local-provider-worker-only \
+            "$container_id" psql -U platform_bootstrap -d platform -v ON_ERROR_STOP=1 -f /tmp/001-roles.sql
           runtime_flags="$(docker exec "$container_id" psql -U platform_bootstrap -d platform -Atqc "SELECT rolsuper::text || ':' || rolbypassrls::text FROM pg_roles WHERE rolname='platform_runtime'")"
           migrator_flags="$(docker exec "$container_id" psql -U platform_bootstrap -d platform -Atqc "SELECT rolsuper::text || ':' || rolbypassrls::text FROM pg_roles WHERE rolname='platform_migrator'")"
           worker_flags="$(docker exec "$container_id" psql -U platform_bootstrap -d platform -Atqc "SELECT rolsuper::text || ':' || rolbypassrls::text FROM pg_roles WHERE rolname='platform_worker'")"
