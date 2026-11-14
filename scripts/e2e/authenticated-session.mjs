@@ -186,7 +186,7 @@ try {
     '@platform/dashboard',
     'exec',
     'node',
-    '.next/standalone/server.js',
+    '.next/standalone/apps/dashboard/server.js',
   ], dashboardEnvironment);
   await waitFor(dashboardUrl, dashboardProcess);
 
@@ -202,7 +202,7 @@ try {
     '@platform/overlay',
     'exec',
     'node',
-    '.next/standalone/server.js',
+    '.next/standalone/apps/overlay/server.js',
   ], overlayEnvironment);
   await waitFor(overlayUrl, overlayProcess);
 
