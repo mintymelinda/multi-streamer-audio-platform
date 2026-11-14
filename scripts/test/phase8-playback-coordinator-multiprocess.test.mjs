@@ -200,9 +200,11 @@ function startApiProcess(environment) {
     stdout = (stdout + chunk).slice(-6000);
     buffer += chunk;
     let newline;
-    while ((newline = buffer.indexOf('\n')) >= 0) {
+    newline = buffer.indexOf('\n');
+    while (newline >= 0) {
       const line = buffer.slice(0, newline);
       buffer = buffer.slice(newline + 1);
+      newline = buffer.indexOf('\n');
       if (!line.trim()) continue;
       try {
         deliver(JSON.parse(line));
@@ -587,6 +589,160 @@ test('two API processes coordinate one playback start and deliver Redis and outb
         'BEGIN;',
         "DELETE FROM workspaces WHERE id = '" + workspaceId + "';",
         "DELETE FROM platform_users WHERE id = '" + actorId + "';",
+        'COMMIT;',
+      ].join('\n');
+      runSql(containerId, 'platform_bootstrap', 'ci-bootstrap-only', cleanup);
+    }
+  }
+});
+
+test('API process restart preserves an uncertain provider command without replaying it', async (t) => {
+  if (process.env.CI !== 'true' && process.env.GITHUB_ACTIONS !== 'true') {
+    t.skip('Runs in CI against the PostgreSQL and Redis service containers.');
+    return;
+  }
+
+  const containerId = findPostgresContainer();
+  if (!containerId) {
+    t.skip('No PostgreSQL 18.6 CI service container is available.');
+    return;
+  }
+
+  assert.ok(process.env.REDIS_URL, 'CI must provide the Redis service URL.');
+  const actorId = randomUUID();
+  const workspaceId = randomUUID();
+  const providerId = randomUUID();
+  const requestId = randomUUID();
+  const playerId = `phase8-restart-player-${randomUUID()}`;
+  const outputId = `phase8-restart-output-${randomUUID()}`;
+  const idempotencyKey = `phase8-restart-play-${randomUUID()}`;
+  const sessionToken = `phase8-restart-session-${randomUUID()}`;
+  const twitchId = `${Date.now()}${Math.floor(Math.random() * 1_000_000)}`;
+  const fixtures = createProviderFixtures();
+  const processes = [];
+  let seeded = false;
+
+  try {
+    const endpoints = await fixtures.start();
+    const baseUrl = endpoints.lyrionBaseUrl.replaceAll("'", "''");
+    const seedSql = [
+      'BEGIN;',
+      `INSERT INTO platform_users (id, twitch_user_id) VALUES ('${actorId}', '${twitchId}');`,
+      `INSERT INTO workspaces (\n         id, name, owner_user_id, broadcaster_twitch_user_id\n       ) VALUES (\n         '${workspaceId}', 'Phase 8 restart recovery', '${actorId}', '${twitchId}'\n       );`,
+      `INSERT INTO workspace_memberships (workspace_id, user_id, role) VALUES ('${workspaceId}', '${actorId}', 'owner');`,
+      `INSERT INTO provider_instances (\n         id, workspace_id, provider_id, instance_key, contract_version,\n         capabilities, connection_health, enabled, configuration\n       ) VALUES (\n         '${providerId}', '${workspaceId}', 'lyrion', 'phase8-restart-${providerId}', 1,\n         '{"playback":true}'::jsonb, 'healthy', true, jsonb_build_object('baseUrl', '${baseUrl}')\n       );`,
+      `INSERT INTO provider_output_assignments (\n         workspace_id, provider_instance_id, output_id, player_id, assigned_by, active\n       ) VALUES (\n         '${workspaceId}', '${providerId}', '${outputId}', '${playerId}', '${actorId}', true\n       );`,
+      'COMMIT;',
+    ].join('\n');
+    runSql(containerId, 'platform_bootstrap', 'ci-bootstrap-only', seedSql);
+    seeded = true;
+
+    const environment = {
+      ...process.env,
+      NODE_ENV: 'test',
+      DATABASE_URL: 'postgresql://platform_runtime:local-runtime-only@127.0.0.1:5432/platform',
+      INVIDIOUS_INSTANCE_URL: endpoints.invidiousUrl,
+      LYRION_ALLOWED_HOSTS: '127.0.0.1',
+      REDIS_URL: process.env.REDIS_URL,
+      PHASE8_REALTIME_USER_ID: actorId,
+      PHASE8_REALTIME_WORKSPACE_ID: workspaceId,
+      PHASE8_REALTIME_SESSION_TOKEN: sessionToken,
+    };
+    const firstProcess = startApiProcess(environment);
+    processes.push(firstProcess);
+    const firstReady = await firstProcess.waitFor(
+      (message) => message.type === 'ready' || message.type === 'boot-error',
+    );
+    assert.equal(firstReady.type, 'ready', firstReady.message);
+
+    const input = {
+      workspaceId,
+      providerInstanceId: providerId,
+      playerId,
+      outputId,
+      requestId,
+      command: 'play',
+      idempotencyKey,
+      actorId,
+      payload: {
+        sourceProviderId: 'youtube',
+        mediaId: 'dQw4w9WgXcQ',
+      },
+    };
+    firstProcess.send({ type: 'execute', commandId: 'interrupted', input });
+    await withTimeout(fixtures.playSeen, 'the provider command before process termination');
+
+    const firstExit = new Promise((resolve) => {
+      firstProcess.child.once('exit', (code, signal) => resolve({ code, signal }));
+    });
+    firstProcess.child.kill('SIGKILL');
+    const { code: exitCode, signal: exitSignal } = await withTimeout(
+      firstExit,
+      'the interrupted API process to exit',
+    );
+    assert.equal(exitCode, null);
+    assert.equal(exitSignal, 'SIGKILL');
+
+    // The provider has received the play command, but the coordinator died before
+    // it could persist the response. Release the fixture to model an applied command.
+    fixtures.releasePlay();
+
+    const restartedProcess = startApiProcess(environment);
+    processes.push(restartedProcess);
+    const restartedReady = await restartedProcess.waitFor(
+      (message) => message.type === 'ready' || message.type === 'boot-error',
+    );
+    assert.equal(restartedReady.type, 'ready', restartedReady.message);
+
+    restartedProcess.send({ type: 'execute', commandId: 'reconcile-after-restart', input });
+    await withTimeout(fixtures.statusSeen, 'provider state reconciliation after restart');
+    fixtures.releaseStatus();
+    const reconciled = await restartedProcess.waitFor(
+      (message) =>
+        message.type === 'result' && message.commandId === 'reconcile-after-restart',
+    );
+    assert.equal(reconciled.result.status, 'uncertain');
+    assert.equal(reconciled.result.result?.outcome, 'unknown');
+
+    const persisted = runSql(
+      containerId,
+      'platform_bootstrap',
+      'ci-bootstrap-only',
+      `SELECT status || ':' || COALESCE(result->>'outcome', '')\n         FROM playback_operations\n        WHERE workspace_id = '${workspaceId}' AND idempotency_key = '${idempotencyKey}'`,
+    );
+    assert.equal(persisted, 'uncertain:unknown');
+
+    const differentCommand = {
+      ...input,
+      idempotencyKey: `phase8-restart-follow-up-${randomUUID()}`,
+      requestId: randomUUID(),
+    };
+    restartedProcess.send({
+      type: 'execute',
+      commandId: 'blocked-by-uncertain-operation',
+      input: differentCommand,
+    });
+    const blocked = await restartedProcess.waitFor(
+      (message) =>
+        message.type === 'command-error' &&
+        message.commandId === 'blocked-by-uncertain-operation',
+    );
+    assert.equal(blocked.code, 'PLAYBACK_OUTCOME_UNCERTAIN');
+    assert.equal(
+      fixtures.commands.filter((command) => command[0] === 'play').length,
+      1,
+      'An uncertain command must never be replayed after coordinator restart.',
+    );
+  } finally {
+    fixtures.releasePlay();
+    fixtures.releaseStatus();
+    await Promise.all(processes.map((process) => process.close().catch(() => undefined)));
+    await fixtures.close();
+    if (seeded) {
+      const cleanup = [
+        'BEGIN;',
+        `DELETE FROM workspaces WHERE id = '${workspaceId}';`,
+        `DELETE FROM platform_users WHERE id = '${actorId}';`,
         'COMMIT;',
       ].join('\n');
       runSql(containerId, 'platform_bootstrap', 'ci-bootstrap-only', cleanup);
