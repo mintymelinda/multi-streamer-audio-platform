@@ -77,7 +77,7 @@ try {
     waitForServer(dashboardUrl, dashboardProcess),
     waitForServer(overlayUrl, overlayProcess),
   ]);
-  browser = await chromium.launch({ headless: true });
+  browser = await chromium.launch({ channel: 'chrome', headless: true });
 
   const dashboard = await browser.newPage();
   await dashboard.route('**/api/auth/me', (route) => route.fulfill({
