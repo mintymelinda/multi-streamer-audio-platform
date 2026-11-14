@@ -202,3 +202,21 @@ Before starting staging:
 
 The app network is shared with Caddy so the proxy can reach only the intended HTTP upstreams. PostgreSQL and Redis use a separate internal-only network. The Compose definitions and Caddyfile are validated in CI; the runtime checks above still require a disposable staging host with real DNS and provider callback registration. This stack is a staging verification target, not a production/NAS deployment recipe.
 
+### Staging ingress smoke runner
+
+After the Compose services and Caddy edge are running with real staging DNS and TLS, execute the ingress acceptance probe from a trusted operator workstation:
+
+```sh
+node scripts/ops/staging-deployment-smoke.mjs \
+  --api-url https://api.staging.example.net \
+  --dashboard-url https://dashboard.staging.example.net \
+  --overlay-url https://overlay.staging.example.net \
+  --assets-url https://assets.staging.example.net \
+  --twitch-integration-callback-url https://api.staging.example.net/auth/twitch/integration/callback \
+  --i-confirm-non-production
+```
+
+The runner checks API liveness/readiness, dashboard and overlay HTTP responses, MinIO readiness through the asset hostname, a real Socket.IO Engine.IO WebSocket handshake through Caddy, and the Twitch sign-in redirect URI returned by the API. It also checks that the supplied broadcaster-authorization callback exactly matches the API hostname. The Twitch sign-in probe creates a short-lived OAuth state record but does not authorize an account or exchange a code. The runner does not print the authorization URL or its state token.
+
+Use the exact configured callback from the staging environment file. The probe intentionally requires HTTPS and an explicit non-production confirmation; it is not a production health checker. A passing result is evidence of public ingress only, not full OAuth provider approval, browser behavior, asset upload authorization, or persistence across container recreation.
+
