@@ -131,8 +131,10 @@ jobs:
           STAGING_SSH_KNOWN_HOSTS: ${{ secrets.STAGING_SSH_KNOWN_HOSTS }}
         run: |
           set -euo pipefail
-          : "$STAGING_SSH_PRIVATE_KEY:?Configure STAGING_SSH_PRIVATE_KEY in the selected GitHub environment"
-          : "$STAGING_SSH_KNOWN_HOSTS:?Configure STAGING_SSH_KNOWN_HOSTS in the selected GitHub environment"
+          if [[ -z "$STAGING_SSH_PRIVATE_KEY" || -z "$STAGING_SSH_KNOWN_HOSTS" ]]; then
+            echo "::error::Configure STAGING_SSH_PRIVATE_KEY and STAGING_SSH_KNOWN_HOSTS in the selected GitHub environment."
+            exit 1
+          fi
           install -m 700 -d "$HOME/.ssh"
           printf '%s\n' "$STAGING_SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
           printf '%s\n' "$STAGING_SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
@@ -148,11 +150,10 @@ jobs:
           RELEASE_RISK: ${{ needs.classify.outputs.risk }}
         run: |
           set -euo pipefail
-          : "$STAGING_SSH_HOST:?Configure STAGING_SSH_HOST"
-          : "$STAGING_SSH_USER:?Configure STAGING_SSH_USER"
-          : "$STAGING_DEPLOY_PATH:?Configure STAGING_DEPLOY_PATH"
-          : "$STAGING_GHCR_USERNAME:?Configure STAGING_GHCR_USERNAME"
-          : "$STAGING_GHCR_READ_TOKEN:?Configure STAGING_GHCR_READ_TOKEN"
+          if [[ -z "$STAGING_SSH_HOST" || -z "$STAGING_SSH_USER" || -z "$STAGING_DEPLOY_PATH" || -z "$STAGING_GHCR_USERNAME" || -z "$STAGING_GHCR_READ_TOKEN" ]]; then
+            echo "::error::Configure all staging SSH, deployment-path, and GHCR read credentials in the selected GitHub environment."
+            exit 1
+          fi
           if [[ ! "$STAGING_DEPLOY_PATH" =~ ^/[A-Za-z0-9._/-]+$ || "$STAGING_DEPLOY_PATH" == *".."* ]]; then
             echo "::error::STAGING_DEPLOY_PATH must be a safe absolute path without parent traversal."
             exit 1
@@ -173,9 +174,6 @@ jobs:
           risk="$3"
           compose_dir="$deploy_path/infra/compose"
           test -f "$compose_dir/.env.staging" || { echo "Missing pre-provisioned .env.staging" >&2; exit 1; }
-          app_compose=(docker compose --env-file "$compose_dir/.env.staging" -f "$compose_dir/docker-compose.staging.yml" -f "$compose_dir/docker-compose.staging.remote.yml")
-          edge_compose=(docker compose --env-file "$compose_dir/.env.staging" -f "$compose_dir/docker-compose.edge.yml")
-
           previous_container="$(docker compose --env-file "$compose_dir/.env.staging" -f "$compose_dir/docker-compose.staging.yml" -f "$compose_dir/docker-compose.staging.remote.yml" ps -q api || true)"
           previous_image=""
           if [[ -n "$previous_container" ]]; then
@@ -221,11 +219,10 @@ jobs:
           STAGING_TWITCH_INTEGRATION_CALLBACK_URL: ${{ secrets.STAGING_TWITCH_INTEGRATION_CALLBACK_URL }}
         run: |
           set -euo pipefail
-          : "$STAGING_API_URL:?Configure STAGING_API_URL"
-          : "$STAGING_DASHBOARD_URL:?Configure STAGING_DASHBOARD_URL"
-          : "$STAGING_OVERLAY_URL:?Configure STAGING_OVERLAY_URL"
-          : "$STAGING_ASSETS_URL:?Configure STAGING_ASSETS_URL"
-          : "$STAGING_TWITCH_INTEGRATION_CALLBACK_URL:?Configure STAGING_TWITCH_INTEGRATION_CALLBACK_URL"
+          if [[ -z "$STAGING_API_URL" || -z "$STAGING_DASHBOARD_URL" || -z "$STAGING_OVERLAY_URL" || -z "$STAGING_ASSETS_URL" || -z "$STAGING_TWITCH_INTEGRATION_CALLBACK_URL" ]]; then
+            echo "::error::Configure all staging ingress URLs and the Twitch integration callback in the selected GitHub environment."
+            exit 1
+          fi
           node scripts/ops/staging-deployment-smoke.mjs --api-url "$STAGING_API_URL" --dashboard-url "$STAGING_DASHBOARD_URL" --overlay-url "$STAGING_OVERLAY_URL" --assets-url "$STAGING_ASSETS_URL" --twitch-integration-callback-url "$STAGING_TWITCH_INTEGRATION_CALLBACK_URL" --i-confirm-non-production
 
       - name: Roll back a failed routine deployment
