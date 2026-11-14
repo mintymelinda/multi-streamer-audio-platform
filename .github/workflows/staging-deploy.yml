@@ -1,0 +1,327 @@
+name: Controlled staging deployment
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      approve_high_risk:
+        description: "Explicitly approve a high-risk staging deployment of the current main commit"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: staging-deployment
+  cancel-in-progress: false
+
+jobs:
+  classify:
+    name: Classify release risk
+    if: >-
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_repository.full_name == github.repository) ||
+      (github.event_name == 'workflow_dispatch' &&
+       github.ref == 'refs/heads/main' &&
+       github.actor == 'mintymelinda' &&
+       inputs.approve_high_risk)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      risk: ${{ steps.policy.outputs.risk }}
+      head_sha: ${{ steps.policy.outputs.head_sha }}
+    steps:
+      - name: Check out the exact CI-tested commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify CI evidence and classify changed paths
+        id: policy
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          CURRENT_RUN_CREATED_AT: ${{ github.event.workflow_run.created_at }}
+        run: |
+          set -euo pipefail
+          latest_main_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+          if [[ "$latest_main_sha" != "$HEAD_SHA" ]]; then
+            risk="stale"
+            reason="A newer commit is already on main; refusing to deploy an outdated CI run."
+          elif [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            successful_ci="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$HEAD_SHA&per_page=100" --jq '[.workflow_runs[] | select(.event == "push" and .head_branch == "main" and .conclusion == "success")] | length > 0')"
+            if [[ "$successful_ci" != "true" ]]; then
+              echo "::error::The selected main commit does not have a successful CI push run."
+              exit 1
+            fi
+            risk="approval-required"
+            reason="Manual owner-triggered deployment; manual deployments are never auto-classified as routine."
+          else
+            runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?branch=main&event=push&status=completed&per_page=100")"
+            base_sha="$(jq -r --arg head "$HEAD_SHA" --arg created "$CURRENT_RUN_CREATED_AT" '
+              [.workflow_runs[]
+                | select(.head_sha != $head and .created_at < $created and .conclusion == "success")]
+              | sort_by(.created_at)
+              | last
+              | .head_sha // empty
+            ' <<< "$runs")"
+
+            changed_files=""
+            if [[ -n "$base_sha" ]] && git merge-base --is-ancestor "$base_sha" "$HEAD_SHA"; then
+              changed_files="$(git diff --name-only "$base_sha...$HEAD_SHA")"
+            fi
+            result="$(printf '%s\n' "$changed_files" | node scripts/release/classify-change.mjs)"
+            risk="$(jq -r '.risk' <<< "$result")"
+            reason="$(jq -r '.reason' <<< "$result")"
+          fi
+
+          echo "risk=$risk" >> "$GITHUB_OUTPUT"
+          echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+          echo "::notice title=Release risk::$risk — $reason"
+
+  deploy:
+    name: Deploy verified release to staging
+    needs: classify
+    if: >-
+      vars.STAGING_DEPLOY_ENABLED == 'true' &&
+      (
+        (github.event_name == 'workflow_run' && needs.classify.outputs.risk == 'routine') ||
+        (github.event_name == 'workflow_dispatch' &&
+         needs.classify.outputs.risk == 'approval-required' &&
+         github.actor == 'mintymelinda' &&
+         inputs.approve_high_risk)
+      )
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+      deployments: write
+    environment:
+      name: ${{ needs.classify.outputs.risk == 'routine' && 'staging-auto' || 'staging-approval' }}
+    steps:
+      - name: Check out the exact CI-tested commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.classify.outputs.head_sha }}
+          persist-credentials: false
+
+      - name: Build and publish immutable application image
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ needs.classify.outputs.head_sha }}
+        run: |
+          set -euo pipefail
+          repository_lower="$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
+          image="ghcr.io/$repository_lower/platform:$RELEASE_SHA"
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          docker build --pull --file infra/compose/Deployment.Dockerfile --target runtime --tag "$image" .
+          docker push "$image"
+          echo "IMAGE=$image" >> "$GITHUB_ENV"
+
+      - name: Configure pinned SSH host verification
+        id: ssh_setup
+        env:
+          STAGING_SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+          STAGING_SSH_KNOWN_HOSTS: ${{ secrets.STAGING_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$STAGING_SSH_PRIVATE_KEY" || -z "$STAGING_SSH_KNOWN_HOSTS" ]]; then
+            echo "::error::Configure STAGING_SSH_PRIVATE_KEY and STAGING_SSH_KNOWN_HOSTS in the selected GitHub environment."
+            exit 1
+          fi
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$STAGING_SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$STAGING_SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
+
+      - name: Deploy image and verify remote containers
+        id: deploy
+        env:
+          STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+          STAGING_SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+          STAGING_DEPLOY_PATH: ${{ secrets.STAGING_DEPLOY_PATH }}
+          STAGING_GHCR_USERNAME: ${{ secrets.STAGING_GHCR_USERNAME }}
+          STAGING_GHCR_READ_TOKEN: ${{ secrets.STAGING_GHCR_READ_TOKEN }}
+          RELEASE_RISK: ${{ needs.classify.outputs.risk }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$STAGING_SSH_HOST" || -z "$STAGING_SSH_USER" || -z "$STAGING_DEPLOY_PATH" || -z "$STAGING_GHCR_USERNAME" || -z "$STAGING_GHCR_READ_TOKEN" ]]; then
+            echo "::error::Configure all staging SSH, deployment-path, and GHCR read credentials in the selected GitHub environment."
+            exit 1
+          fi
+          if [[ ! "$STAGING_DEPLOY_PATH" =~ ^/[A-Za-z0-9._/-]+$ || "$STAGING_DEPLOY_PATH" == *".."* ]]; then
+            echo "::error::STAGING_DEPLOY_PATH must be a safe absolute path without parent traversal."
+            exit 1
+          fi
+
+          target="$STAGING_SSH_USER@$STAGING_SSH_HOST"
+          ssh -i "$HOME/.ssh/id_ed25519" -o BatchMode=yes -o StrictHostKeyChecking=yes "$target" "mkdir -p '$STAGING_DEPLOY_PATH/infra/compose' '$STAGING_DEPLOY_PATH/infra/postgres/init' '$STAGING_DEPLOY_PATH/infra/postgres/migrations'"
+
+          scp -i "$HOME/.ssh/id_ed25519" -o BatchMode=yes -o StrictHostKeyChecking=yes infra/compose/docker-compose.staging.yml infra/compose/docker-compose.staging.remote.yml infra/compose/docker-compose.edge.yml infra/compose/Caddyfile "$target:$STAGING_DEPLOY_PATH/infra/compose/"
+          scp -r -i "$HOME/.ssh/id_ed25519" -o BatchMode=yes -o StrictHostKeyChecking=yes infra/postgres/init infra/postgres/migrations "$target:$STAGING_DEPLOY_PATH/infra/postgres/"
+
+          printf '%s' "$STAGING_GHCR_READ_TOKEN" | ssh -i "$HOME/.ssh/id_ed25519" -o BatchMode=yes -o StrictHostKeyChecking=yes "$target" "docker login ghcr.io --username '$STAGING_GHCR_USERNAME' --password-stdin"
+
+          ssh -i "$HOME/.ssh/id_ed25519" -o BatchMode=yes -o StrictHostKeyChecking=yes "$target" bash -s -- "$STAGING_DEPLOY_PATH" "$IMAGE" "$RELEASE_RISK" <<'REMOTE'
+          set -euo pipefail
+          deploy_path="$1"
+          image="$2"
+          risk="$3"
+          compose_dir="$deploy_path/infra/compose"
+          test -f "$compose_dir/.env.staging" || { echo "Missing pre-provisioned .env.staging" >&2; exit 1; }
+          previous_container="$(docker compose --env-file "$compose_dir/.env.staging" -f "$compose_dir/docker-compose.staging.yml" -f "$compose_dir/docker-compose.staging.remote.yml" ps -q api || true)"
+          previous_image=""
+          if [[ -n "$previous_container" ]]; then
+            previous_image="$(docker inspect --format '{{.Config.Image}}' "$previous_container" 2>/dev/null || true)"
+          fi
+          printf '%s\n' "$previous_image" > "$deploy_path/.previous-staging-image"
+
+          rollback_routine_image() {
+            if [[ "$risk" == "routine" && -n "$previous_image" ]]; then
+              PLATFORM_IMAGE="$previous_image" docker compose --env-file "$compose_dir/.env.staging" -f "$compose_dir/docker-compose.staging.yml" -f "$compose_dir/docker-compose.staging.remote.yml" up -d --no-build --no-deps api worker dashboard overlay
+              echo "Routine deployment rolled back to $previous_image." >&2
+            fi
+          }
+
+          PLATFORM_IMAGE="$image" docker compose --env-file "$compose_dir/.env.staging" -f "$compose_dir/docker-compose.staging.yml" -f "$compose_dir/docker-compose.staging.remote.yml" pull
+          docker compose --env-file "$compose_dir/.env.staging" -f "$compose_dir/docker-compose.staging.yml" -f "$compose_dir/docker-compose.staging.remote.yml" up -d postgres redis object-storage object-storage-init
+
+          dependencies_healthy=false
+          for attempt in $(seq 1 30); do
+            dependencies_healthy=true
+            for service in postgres redis; do
+              container="$(docker compose --env-file "$compose_dir/.env.staging" -f "$compose_dir/docker-compose.staging.yml" -f "$compose_dir/docker-compose.staging.remote.yml" ps -q "$service" || true)"
+              if [[ -z "$container" ]] || [[ "$(docker inspect --format '{{.State.Status}}:{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$container")" != "running:healthy" ]]; then
+                dependencies_healthy=false
+                break
+              fi
+            done
+            init_container="$(docker compose --env-file "$compose_dir/.env.staging" -f "$compose_dir/docker-compose.staging.yml" -f "$compose_dir/docker-compose.staging.remote.yml" ps -a -q object-storage-init || true)"
+            if [[ -z "$init_container" ]] || [[ "$(docker inspect --format '{{.State.Status}}:{{.State.ExitCode}}' "$init_container")" != "exited:0" ]]; then
+              dependencies_healthy=false
+            fi
+            if [[ "$dependencies_healthy" == true ]]; then break; fi
+            sleep 5
+          done
+          if [[ "$dependencies_healthy" != true ]]; then
+            echo "PostgreSQL, Redis, or object-storage initialization did not complete successfully." >&2
+            exit 1
+          fi
+
+          if [[ "$risk" == "approval-required" ]]; then
+            docker compose --env-file "$compose_dir/.env.staging" -f "$compose_dir/docker-compose.staging.yml" -f "$compose_dir/docker-compose.staging.remote.yml" up -d --force-recreate migrate
+            migration_complete=false
+            for attempt in $(seq 1 60); do
+              migration_container="$(docker compose --env-file "$compose_dir/.env.staging" -f "$compose_dir/docker-compose.staging.yml" -f "$compose_dir/docker-compose.staging.remote.yml" ps -a -q migrate || true)"
+              if [[ -n "$migration_container" ]]; then
+                migration_state="$(docker inspect --format '{{.State.Status}}:{{.State.ExitCode}}' "$migration_container")"
+                if [[ "$migration_state" == "exited:0" ]]; then migration_complete=true; break; fi
+                if [[ "$migration_state" == exited:* ]]; then
+                  echo "Database migration failed with state $migration_state." >&2
+                  exit 1
+                fi
+              fi
+              sleep 2
+            done
+            if [[ "$migration_complete" != true ]]; then
+              echo "Database migration did not complete within two minutes." >&2
+              exit 1
+            fi
+          fi
+
+          PLATFORM_IMAGE="$image" docker compose --env-file "$compose_dir/.env.staging" -f "$compose_dir/docker-compose.staging.yml" -f "$compose_dir/docker-compose.staging.remote.yml" up -d --no-build --no-deps api
+          api_healthy=false
+          for attempt in $(seq 1 30); do
+            api_container="$(docker compose --env-file "$compose_dir/.env.staging" -f "$compose_dir/docker-compose.staging.yml" -f "$compose_dir/docker-compose.staging.remote.yml" ps -q api || true)"
+            if [[ -n "$api_container" ]] && [[ "$(docker inspect --format '{{.State.Status}}:{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$api_container")" == "running:healthy" ]]; then
+              api_healthy=true
+              break
+            fi
+            sleep 5
+          done
+          if [[ "$api_healthy" != true ]]; then
+            rollback_routine_image
+            echo "API did not become healthy; dependent services were not restarted." >&2
+            exit 1
+          fi
+          PLATFORM_IMAGE="$image" docker compose --env-file "$compose_dir/.env.staging" -f "$compose_dir/docker-compose.staging.yml" -f "$compose_dir/docker-compose.staging.remote.yml" up -d --no-build --no-deps worker dashboard overlay
+          docker compose --env-file "$compose_dir/.env.staging" -f "$compose_dir/docker-compose.edge.yml" up -d
+          docker logout ghcr.io >/dev/null 2>&1 || true
+
+          healthy=false
+          for attempt in $(seq 1 30); do
+            healthy=true
+            for service in postgres redis api worker dashboard overlay; do
+              container="$(docker compose --env-file "$compose_dir/.env.staging" -f "$compose_dir/docker-compose.staging.yml" -f "$compose_dir/docker-compose.staging.remote.yml" ps -q "$service" || true)"
+              if [[ -z "$container" ]]; then healthy=false; break; fi
+              state="$(docker inspect --format '{{.State.Status}}' "$container")"
+              health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$container")"
+              if [[ "$state" != "running" || "$health" != "healthy" ]]; then healthy=false; break; fi
+            done
+            edge_container="$(docker compose --env-file "$compose_dir/.env.staging" -f "$compose_dir/docker-compose.edge.yml" ps -q edge || true)"
+            if [[ -z "$edge_container" ]] || [[ "$(docker inspect --format '{{.State.Status}}' "$edge_container")" != "running" ]]; then healthy=false; fi
+            if [[ "$healthy" == true ]]; then break; fi
+            sleep 5
+          done
+
+          if [[ "$healthy" != true ]]; then
+            rollback_routine_image
+            echo "Staging containers did not become healthy. Previous image: $previous_image; release risk: $risk" >&2
+            exit 1
+          fi
+          REMOTE
+
+      - name: Verify public staging ingress and OAuth callback configuration
+        id: ingress
+        env:
+          STAGING_API_URL: ${{ secrets.STAGING_API_URL }}
+          STAGING_DASHBOARD_URL: ${{ secrets.STAGING_DASHBOARD_URL }}
+          STAGING_OVERLAY_URL: ${{ secrets.STAGING_OVERLAY_URL }}
+          STAGING_ASSETS_URL: ${{ secrets.STAGING_ASSETS_URL }}
+          STAGING_TWITCH_INTEGRATION_CALLBACK_URL: ${{ secrets.STAGING_TWITCH_INTEGRATION_CALLBACK_URL }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$STAGING_API_URL" || -z "$STAGING_DASHBOARD_URL" || -z "$STAGING_OVERLAY_URL" || -z "$STAGING_ASSETS_URL" || -z "$STAGING_TWITCH_INTEGRATION_CALLBACK_URL" ]]; then
+            echo "::error::Configure all staging ingress URLs and the Twitch integration callback in the selected GitHub environment."
+            exit 1
+          fi
+          node scripts/ops/staging-deployment-smoke.mjs --api-url "$STAGING_API_URL" --dashboard-url "$STAGING_DASHBOARD_URL" --overlay-url "$STAGING_OVERLAY_URL" --assets-url "$STAGING_ASSETS_URL" --twitch-integration-callback-url "$STAGING_TWITCH_INTEGRATION_CALLBACK_URL" --i-confirm-non-production
+
+      - name: Roll back a failed routine deployment
+        if: failure() && needs.classify.outputs.risk == 'routine' && steps.deploy.outcome == 'success' && steps.ingress.outcome == 'failure'
+        env:
+          STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+          STAGING_SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+          STAGING_DEPLOY_PATH: ${{ secrets.STAGING_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          target="$STAGING_SSH_USER@$STAGING_SSH_HOST"
+          ssh -i "$HOME/.ssh/id_ed25519" -o BatchMode=yes -o StrictHostKeyChecking=yes "$target" bash -s -- "$STAGING_DEPLOY_PATH" <<'REMOTE'
+          set -euo pipefail
+          deploy_path="$1"
+          previous_image="$(cat "$deploy_path/.previous-staging-image" 2>/dev/null || true)"
+          if [[ -z "$previous_image" ]]; then
+            echo "No previous image is available; automatic rollback is not possible." >&2
+            exit 1
+          fi
+          compose_dir="$deploy_path/infra/compose"
+          PLATFORM_IMAGE="$previous_image" docker compose --env-file "$compose_dir/.env.staging" -f "$compose_dir/docker-compose.staging.yml" -f "$compose_dir/docker-compose.staging.remote.yml" up -d --no-build --no-deps api worker dashboard overlay
+          REMOTE
+
+      - name: Preserve failed high-risk deployment for operator recovery
+        if: failure() && needs.classify.outputs.risk == 'approval-required'
+        run: |
+          echo "::error::High-risk staging deployment failed. No automatic image rollback was attempted because schema/data compatibility may have changed. Follow the documented recovery procedure."
