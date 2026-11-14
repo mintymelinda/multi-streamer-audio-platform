@@ -255,6 +255,70 @@ try {
   await overlayPage.getByText('Now Playing', { exact: true }).first().waitFor();
   assert.equal(new URL(overlayPage.url()).hash, '', 'The overlay must scrub the bearer token from browser history.');
 
+  const connection = await context.newCDPSession(overlayPage);
+  await connection.send('Network.enable');
+  await connection.send('Network.emulateNetworkConditions', {
+    offline: true,
+    latency: 0,
+    downloadThroughput: 0,
+    uploadThroughput: 0,
+  });
+  await delay(500);
+
+  const cookieHeader = `platform_session=${sessionToken}; platform_csrf=${csrfToken}`;
+  const recoveredState = {
+    version: 1,
+    canvas: { mode: 'responsive', width: 1920, height: 1080, snap: true, snapSize: 2 },
+    transition: { type: 'none', durationMs: 0 },
+    reducedMotion: true,
+    elements: [{
+      id: 'e2e-reconnect-now-playing',
+      type: 'now-playing',
+      name: 'Now Playing',
+      text: 'Recovered After Reconnect',
+      x: 5,
+      y: 5,
+      width: 58,
+      height: 18,
+      locked: false,
+      animation: { enter: 'none', exit: 'none', durationMs: 0, delayMs: 0, trigger: 'always' },
+    }],
+  };
+  const draftResponse = await fetch(
+    `${apiUrl}/workspaces/${workspace.id}/scenes/${starter.body.scene.id}/draft`,
+    {
+      method: 'PUT',
+      headers: {
+        cookie: cookieHeader,
+        'content-type': 'application/json',
+        'x-csrf-token': csrfToken,
+      },
+      body: JSON.stringify({ state: recoveredState, expectedRevision: 0 }),
+    },
+  );
+  assert.equal(draftResponse.status, 200, 'The API must accept a scene draft while the overlay browser is offline.');
+  const publishResponse = await fetch(
+    `${apiUrl}/workspaces/${workspace.id}/scenes/${starter.body.scene.id}/publish`,
+    {
+      method: 'POST',
+      headers: {
+        cookie: cookieHeader,
+        'content-type': 'application/json',
+        'x-csrf-token': csrfToken,
+      },
+      body: JSON.stringify({ expectedRevision: 1 }),
+    },
+  );
+  assert.equal(publishResponse.status, 201, 'The API must publish the new scene while the overlay browser is offline.');
+  await connection.send('Network.emulateNetworkConditions', {
+    offline: false,
+    latency: 0,
+    downloadThroughput: -1,
+    uploadThroughput: -1,
+  });
+  await overlayPage.getByText('Recovered After Reconnect', { exact: true }).waitFor({ timeout: 20_000 });
+  await connection.detach();
+
   const revoke = await page.evaluate(async ({ workspaceId, sceneId, token }) => {
     const response = await fetch(`/api/workspaces/${workspaceId}/scenes/${sceneId}/access-token`, {
       method: 'DELETE',
