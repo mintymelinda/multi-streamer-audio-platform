@@ -9,7 +9,7 @@
 CREATE ROLE platform_migrator LOGIN PASSWORD :'platform_migrator_password';
 CREATE ROLE platform_runtime LOGIN PASSWORD :'platform_runtime_password';
 CREATE ROLE platform_worker LOGIN PASSWORD :'platform_worker_password';
-CREATE ROLE platform_provider_worker NOINHERIT NOBYPASSRLS PASSWORD :'platform_provider_worker_password';
+CREATE ROLE platform_provider_worker LOGIN NOINHERIT NOBYPASSRLS PASSWORD :'platform_provider_worker_password';
 CREATE ROLE platform_provider_execution_owner NOLOGIN BYPASSRLS;
 GRANT platform_provider_execution_owner TO platform_migrator;
 
