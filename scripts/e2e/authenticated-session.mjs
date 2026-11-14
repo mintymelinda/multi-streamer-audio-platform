@@ -3,6 +3,7 @@ import { cpSync, existsSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createHash, randomInt, randomUUID } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
+import { createServer } from 'node:http';
 import { setTimeout as delay } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
 
@@ -31,8 +32,14 @@ const foreignSessionHash = createHash('sha256').update(foreignSessionToken).dige
 const foreignCsrfHash = createHash('sha256').update(foreignCsrfToken).digest('hex');
 const invitationId = randomUUID();
 const invitationTokenHash = createHash('sha256').update(randomUUID()).digest('hex');
+const sourceProviderId = randomUUID();
+const outputProviderId = randomUUID();
+const outputId = 'browser-e2e-output-' + randomUUID();
+const playerId = 'browser-e2e-player-' + randomUUID();
+const handoffSecret = 'browser-e2e-provider-handoff-secret-with-more-than-32-bytes';
 const children = [];
 let browser;
+let providerFixture;
 let seeded = false;
 
 function run(command, args, options = {}) {
@@ -77,6 +84,142 @@ function sql(containerId, statement) {
     '-c',
     statement,
   ]);
+}
+
+function querySql(containerId, statement) {
+  return run('docker', [
+    'exec', '-e', 'PGPASSWORD=ci-bootstrap-only', containerId,
+    'psql', '-h', '127.0.0.1', '-U', 'platform_bootstrap', '-d', 'platform',
+    '-v', 'ON_ERROR_STOP=1', '-A', '-t', '-c', statement,
+  ]);
+}
+
+async function startProviderFixture() {
+  const commands = [];
+  let resolvePlay;
+  const playSeen = new Promise((resolve) => { resolvePlay = resolve; });
+  const server = createServer(async (request, response) => {
+    try {
+      const url = new URL(request.url ?? '/', 'http://127.0.0.1');
+      if (request.method === 'GET' && url.pathname.startsWith('/api/v1/videos/')) {
+        response.writeHead(200, { 'content-type': 'application/json' });
+        response.end(JSON.stringify({
+          title: 'Browser E2E playback fixture',
+          author: 'Phase 8',
+          lengthSeconds: 60,
+          adaptiveFormats: [{
+            type: 'audio/webm; codecs=opus',
+            url: 'https://media.example.test/browser-e2e.webm',
+            bitrate: 128000,
+          }],
+        }));
+        return;
+      }
+      if (request.method !== 'POST' || url.pathname !== '/jsonrpc.js') {
+        response.writeHead(404).end();
+        return;
+      }
+      const chunks = [];
+      for await (const chunk of request) chunks.push(chunk);
+      const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      const command = body?.params?.[1];
+      const targetPlayer = body?.params?.[0];
+      if (typeof targetPlayer !== 'string' || !Array.isArray(command)) {
+        response.writeHead(400).end();
+        return;
+      }
+      commands.push({ playerId: targetPlayer, command });
+      if (command[0] === 'play') resolvePlay();
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ result: { mode: 'play', time: '0', duration: '60' } }));
+    } catch {
+      if (!response.headersSent) response.writeHead(400);
+      response.end();
+    }
+  });
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  const address = server.address();
+  if (!address || typeof address === 'string') {
+    throw new Error('Browser E2E provider fixture did not bind to a TCP port.');
+  }
+  return {
+    url: 'http://127.0.0.1:' + address.port,
+    commands,
+    playSeen: Promise.race([
+      playSeen,
+      delay(30_000).then(() => {
+        throw new Error('The real provider execution worker did not issue a Lyrion play command.');
+      }),
+    ]),
+    async close() {
+      server.closeAllConnections?.();
+      if (server.listening) await new Promise((resolve) => server.close(() => resolve()));
+    },
+  };
+}
+
+async function startRequestPlaybackWorker(environment) {
+  const script = resolve(process.cwd(), 'apps/worker/test/fixtures/phase8-request-playback-worker-process.mjs');
+  const child = spawn(process.execPath, [script], {
+    cwd: process.cwd(), env: environment, stdio: ['pipe', 'pipe', 'inherit'],
+  });
+  children.push(child);
+  child.stdin.on('error', () => undefined);
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let buffer = '';
+    const timer = setTimeout(() => finish(new Error('Request/playback worker did not become ready.')), 30_000);
+    function finish(error, value) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (error) reject(error);
+      else resolve(value);
+    }
+    child.once('error', (error) => finish(error));
+    child.once('exit', (code, signal) => finish(
+      new Error('Request/playback worker exited before readiness (' + code + '/' + signal + ').'),
+    ));
+    child.stdout.setEncoding('utf8');
+    child.stdout.on('data', (chunk) => {
+      buffer += chunk;
+      let newline;
+      while ((newline = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.slice(0, newline);
+        buffer = buffer.slice(newline + 1);
+        if (!line.trim()) continue;
+        let message;
+        try { message = JSON.parse(line); }
+        catch {
+          finish(new Error('Request/playback worker emitted invalid readiness JSON.'));
+          return;
+        }
+        if (message.type === 'ready') finish(null, child);
+        else if (message.type === 'boot-error') {
+          finish(new Error('Request/playback worker failed: ' + message.message));
+        }
+      }
+    });
+  });
+}
+
+function seedPlaybackProviders(containerId, workspaceId, fixtureUrl) {
+  sql(containerId, [
+    'BEGIN;',
+    "INSERT INTO workspace_rights_attestations (workspace_id, policy_version, accepted_by_user_id, accepted_at) VALUES ('"
+      + workspaceId + "', '2026-11', '" + actorId + "', now());",
+    "INSERT INTO provider_instances (id, workspace_id, provider_id, instance_key, contract_version, capabilities, connection_health, enabled) VALUES ('"
+      + sourceProviderId + "', '" + workspaceId + "', 'youtube', 'browser-e2e-youtube', 1, '{\"resolve\":true,\"mediaTypes\":[\"audio\"]}'::jsonb, 'healthy', true);",
+    "INSERT INTO provider_instances (id, workspace_id, provider_id, instance_key, contract_version, capabilities, connection_health, enabled, configuration) VALUES ('"
+      + outputProviderId + "', '" + workspaceId + "', 'lyrion', 'browser-e2e-lyrion', 1, '{\"playback\":true,\"mediaTypes\":[\"audio\"],\"supportedSourceProviderIds\":[\"youtube\"]}'::jsonb, 'healthy', true, jsonb_build_object('baseUrl', '"
+      + fixtureUrl + "'));",
+    "INSERT INTO provider_output_assignments (workspace_id, provider_instance_id, output_id, player_id, assigned_by, active) VALUES ('"
+      + workspaceId + "', '" + outputProviderId + "', '" + outputId + "', '" + playerId + "', '" + actorId + "', true);",
+    'COMMIT;',
+  ].join('\n'));
 }
 
 function prepareStandaloneAssets(appDirectory) {
@@ -179,11 +322,16 @@ const databaseContainer = postgresContainer();
 
 try {
   seedSession(databaseContainer);
+  providerFixture = await startProviderFixture();
   const apiEnvironment = {
     ...process.env,
     NODE_ENV: 'test',
     DATABASE_URL: postgresUrl,
     API_PORT: '3300',
+    REDIS_URL: process.env.REDIS_URL ?? 'redis://127.0.0.1:6379',
+    PROVIDER_EXECUTION_HANDOFF_SECRET: handoffSecret,
+    INVIDIOUS_INSTANCE_URL: providerFixture.url,
+    LYRION_ALLOWED_HOSTS: '127.0.0.1',
     // The E2E API only needs valid storage configuration at startup; no MinIO
     // service is required unless a test actually exercises object operations.
     OBJECT_STORAGE_ENDPOINT: 'http://127.0.0.1:9000',
@@ -279,6 +427,7 @@ try {
   const workspace = await workspaceResponse.json();
   assert.equal(typeof workspace.id, 'string');
   await page.getByRole('heading', { name: 'Browser E2E Workspace' }).waitFor();
+  seedPlaybackProviders(databaseContainer, workspace.id, providerFixture.url);
 
   seedInvitation(databaseContainer, workspace.id);
   const inviteeContext = await browser.newContext();
@@ -353,7 +502,7 @@ try {
   );
   assert.equal(requestSettingsResponse.status, 200, 'The workspace owner must be able to configure manual moderation.');
 
-  async function submitModerationRequest(title) {
+  async function submitModerationRequest(title, media = {}) {
     const response = await fetch(`${apiUrl}/workspaces/${workspace.id}/requests`, {
       method: 'POST',
       headers: {
@@ -361,14 +510,18 @@ try {
         'content-type': 'application/json',
         'x-csrf-token': csrfToken,
       },
-      body: JSON.stringify({ title, requesterDisplayName: 'Browser E2E' }),
+      body: JSON.stringify({ title, requesterDisplayName: 'Browser E2E', ...media }),
     });
     assert.equal(response.status, 201, 'The owner must be able to submit a request.');
     return response.json();
   }
 
   const rejectedRequest = await submitModerationRequest('E2E moderator rejects this');
-  const approvedRequest = await submitModerationRequest('E2E moderator approves this');
+  const approvedRequest = await submitModerationRequest('E2E moderator approves this', {
+    provider: 'youtube',
+    mediaId: 'dQw4w9WgXcQ',
+    mediaUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+  });
   assert.equal(rejectedRequest.status, 'pending');
   assert.equal(approvedRequest.status, 'pending');
 
@@ -480,6 +633,54 @@ try {
     reorderedQueue.after.map((entry) => entry.id),
     reorderedQueue.before.map((entry) => entry.id).reverse(),
     'The Moderator must be able to persist a new logical queue order.',
+  );
+
+  const workerEnvironment = {
+    ...process.env,
+    NODE_ENV: 'test',
+    DATABASE_URL: 'postgresql://platform_worker:local-worker-only@127.0.0.1:5432/platform',
+    PROVIDER_EXECUTION_DATABASE_URL: 'postgresql://platform_provider_worker:local-provider-worker-only@127.0.0.1:5432/platform',
+    REDIS_URL: apiEnvironment.REDIS_URL,
+    PROVIDER_EXECUTION_HANDOFF_URL: apiUrl + '/internal/provider-executions/handoff',
+    PROVIDER_EXECUTION_HANDOFF_SECRET: handoffSecret,
+  };
+  delete workerEnvironment.DATABASE_URL_FILE;
+  delete workerEnvironment.PROVIDER_EXECUTION_DATABASE_URL_FILE;
+  delete workerEnvironment.REDIS_URL_FILE;
+  delete workerEnvironment.PROVIDER_EXECUTION_HANDOFF_SECRET_FILE;
+  await startRequestPlaybackWorker(workerEnvironment);
+  await providerFixture.playSeen;
+
+  const playbackStateQuery = "SELECT r.status || ':' || execution.state || ':' || count(session.id)::text "
+    + "FROM media_requests r "
+    + "JOIN provider_execution_states execution ON execution.workspace_id = r.workspace_id AND execution.request_id = r.id "
+    + "LEFT JOIN playback_sessions session ON session.workspace_id = r.workspace_id AND session.request_id = r.id "
+    + "WHERE r.workspace_id = '" + workspace.id + "' AND r.id = '" + approvedRequest.id + "' "
+    + "GROUP BY r.status, execution.state";
+  const playbackDeadline = Date.now() + 20_000;
+  let playbackState = '';
+  while (Date.now() < playbackDeadline) {
+    playbackState = querySql(databaseContainer, playbackStateQuery);
+    if (playbackState === 'playing:playing:1') break;
+    await delay(100);
+  }
+  assert.equal(
+    playbackState,
+    'playing:playing:1',
+    'The approved browser-submitted request must reach a persisted playback session.',
+  );
+  assert.equal(
+    providerFixture.commands.filter((entry) => entry.command[0] === 'play').length,
+    1,
+    'The real provider worker and Playback Coordinator must issue exactly one play command.',
+  );
+  assert.ok(
+    providerFixture.commands.some((entry) =>
+      entry.command[0] === 'playlist' &&
+      entry.command[1] === 'add' &&
+      entry.command[2] === 'https://media.example.test/browser-e2e.webm',
+    ),
+    'The Playback Coordinator must resolve the submitted YouTube media through the Invidious fixture before playback.',
   );
 
   const revokedMembership = await page.evaluate(async ({ workspaceId, memberId, token }) => {
@@ -777,10 +978,11 @@ try {
   await page.getByRole('heading', { name: 'Your channel.' }).waitFor();
 
   process.stdout.write(
-    'Authenticated browser E2E passed: real API session resolution, workspace creation, published overlay snapshot, bearer-token revocation, CSRF enforcement, and logout.\n',
+    'Authenticated browser E2E passed: session/workspace/team authorization, request submission/moderation/queue ordering, outbox dispatch, provider resolution, Lyrion playback, published overlay snapshot/reconnect/revocation, CSRF enforcement, and logout.\n',
   );
 } finally {
   if (browser) await browser.close();
   await stopServers();
+  if (providerFixture) await providerFixture.close();
   if (seeded) cleanSession(databaseContainer);
 }
