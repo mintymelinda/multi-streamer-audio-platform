@@ -3,6 +3,7 @@ import { cpSync, existsSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createHash, randomInt, randomUUID } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
+import { createServer } from 'node:http';
 import { setTimeout as delay } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
 
@@ -31,15 +32,21 @@ const foreignSessionHash = createHash('sha256').update(foreignSessionToken).dige
 const foreignCsrfHash = createHash('sha256').update(foreignCsrfToken).digest('hex');
 const invitationId = randomUUID();
 const invitationTokenHash = createHash('sha256').update(randomUUID()).digest('hex');
+const sourceProviderId = randomUUID();
+const outputProviderId = randomUUID();
+const outputId = `browser-e2e-output-${randomUUID()}`;
+const playerId = `browser-e2e-player-${randomUUID()}`;
+const handoffSecret = 'browser-e2e-provider-handoff-secret-with-more-than-32-bytes';
 const children = [];
 let browser;
+let providerFixture;
 let seeded = false;
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, { encoding: 'utf8', ...options });
   if (result.status !== 0) {
     throw new Error(
-      command + ' failed (' + result.status + '): ' + (result.stderr || result.stdout).trim(),
+      `${command} failed (${result.status}): ${(result.stderr || result.stdout).trim()}`,
     );
   }
   return result.stdout.trim();
@@ -79,6 +86,143 @@ function sql(containerId, statement) {
   ]);
 }
 
+function querySql(containerId, statement) {
+  return run('docker', [
+    'exec', '-e', 'PGPASSWORD=ci-bootstrap-only', containerId,
+    'psql', '-h', '127.0.0.1', '-U', 'platform_bootstrap', '-d', 'platform',
+    '-v', 'ON_ERROR_STOP=1', '-A', '-t', '-c', statement,
+  ]);
+}
+
+async function startProviderFixture() {
+  const commands = [];
+  let resolvePlay;
+  const playSeen = new Promise((resolve) => { resolvePlay = resolve; });
+  const server = createServer(async (request, response) => {
+    try {
+      const url = new URL(request.url ?? '/', 'http://127.0.0.1');
+      if (request.method === 'GET' && url.pathname.startsWith('/api/v1/videos/')) {
+        response.writeHead(200, { 'content-type': 'application/json' });
+        response.end(JSON.stringify({
+          title: 'Browser E2E playback fixture',
+          author: 'Phase 8',
+          lengthSeconds: 60,
+          adaptiveFormats: [{
+            type: 'audio/webm; codecs=opus',
+            url: 'https://media.example.test/browser-e2e.webm',
+            bitrate: 128000,
+          }],
+        }));
+        return;
+      }
+      if (request.method !== 'POST' || url.pathname !== '/jsonrpc.js') {
+        response.writeHead(404).end();
+        return;
+      }
+      const chunks = [];
+      for await (const chunk of request) chunks.push(chunk);
+      const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      const command = body?.params?.[1];
+      const targetPlayer = body?.params?.[0];
+      if (typeof targetPlayer !== 'string' || !Array.isArray(command)) {
+        response.writeHead(400).end();
+        return;
+      }
+      commands.push({ playerId: targetPlayer, command });
+      if (command[0] === 'play') resolvePlay();
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ result: { mode: 'play', time: '0', duration: '60' } }));
+    } catch {
+      if (!response.headersSent) response.writeHead(400);
+      response.end();
+    }
+  });
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  const address = server.address();
+  if (!address || typeof address === 'string') {
+    throw new Error('Browser E2E provider fixture did not bind to a TCP port.');
+  }
+  const playObserved = new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error('The real provider execution worker did not issue a Lyrion play command.'));
+    }, 30_000);
+    playSeen.then(() => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
+  return {
+    url: `http://127.0.0.1:${address.port}`,
+    commands,
+    playSeen: playObserved,
+    async close() {
+      server.closeAllConnections?.();
+      if (server.listening) await new Promise((resolve) => server.close(() => resolve()));
+    },
+  };
+}
+
+async function startRequestPlaybackWorker(environment) {
+  const script = resolve(process.cwd(), 'apps/worker/test/fixtures/phase8-request-playback-worker-process.mjs');
+  const child = spawn(process.execPath, [script], {
+    cwd: process.cwd(), env: environment, stdio: ['pipe', 'pipe', 'inherit'],
+  });
+  children.push(child);
+  child.stdin.on('error', () => undefined);
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let buffer = '';
+    const timer = setTimeout(() => finish(new Error('Request/playback worker did not become ready.')), 30_000);
+    function finish(error, value) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (error) reject(error);
+      else resolve(value);
+    }
+    child.once('error', (error) => finish(error));
+    child.once('exit', (code, signal) => finish(
+      new Error(`Request/playback worker exited before readiness (${code}/${signal}).`),
+    ));
+    child.stdout.setEncoding('utf8');
+    child.stdout.on('data', (chunk) => {
+      buffer += chunk;
+      let newline;
+      newline = buffer.indexOf('\n');
+      while (newline >= 0) {
+        const line = buffer.slice(0, newline);
+        buffer = buffer.slice(newline + 1);
+        newline = buffer.indexOf('\n');
+        if (!line.trim()) continue;
+        let message;
+        try { message = JSON.parse(line); }
+        catch {
+          finish(new Error('Request/playback worker emitted invalid readiness JSON.'));
+          return;
+        }
+        if (message.type === 'ready') finish(null, child);
+        else if (message.type === 'boot-error') {
+          finish(new Error(`Request/playback worker failed: ${message.message}`));
+        }
+      }
+    });
+  });
+}
+
+function seedPlaybackProviders(containerId, workspaceId, fixtureUrl) {
+  sql(containerId, [
+    'BEGIN;',
+    `INSERT INTO workspace_rights_attestations (workspace_id, policy_version, accepted_by_user_id, accepted_at) VALUES ('${workspaceId}', '2026-11', '${actorId}', now());`,
+    `INSERT INTO provider_instances (id, workspace_id, provider_id, instance_key, contract_version, capabilities, connection_health, enabled) VALUES ('${sourceProviderId}', '${workspaceId}', 'youtube', 'browser-e2e-youtube', 1, '{"resolve":true,"mediaTypes":["audio"]}'::jsonb, 'healthy', true);`,
+    `INSERT INTO provider_instances (id, workspace_id, provider_id, instance_key, contract_version, capabilities, connection_health, enabled, configuration) VALUES ('${outputProviderId}', '${workspaceId}', 'lyrion', 'browser-e2e-lyrion', 1, '{"playback":true,"mediaTypes":["audio"],"supportedSourceProviderIds":["youtube"]}'::jsonb, 'healthy', true, jsonb_build_object('baseUrl', '${fixtureUrl}'));`,
+    `INSERT INTO provider_output_assignments (workspace_id, provider_instance_id, output_id, player_id, assigned_by, active) VALUES ('${workspaceId}', '${outputProviderId}', '${outputId}', '${playerId}', '${actorId}', true);`,
+    'COMMIT;',
+  ].join('\n'));
+}
+
 function prepareStandaloneAssets(appDirectory) {
   const appRoot = resolve(process.cwd(), appDirectory);
   const standaloneRoot = resolve(appRoot, '.next/standalone', appDirectory);
@@ -100,9 +244,9 @@ function prepareStandaloneAssets(appDirectory) {
   }
 }
 
-function start(command, args, env) {
+function start(command, args, env, cwd = process.cwd()) {
   const child = spawn(command, args, {
-    cwd: process.cwd(),
+    cwd,
     env,
     stdio: 'inherit',
   });
@@ -114,7 +258,7 @@ async function waitFor(url, child, expectedStatus = 200) {
   const deadline = Date.now() + 45_000;
   while (Date.now() < deadline) {
     if (child.exitCode !== null) {
-      throw new Error('Server exited before becoming ready (code ' + child.exitCode + ').');
+      throw new Error(`Server exited before becoming ready (code ${child.exitCode}).`);
     }
     try {
       const response = await fetch(url, { signal: AbortSignal.timeout(1_000) });
@@ -124,7 +268,7 @@ async function waitFor(url, child, expectedStatus = 200) {
     }
     await delay(250);
   }
-  throw new Error('Server did not become ready: ' + url);
+  throw new Error(`Server did not become ready: ${url}`);
 }
 
 async function stopServers() {
@@ -145,14 +289,12 @@ async function stopServers() {
 function seedSession(containerId) {
   sql(containerId, [
     'BEGIN;',
-    "INSERT INTO platform_users (id, twitch_user_id) VALUES ('" + actorId + "', '" + twitchUserId + "');",
-    "INSERT INTO platform_users (id, twitch_user_id) VALUES ('" + foreignActorId + "', '" + foreignTwitchUserId + "');",
-    "INSERT INTO workspaces (id, name, owner_user_id, broadcaster_twitch_user_id) VALUES ('" + foreignWorkspaceId + "', 'Isolation Canary Workspace', '" + foreignActorId + "', '" + foreignTwitchUserId + "');",
-    "INSERT INTO workspace_memberships (workspace_id, user_id, role) VALUES ('" + foreignWorkspaceId + "', '" + foreignActorId + "', 'owner');",
-    "INSERT INTO user_sessions (user_id, session_token_hash, csrf_token_hash, expires_at) VALUES ('"
-      + actorId + "', '" + sessionHash + "', '" + csrfHash + "', now() + interval '10 minutes');",
-    "INSERT INTO user_sessions (user_id, session_token_hash, csrf_token_hash, expires_at) VALUES ('"
-      + foreignActorId + "', '" + foreignSessionHash + "', '" + foreignCsrfHash + "', now() + interval '10 minutes');",
+    `INSERT INTO platform_users (id, twitch_user_id) VALUES ('${actorId}', '${twitchUserId}');`,
+    `INSERT INTO platform_users (id, twitch_user_id) VALUES ('${foreignActorId}', '${foreignTwitchUserId}');`,
+    `INSERT INTO workspaces (id, name, owner_user_id, broadcaster_twitch_user_id) VALUES ('${foreignWorkspaceId}', 'Isolation Canary Workspace', '${foreignActorId}', '${foreignTwitchUserId}');`,
+    `INSERT INTO workspace_memberships (workspace_id, user_id, role) VALUES ('${foreignWorkspaceId}', '${foreignActorId}', 'owner');`,
+    `INSERT INTO user_sessions (user_id, session_token_hash, csrf_token_hash, expires_at) VALUES ('${actorId}', '${sessionHash}', '${csrfHash}', now() + interval '10 minutes');`,
+    `INSERT INTO user_sessions (user_id, session_token_hash, csrf_token_hash, expires_at) VALUES ('${foreignActorId}', '${foreignSessionHash}', '${foreignCsrfHash}', now() + interval '10 minutes');`,
     'COMMIT;',
   ].join('\n'));
   seeded = true;
@@ -160,17 +302,15 @@ function seedSession(containerId) {
 
 function seedInvitation(containerId, workspaceId) {
   sql(containerId, [
-    "INSERT INTO workspace_invitations (id, workspace_id, invited_twitch_user_id, assigned_role, token_hash, invited_by_user_id, expires_at) VALUES ('"
-      + invitationId + "', '" + workspaceId + "', '" + foreignTwitchUserId + "', 'moderator', '"
-      + invitationTokenHash + "', '" + actorId + "', now() + interval '7 days');",
+    `INSERT INTO workspace_invitations (id, workspace_id, invited_twitch_user_id, assigned_role, token_hash, invited_by_user_id, expires_at) VALUES ('${invitationId}', '${workspaceId}', '${foreignTwitchUserId}', 'moderator', '${invitationTokenHash}', '${actorId}', now() + interval '7 days');`,
   ].join('\n'));
 }
 
 function cleanSession(containerId) {
   sql(containerId, [
     'BEGIN;',
-    "DELETE FROM workspaces WHERE id IN ('" + actorId + "', '" + foreignWorkspaceId + "') OR owner_user_id IN ('" + actorId + "', '" + foreignActorId + "');",
-    "DELETE FROM platform_users WHERE id IN ('" + actorId + "', '" + foreignActorId + "');",
+    `DELETE FROM workspaces WHERE id IN ('${actorId}', '${foreignWorkspaceId}') OR owner_user_id IN ('${actorId}', '${foreignActorId}');`,
+    `DELETE FROM platform_users WHERE id IN ('${actorId}', '${foreignActorId}');`,
     'COMMIT;',
   ].join('\n'));
 }
@@ -179,11 +319,16 @@ const databaseContainer = postgresContainer();
 
 try {
   seedSession(databaseContainer);
+  providerFixture = await startProviderFixture();
   const apiEnvironment = {
     ...process.env,
     NODE_ENV: 'test',
     DATABASE_URL: postgresUrl,
     API_PORT: '3300',
+    PROVIDER_EXECUTION_HANDOFF_SECRET: handoffSecret,
+    REDIS_URL: process.env.REDIS_URL ?? 'redis://127.0.0.1:6379',
+    INVIDIOUS_INSTANCE_URL: providerFixture.url,
+    LYRION_ALLOWED_HOSTS: '127.0.0.1',
     // The E2E API only needs valid storage configuration at startup; no MinIO
     // service is required unless a test actually exercises object operations.
     OBJECT_STORAGE_ENDPOINT: 'http://127.0.0.1:9000',
@@ -193,7 +338,7 @@ try {
   };
   delete apiEnvironment.DATABASE_URL_FILE;
   const apiProcess = start('pnpm', ['--filter', '@platform/api', 'start'], apiEnvironment);
-  await waitFor(apiUrl + '/health/ready', apiProcess);
+  await waitFor(`${apiUrl}/health/ready`, apiProcess);
 
   prepareStandaloneAssets('apps/dashboard');
   prepareStandaloneAssets('apps/overlay');
@@ -207,13 +352,16 @@ try {
   };
   // Both Next.js apps use output: 'standalone'; launch the generated server
   // directly instead of using "next start", which does not support standalone output.
-  const dashboardProcess = start('pnpm', [
-    '--filter',
-    '@platform/dashboard',
-    'exec',
-    'node',
-    '.next/standalone/apps/dashboard/server.js',
-  ], dashboardEnvironment);
+  const dashboardStandaloneRoot = resolve(
+    process.cwd(),
+    'apps/dashboard/.next/standalone/apps/dashboard',
+  );
+  const dashboardProcess = start(
+    process.execPath,
+    [resolve(dashboardStandaloneRoot, 'server.js')],
+    dashboardEnvironment,
+    dashboardStandaloneRoot,
+  );
   await waitFor(dashboardUrl, dashboardProcess);
 
   const overlayEnvironment = {
@@ -223,13 +371,16 @@ try {
     PORT: '3200',
     HOSTNAME: '127.0.0.1',
   };
-  const overlayProcess = start('pnpm', [
-    '--filter',
-    '@platform/overlay',
-    'exec',
-    'node',
-    '.next/standalone/apps/overlay/server.js',
-  ], overlayEnvironment);
+  const overlayStandaloneRoot = resolve(
+    process.cwd(),
+    'apps/overlay/.next/standalone/apps/overlay',
+  );
+  const overlayProcess = start(
+    process.execPath,
+    [resolve(overlayStandaloneRoot, 'server.js')],
+    overlayEnvironment,
+    overlayStandaloneRoot,
+  );
   await waitFor(overlayUrl, overlayProcess);
 
   browser = await chromium.launch({ channel: 'chrome', headless: true });
@@ -237,7 +388,7 @@ try {
   const page = await context.newPage();
 
   await page.goto(dashboardUrl, { waitUntil: 'networkidle' });
-  assert.match(await page.locator('h1').innerText(), /Your channel\./);
+  assert.match((await page.locator('h1').textContent()) ?? '', /Your channel\./);
   assert.equal(
     await page.getByRole('link', { name: 'Continue with Twitch' }).getAttribute('href'),
     '/api/auth/twitch/start?returnTo=%2F',
@@ -279,6 +430,7 @@ try {
   const workspace = await workspaceResponse.json();
   assert.equal(typeof workspace.id, 'string');
   await page.getByRole('heading', { name: 'Browser E2E Workspace' }).waitFor();
+  seedPlaybackProviders(databaseContainer, workspace.id, providerFixture.url);
 
   seedInvitation(databaseContainer, workspace.id);
   const inviteeContext = await browser.newContext();
@@ -322,7 +474,7 @@ try {
   assert.equal(wrongIdentityAcceptance, 404, 'An invitation cannot be accepted by a different signed-in Twitch identity.');
 
   await inviteePage.getByRole('button', { name: 'Accept' }).click();
-  await inviteePage.waitForURL(dashboardUrl + '/');
+  await inviteePage.waitForURL(`${dashboardUrl}/`);
   const acceptedMemberships = await inviteePage.evaluate(async () => {
     const response = await fetch('/api/workspaces', { credentials: 'include', cache: 'no-store' });
     return { status: response.status, body: await response.json() };
@@ -353,7 +505,7 @@ try {
   );
   assert.equal(requestSettingsResponse.status, 200, 'The workspace owner must be able to configure manual moderation.');
 
-  async function submitModerationRequest(title) {
+  async function submitModerationRequest(title, media = {}) {
     const response = await fetch(`${apiUrl}/workspaces/${workspace.id}/requests`, {
       method: 'POST',
       headers: {
@@ -361,14 +513,18 @@ try {
         'content-type': 'application/json',
         'x-csrf-token': csrfToken,
       },
-      body: JSON.stringify({ title, requesterDisplayName: 'Browser E2E' }),
+      body: JSON.stringify({ title, requesterDisplayName: 'Browser E2E', ...media }),
     });
     assert.equal(response.status, 201, 'The owner must be able to submit a request.');
     return response.json();
   }
 
   const rejectedRequest = await submitModerationRequest('E2E moderator rejects this');
-  const approvedRequest = await submitModerationRequest('E2E moderator approves this');
+  const approvedRequest = await submitModerationRequest('E2E moderator approves this', {
+    provider: 'youtube',
+    mediaId: 'dQw4w9WgXcQ',
+    mediaUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+  });
   assert.equal(rejectedRequest.status, 'pending');
   assert.equal(approvedRequest.status, 'pending');
 
@@ -432,19 +588,74 @@ try {
     'Rejected requests must not appear in the playable queue.',
   );
 
+  const workerEnvironment = {
+    ...process.env,
+    NODE_ENV: 'test',
+    DATABASE_URL: 'postgresql://platform_worker:local-worker-only@127.0.0.1:5432/platform',
+    PROVIDER_EXECUTION_DATABASE_URL: 'postgresql://platform_provider_worker:local-provider-worker-only@127.0.0.1:5432/platform',
+    REDIS_URL: apiEnvironment.REDIS_URL,
+    INVIDIOUS_INSTANCE_URL: providerFixture.url,
+    LYRION_ALLOWED_HOSTS: '127.0.0.1',
+    PROVIDER_EXECUTION_HANDOFF_URL: `${apiUrl}/internal/provider-executions/handoff`,
+    PROVIDER_EXECUTION_HANDOFF_SECRET: handoffSecret,
+  };
+  delete workerEnvironment.DATABASE_URL_FILE;
+  delete workerEnvironment.PROVIDER_EXECUTION_DATABASE_URL_FILE;
+  delete workerEnvironment.REDIS_URL_FILE;
+  delete workerEnvironment.PROVIDER_EXECUTION_HANDOFF_SECRET_FILE;
+  await startRequestPlaybackWorker(workerEnvironment);
+  await providerFixture.playSeen;
+
+  const playbackStateQuery = `SELECT r.status || ':' || execution.state || ':' || count(session.id)::text
+    FROM media_requests r
+    JOIN provider_execution_states execution ON execution.workspace_id = r.workspace_id AND execution.request_id = r.id
+    LEFT JOIN playback_sessions session ON session.workspace_id = r.workspace_id AND session.request_id = r.id
+    WHERE r.workspace_id = '${workspace.id}' AND r.id = '${approvedRequest.id}'
+    GROUP BY r.status, execution.state`;
+
+  const playbackDeadline = Date.now() + 20_000;
+  let playbackState = '';
+  while (Date.now() < playbackDeadline) {
+    playbackState = querySql(databaseContainer, playbackStateQuery);
+    if (playbackState === 'playing:playing:1') break;
+    await delay(100);
+  }
+  assert.equal(
+    playbackState,
+    'playing:playing:1',
+    'The approved browser-submitted request must reach a persisted playback session.',
+  );
+  assert.equal(
+    providerFixture.commands.filter((entry) => entry.command[0] === 'play').length,
+    1,
+    'The real provider worker and Playback Coordinator must issue exactly one play command.',
+  );
+  assert.ok(
+    providerFixture.commands.some((entry) =>
+      entry.command[0] === 'playlist' &&
+      entry.command[1] === 'add' &&
+      entry.command[2] === 'https://media.example.test/browser-e2e.webm',
+    ),
+    'The Playback Coordinator must resolve the submitted YouTube media through the Invidious fixture before playback.',
+  );
+
   const reorderRequest = await submitModerationRequest('E2E moderator reorders this request');
+  const secondReorderRequest = await submitModerationRequest('E2E moderator reorders another request');
   assert.equal(reorderRequest.status, 'pending');
-  const reorderApproval = await inviteePage.evaluate(async ({ workspaceId, requestId, token }) => {
-    const response = await fetch(`/api/workspaces/${workspaceId}/requests/${requestId}/moderation`, {
-      method: 'PATCH',
-      credentials: 'include',
-      headers: { 'content-type': 'application/json', 'x-csrf-token': token },
-      body: JSON.stringify({ action: 'approve', reason: 'Approved for queue ordering test' }),
-    });
-    return { status: response.status, body: await response.json() };
-  }, { workspaceId: workspace.id, requestId: reorderRequest.id, token: foreignCsrfToken });
-  assert.equal(reorderApproval.status, 200);
-  assert.equal(reorderApproval.body.status, 'queued');
+  assert.equal(secondReorderRequest.status, 'pending');
+  for (const request of [reorderRequest, secondReorderRequest]) {
+    const approval = await inviteePage.evaluate(async ({ workspaceId, requestId, token }) => {
+      const response = await fetch(`/api/workspaces/${workspaceId}/requests/${requestId}/moderation`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json', 'x-csrf-token': token },
+        body: JSON.stringify({ action: 'approve', reason: 'Approved for queue ordering test' }),
+      });
+      return { status: response.status, body: await response.json() };
+    }, { workspaceId: workspace.id, requestId: request.id, token: foreignCsrfToken });
+    assert.equal(approval.status, 200);
+    assert.equal(approval.body.status, 'queued');
+  }
 
   const reorderedQueue = await inviteePage.evaluate(async ({ workspaceId, token }) => {
     const beforeResponse = await fetch(`/api/workspaces/${workspaceId}/queue`, {
@@ -777,10 +988,11 @@ try {
   await page.getByRole('heading', { name: 'Your channel.' }).waitFor();
 
   process.stdout.write(
-    'Authenticated browser E2E passed: real API session resolution, workspace creation, published overlay snapshot, bearer-token revocation, CSRF enforcement, and logout.\n',
+    'Authenticated browser E2E passed: session/workspace/team authorization, request submission/moderation/queue ordering, outbox dispatch, provider resolution, Lyrion playback, published overlay snapshot/reconnect/revocation, CSRF enforcement, and logout.\n',
   );
 } finally {
   if (browser) await browser.close();
   await stopServers();
+  if (providerFixture) await providerFixture.close();
   if (seeded) cleanSession(databaseContainer);
 }
