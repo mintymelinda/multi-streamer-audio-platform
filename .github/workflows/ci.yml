@@ -230,6 +230,9 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Build immutable staging application image
+        run: docker build --file infra/compose/Deployment.Dockerfile --target runtime --tag platform-staging-app:ci .
+
       - name: Install isolated browser test runtime
         run: |
           npm install --prefix "$RUNNER_TEMP/playwright" --no-save --no-package-lock playwright@1.56.1
