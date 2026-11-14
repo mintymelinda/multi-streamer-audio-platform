@@ -327,7 +327,6 @@ try {
     API_PORT: '3300',
     PROVIDER_EXECUTION_HANDOFF_SECRET: handoffSecret,
     REDIS_URL: process.env.REDIS_URL ?? 'redis://127.0.0.1:6379',
-    PROVIDER_EXECUTION_HANDOFF_SECRET: handoffSecret,
     INVIDIOUS_INSTANCE_URL: providerFixture.url,
     LYRION_ALLOWED_HOSTS: '127.0.0.1',
     // The E2E API only needs valid storage configuration at startup; no MinIO
@@ -383,7 +382,7 @@ try {
   const page = await context.newPage();
 
   await page.goto(dashboardUrl, { waitUntil: 'networkidle' });
-  assert.match(await page.locator('h1').innerText(), /Your channel\./);
+  assert.match((await page.locator('h1').textContent()) ?? '', /Your channel\./);
   assert.equal(
     await page.getByRole('link', { name: 'Continue with Twitch' }).getAttribute('href'),
     '/api/auth/twitch/start?returnTo=%2F',
