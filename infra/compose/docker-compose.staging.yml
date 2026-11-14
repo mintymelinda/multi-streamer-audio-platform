@@ -161,7 +161,7 @@ services:
       PROVIDER_EXECUTION_HANDOFF_URL: http://api:3000/internal/provider-executions/handoff
       WORKER_HEALTH_PORT: "3002"
     healthcheck:
-      test: ["CMD-SHELL", "node -e \\"fetch('http://127.0.0.1:3002/health/ready').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\\""]
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3002/health/ready').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\""]
       interval: 10s
       timeout: 5s
       retries: 12
