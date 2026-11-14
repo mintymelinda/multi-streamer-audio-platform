@@ -16,8 +16,8 @@ on:
 permissions:
   contents: read
   actions: read
-  packages: write
-  deployments: write
+  contents: read
+  actions: read
 
 concurrency:
   group: staging-deployment
@@ -67,10 +67,10 @@ jobs:
             risk="approval-required"
             reason="Manual owner-triggered deployment; manual deployments are never auto-classified as routine."
           else
-            runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?branch=main&event=push&status=success&per_page=100")"
+            runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?branch=main&event=push&status=completed&per_page=100")"
             base_sha="$(jq -r --arg head "$HEAD_SHA" --arg created "$CURRENT_RUN_CREATED_AT" '
               [.workflow_runs[]
-                | select(.head_sha != $head and .created_at < $created)]
+                | select(.head_sha != $head and .created_at < $created and .conclusion == "success")]
               | sort_by(.created_at)
               | last
               | .head_sha // empty
@@ -103,6 +103,10 @@ jobs:
       )
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+      deployments: write
     environment:
       name: ${{ needs.classify.outputs.risk == 'routine' && 'staging-auto' || 'staging-approval' }}
     steps:
