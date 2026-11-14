@@ -12,3 +12,6 @@ coverage/
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# Operator-managed staging secrets; never commit these files.
+infra/compose/secrets/
