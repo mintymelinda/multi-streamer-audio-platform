@@ -404,6 +404,56 @@ try {
     'Rejected requests must not appear in the playable queue.',
   );
 
+  const reorderRequest = await submitModerationRequest('E2E moderator reorders this request');
+  assert.equal(reorderRequest.status, 'pending');
+  const reorderApproval = await inviteePage.evaluate(async ({ workspaceId, requestId, token }) => {
+    const response = await fetch(`/api/workspaces/${workspaceId}/requests/${requestId}/moderation`, {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json', 'x-csrf-token': token },
+      body: JSON.stringify({ action: 'approve', reason: 'Approved for queue ordering test' }),
+    });
+    return { status: response.status, body: await response.json() };
+  }, { workspaceId: workspace.id, requestId: reorderRequest.id, token: foreignCsrfToken });
+  assert.equal(reorderApproval.status, 200);
+  assert.equal(reorderApproval.body.status, 'queued');
+
+  const reorderedQueue = await inviteePage.evaluate(async ({ workspaceId, token }) => {
+    const beforeResponse = await fetch(`/api/workspaces/${workspaceId}/queue`, {
+      credentials: 'include',
+      cache: 'no-store',
+    });
+    const before = await beforeResponse.json();
+    const requestIds = before.map((entry) => entry.id).reverse();
+    const reorderResponse = await fetch(`/api/workspaces/${workspaceId}/queue/order`, {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json', 'x-csrf-token': token },
+      body: JSON.stringify({ requestIds }),
+    });
+    const afterResponse = await fetch(`/api/workspaces/${workspaceId}/queue`, {
+      credentials: 'include',
+      cache: 'no-store',
+    });
+    return {
+      before,
+      reorderStatus: reorderResponse.status,
+      reorderBody: await reorderResponse.json(),
+      after: await afterResponse.json(),
+    };
+  }, { workspaceId: workspace.id, token: foreignCsrfToken });
+  assert.equal(reorderedQueue.before.length, 2, 'Both approved requests must be visible to the Moderator.');
+  assert.equal(reorderedQueue.reorderStatus, 200);
+  assert.deepEqual(
+    reorderedQueue.reorderBody.requestIds,
+    reorderedQueue.before.map((entry) => entry.id).reverse(),
+  );
+  assert.deepEqual(
+    reorderedQueue.after.map((entry) => entry.id),
+    reorderedQueue.before.map((entry) => entry.id).reverse(),
+    'The Moderator must be able to persist a new logical queue order.',
+  );
+
   const revokedMembership = await page.evaluate(async ({ workspaceId, memberId, token }) => {
     const response = await fetch(`/api/workspaces/${workspaceId}/members/${memberId}`, {
       method: 'DELETE',
