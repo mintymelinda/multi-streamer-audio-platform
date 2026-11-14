@@ -128,8 +128,9 @@ async function checkHttp(name, url) {
 }
 
 async function checkSocketIoWebSocket(apiOrigin) {
-  const socket = new WebSocket(new URL('/socket.io/?EIO=4&transport=websocket', apiOrigin));
+  let socket;
   try {
+    socket = new WebSocket(new URL('/socket.io/?EIO=4&transport=websocket', apiOrigin));
     await new Promise((resolvePromise, rejectPromise) => {
       const timeout = setTimeout(() => rejectPromise(new Error('timeout')), 10_000);
       const finish = (callback, value) => {
@@ -146,7 +147,7 @@ async function checkSocketIoWebSocket(apiOrigin) {
   } catch {
     return { name: 'socket.io-websocket', status: 'failed', severity: 'critical', message: 'Engine.IO WebSocket handshake failed.' };
   } finally {
-    socket.close();
+    socket?.close();
   }
 }
 
