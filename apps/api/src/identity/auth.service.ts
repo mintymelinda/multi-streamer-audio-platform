@@ -73,7 +73,7 @@ export class AuthService {
 
   async resolveSession(sessionToken: string): Promise<SessionIdentity | null> {
     const startedAt = Date.now();
-    this.logger.debug('Resolving authenticated session');
+    this.logger.log('Resolving authenticated session');
     const sessionResult = await this.database.queryInfrastructure<{
       id: string;
       user_id: string;
@@ -83,7 +83,7 @@ export class AuthService {
       [sha256(sessionToken)],
     );
     const session = sessionResult.rows[0];
-    this.logger.debug(`Session lookup completed in ${Date.now() - startedAt}ms; found=${Boolean(session)}`);
+    this.logger.log(`Session lookup completed in ${Date.now() - startedAt}ms; found=${Boolean(session)}`);
     if (!session) return null;
 
     const userLookupStartedAt = Date.now();
@@ -94,7 +94,7 @@ export class AuthService {
       ),
     );
     const user = userResult.rows[0];
-    this.logger.debug(`Session user lookup completed in ${Date.now() - userLookupStartedAt}ms`);
+    this.logger.log(`Session user lookup completed in ${Date.now() - userLookupStartedAt}ms`);
     if (user?.status !== 'active') {
       await this.revokeSession(session.id);
       return null;
@@ -109,13 +109,13 @@ export class AuthService {
 
   async revokeSession(sessionId: string): Promise<void> {
     const startedAt = Date.now();
-    this.logger.debug('Revoking authenticated session');
+    this.logger.log('Revoking authenticated session');
     try {
       await this.database.queryInfrastructure(
         'UPDATE user_sessions SET revoked_at = now() WHERE id = $1 AND revoked_at IS NULL',
         [sessionId],
       );
-      this.logger.debug(`Authenticated session revoked in ${Date.now() - startedAt}ms`);
+      this.logger.log(`Authenticated session revoked in ${Date.now() - startedAt}ms`);
     } catch (error) {
       this.logger.error(`Authenticated session revocation failed after ${Date.now() - startedAt}ms`, error instanceof Error ? error.stack : String(error));
       throw error;
