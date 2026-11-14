@@ -79,6 +79,7 @@ jobs:
         run: |
           node --check scripts/deletion-ledger.mjs
           node --check scripts/lib/deletion-ledger-s3.mjs
+          node --check scripts/ops/staging-deployment-smoke.mjs
 
       - name: Validate local infrastructure definition
         run: docker compose --env-file infra/compose/.env.example -f infra/compose/docker-compose.yml config --quiet
