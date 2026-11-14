@@ -162,3 +162,21 @@ Phase 8 remains open until:
 - the full application deployment is validated in a non-production environment (the current Compose smoke is infrastructure-only);
 - incident, backup/restore, maintenance, operator, and streamer runbooks are rehearsed;
 - application rollback and database/PITR recovery are verified and actual RPO/RTO are recorded.
+
+## Item 71 — non-production HTTPS edge proxy
+
+The staging edge proxy is defined separately from the local-development Compose stack:
+
+- `infra/compose/docker-compose.edge.yml` runs Caddy on ports 80/443 and joins the application network as an external network.
+- `infra/compose/Caddyfile` routes the dashboard, overlay, and API hostnames to the corresponding internal service names. Caddy's reverse proxy handles WebSocket upgrades for Socket.IO without a separate WebSocket listener.
+- `infra/compose/.env.edge.example` lists the non-secret hostname, ACME contact, and shared network settings. Copy it to a private staging environment file and replace every example hostname with a DNS name resolving to the staging host before starting the edge service.
+- Caddy's certificate and account state is persisted in the `caddy_data` volume; `caddy_config` persists its runtime configuration. Do not delete these volumes during routine container replacement.
+
+The registered Twitch callback URLs must exactly match the externally reachable API hostname:
+
+- Sign-in: `https://<API_DOMAIN>/auth/twitch/callback`
+- Broadcaster authorization: `https://<API_DOMAIN>/auth/twitch/integration/callback`
+
+Set the API's `TWITCH_REDIRECT_URI` and `TWITCH_INTEGRATION_REDIRECT_URI` to those exact HTTPS URLs. The app uses explicit configured callback URLs rather than reconstructing them from proxy headers. Keep the API, dashboard, overlay, PostgreSQL, Redis, and object-storage services on the private application network; only the Caddy edge publishes host ports.
+
+CI validates the edge Compose model and parses/validates the Caddyfile. These static checks do not prove public DNS, ACME issuance, upstream reachability, WebSocket operation, OAuth provider registration, or persistence across a real staging restart; those remain runtime acceptance checks for this item. Do not use the example `.net` hostnames as real deployment values.
