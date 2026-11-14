@@ -272,3 +272,21 @@ Treat a domain change as a coordinated configuration and OAuth change, not just 
 
 Do not delete Caddy or application data volumes as part of a domain migration. This procedure is for the isolated staging environment; production migration requires a separately approved maintenance and rollback plan.
 
+
+
+## Item 73 — CI quality-gate baseline
+
+The required pull-request check is the `Quality gates` job in `.github/workflows/ci.yml`. It runs:
+
+- Biome lint (formatting is intentionally not a CI gate);
+- TypeScript type checking and migration naming/order validation;
+- unit and integration tests, including PostgreSQL tenant/authorization checks;
+- workspace builds and the immutable staging application image build;
+- standalone dashboard/overlay container smoke tests; and
+- browser UI smoke tests plus authenticated browser/API/overlay E2E.
+
+The CI workflow uses a read-only repository token and disables persisted checkout credentials. It does not mutate or push lockfile changes. Dependency lockfile updates must be reviewed and committed as ordinary source changes.
+
+Protect the default branch in repository settings: require pull requests, require the `Quality gates` and `Analyze JavaScript and TypeScript` checks, dismiss stale approvals when new commits are pushed, and restrict bypasses to the platform owner. The GitHub connector available during this implementation cannot configure branch-protection rules, so these repository settings remain an explicit operator setup step.
+
+This section records the CI baseline only. The controlled deployment path and its risk/approval policy are implemented separately; passing CI alone is not authorization to deploy.
