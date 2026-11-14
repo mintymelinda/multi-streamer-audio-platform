@@ -14,24 +14,19 @@ const overlayUrl = 'http://127.0.0.1:3200';
 const children = [];
 
 function startApp(packageName, port) {
-  const child = spawn(
-    'pnpm',
-    [
-      '--filter',
-      packageName,
-      'start',
-      '--',
-      '--hostname',
-      '127.0.0.1',
-      '--port',
-      String(port),
-    ],
-    {
-      cwd: process.cwd(),
-      env: { ...process.env, PORT: String(port), HOSTNAME: '127.0.0.1' },
-      stdio: 'ignore',
-    },
-  );
+  const child = spawn('pnpm', ['--filter', packageName, 'start'], {
+    cwd: process.cwd(),
+    env: { ...process.env, PORT: String(port), HOSTNAME: '127.0.0.1' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  child.output = [];
+  for (const stream of [child.stdout, child.stderr]) {
+    stream.setEncoding('utf8');
+    stream.on('data', (chunk) => {
+      child.output.push(chunk);
+      if (child.output.join('').length > 12_000) child.output.shift();
+    });
+  }
   children.push(child);
   return child;
 }
@@ -40,7 +35,7 @@ async function waitForServer(url, child) {
   const deadline = Date.now() + 45_000;
   while (Date.now() < deadline) {
     if (child.exitCode !== null) {
-      throw new Error(`Next.js server exited before becoming ready (code ${child.exitCode}).`);
+      throw new Error(`Next.js server exited before becoming ready (code ${child.exitCode}). Output:\\n${child.output.join('') || '(no output captured)'}`);
     }
     try {
       const response = await fetch(url, { signal: AbortSignal.timeout(1_000) });
