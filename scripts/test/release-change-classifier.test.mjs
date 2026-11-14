@@ -11,7 +11,7 @@ test('classifies documentation-only changes as not requiring deployment', () => 
 test('allows automatic deployment only for dashboard and overlay presentation assets', () => {
   const result = classifyChangedFiles([
     'apps/dashboard/app/globals.css',
-    'apps/overlay/public/placeholder.svg',
+    'apps/overlay/public/placeholder.png',
     'docs/operations/phase8-verification.md',
   ]);
   assert.equal(result.risk, 'routine');
