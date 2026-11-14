@@ -298,7 +298,7 @@ The release workflow is `.github/workflows/staging-deploy.yml`. It deploys only 
 
 ### Release classification
 
-The workflow runs automatically only after the `CI` workflow completes successfully for a push to `main` from this repository. It compares that commit with the previous successful main-branch CI push and applies the conservative classifier in `scripts/release/classify-change.mjs`:
+The workflow runs automatically only after the `CI` workflow completes successfully for a push to `main` from this repository. It refuses to deploy if a newer commit has already reached `main`, compares the tested commit with the previous successful main-branch CI push, and applies the conservative classifier in `scripts/release/classify-change.mjs`:
 
 - **Routine:** every runtime change is limited to dashboard/overlay CSS or static presentation assets under the relevant app's `public` directory. If staging deployment is enabled, the immutable image is deployed automatically.
 - **Documentation-only:** no application deployment is needed.
@@ -325,7 +325,7 @@ The host must already have Docker Engine and the Compose plugin. Provision `infr
 
 ### Deployment and recovery behavior
 
-The workflow builds one image tagged with the exact tested commit SHA, publishes it to GHCR, then deploys that image through the remote no-build Compose override. It verifies PostgreSQL, Redis, API, worker, dashboard, overlay, migration completion, and the edge container before running the public ingress smoke test for HTTPS, API readiness, Socket.IO WebSocket upgrade, and Twitch callback configuration.
+The workflow builds one image tagged with the exact tested commit SHA and publishes it to GHCR, then deploys that image through the remote no-build Compose override. It first verifies PostgreSQL, Redis, and object-storage initialization. Only an explicitly approved high-risk release runs the migration service; the workflow waits for successful migration completion before updating the API, then waits for API readiness before restarting the worker, dashboard, and overlay. It verifies all application containers and the edge container before running the public ingress smoke test for HTTPS, API readiness, Socket.IO WebSocket upgrade, and Twitch callback configuration. Routine presentation-only releases do not rerun database migrations.
 
 A failed routine presentation-only deployment attempts to restore the previous application image. High-risk deployments do not automatically roll back the application image because a schema or data change may make the previous image incompatible; follow the operator recovery procedure and assess database/PITR recovery separately. Image rollback is not database rollback.
 
