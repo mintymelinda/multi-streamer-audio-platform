@@ -61,7 +61,7 @@ jobs:
 
       # Temporary lockfile repair after merging the latest Dependabot baseline.
       - name: Repair and commit lockfile
-        if: github.event_name == 'pull_request' && github.actor == 'mintymelinda' && (github.event.pull_request.head.ref == 'phase-1/identity-workspaces-tenant-isolation' || github.event.pull_request.head.ref == 'phase-2/twitch-reward-integration' || github.event.pull_request.head.ref == 'phase-2/test-first-completion')
+        if: github.event_name == 'pull_request' && github.actor == 'mintymelinda' && (github.event.pull_request.head.ref == 'phase-1/identity-workspaces-tenant-isolation' || github.event.pull_request.head.ref == 'phase-2/twitch-reward-integration' || github.event.pull_request.head.ref == 'phase-2/test-first-completion' || github.event.pull_request.head.ref == 'phase-8/item-71-staging-deployment-foundation')
         run: |
           pnpm install --fix-lockfile --no-frozen-lockfile
           if ! git diff --quiet -- pnpm-lock.yaml; then
@@ -220,14 +220,14 @@ jobs:
       - name: Install isolated browser test runtime
         run: |
           google-chrome --version
-          npm install --prefix "$RUNNER_TEMP/playwright" --no-save --no-package-lock playwright@1.56.1
+          npm install --prefix "$RUNNER_TEMP/playwright" --no-save --no-package-lock playwright-core@1.56.1
 
       - name: Run browser UI smoke tests
         env:
-          PLAYWRIGHT_MODULE: ${{ runner.temp }}/playwright/node_modules/playwright/index.mjs
+          PLAYWRIGHT_MODULE: ${{ runner.temp }}/playwright/node_modules/playwright-core/index.mjs
         run: node scripts/e2e/browser-smoke.mjs
 
       - name: Run authenticated browser and overlay runtime E2E
         env:
-          PLAYWRIGHT_MODULE: ${{ runner.temp }}/playwright/node_modules/playwright/index.mjs
+          PLAYWRIGHT_MODULE: ${{ runner.temp }}/playwright/node_modules/playwright-core/index.mjs
         run: node scripts/e2e/authenticated-session.mjs
