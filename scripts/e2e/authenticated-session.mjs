@@ -15,6 +15,9 @@ const overlayUrl = 'http://127.0.0.1:3200';
 const apiUrl = 'http://127.0.0.1:3300';
 const postgresUrl = 'postgresql://platform_runtime:local-runtime-only@127.0.0.1:5432/platform';
 const actorId = randomUUID();
+const foreignActorId = randomUUID();
+const foreignWorkspaceId = randomUUID();
+const foreignTwitchUserId = String(Date.now() + 1) + String(randomInt(1_000_000));
 const twitchUserId = String(Date.now()) + String(randomInt(1_000_000));
 const sessionToken = randomUUID() + randomUUID();
 const csrfToken = randomUUID() + randomUUID();
@@ -114,6 +117,9 @@ function seedSession(containerId) {
   sql(containerId, [
     'BEGIN;',
     "INSERT INTO platform_users (id, twitch_user_id) VALUES ('" + actorId + "', '" + twitchUserId + "');",
+    "INSERT INTO platform_users (id, twitch_user_id) VALUES ('" + foreignActorId + "', '" + foreignTwitchUserId + "');",
+    "INSERT INTO workspaces (id, name, owner_user_id, broadcaster_twitch_user_id) VALUES ('" + foreignWorkspaceId + "', 'Isolation Canary Workspace', '" + foreignActorId + "', '" + foreignTwitchUserId + "');",
+    "INSERT INTO workspace_memberships (workspace_id, user_id, role) VALUES ('" + foreignWorkspaceId + "', '" + foreignActorId + "', 'owner');",
     "INSERT INTO user_sessions (user_id, session_token_hash, csrf_token_hash, expires_at) VALUES ('"
       + actorId + "', '" + sessionHash + "', '" + csrfHash + "', now() + interval '10 minutes');",
     'COMMIT;',
@@ -124,8 +130,8 @@ function seedSession(containerId) {
 function cleanSession(containerId) {
   sql(containerId, [
     'BEGIN;',
-    "DELETE FROM workspaces WHERE owner_user_id = '" + actorId + "';",
-    "DELETE FROM platform_users WHERE id = '" + actorId + "';",
+    "DELETE FROM workspaces WHERE id IN ('" + actorId + "', '" + foreignWorkspaceId + "') OR owner_user_id IN ('" + actorId + "', '" + foreignActorId + "');",
+    "DELETE FROM platform_users WHERE id IN ('" + actorId + "', '" + foreignActorId + "');",
     'COMMIT;',
   ].join('\n'));
 }
@@ -229,6 +235,34 @@ try {
   const workspace = await workspaceResponse.json();
   assert.equal(typeof workspace.id, 'string');
   await page.getByRole('heading', { name: 'Browser E2E Workspace' }).waitFor();
+
+  const workspaceBoundary = await page.evaluate(async (foreignId) => {
+    const listed = await fetch('/api/workspaces', { credentials: 'include', cache: 'no-store' });
+    const listedBody = await listed.json();
+    const foreignRead = await fetch(`/api/workspaces/${foreignId}/scenes`, {
+      credentials: 'include',
+      cache: 'no-store',
+    });
+    const foreignMutation = await fetch(`/api/workspaces/${foreignId}/scenes/starter`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'x-csrf-token': document.cookie.split('; ').find((value) => value.startsWith('platform_csrf='))?.split('=')[1] ?? '' },
+    });
+    return {
+      listedStatus: listed.status,
+      listed: listedBody,
+      foreignReadStatus: foreignRead.status,
+      foreignReadBody: await foreignRead.text(),
+      foreignMutationStatus: foreignMutation.status,
+    };
+  }, foreignWorkspaceId);
+  assert.equal(workspaceBoundary.listedStatus, 200);
+  assert.ok(workspaceBoundary.listed.some((entry) => entry.id === workspace.id));
+  assert.ok(!JSON.stringify(workspaceBoundary.listed).includes(foreignWorkspaceId));
+  assert.ok(!JSON.stringify(workspaceBoundary.listed).includes('Isolation Canary Workspace'));
+  assert.equal(workspaceBoundary.foreignReadStatus, 404);
+  assert.ok(!workspaceBoundary.foreignReadBody.includes('Isolation Canary Workspace'));
+  assert.equal(workspaceBoundary.foreignMutationStatus, 404);
 
   const starter = await page.evaluate(async ({ workspaceId, token }) => {
     const response = await fetch(`/api/workspaces/${workspaceId}/scenes/starter`, {

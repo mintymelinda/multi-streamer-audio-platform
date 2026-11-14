@@ -124,6 +124,7 @@ A second browser test, `scripts/e2e/authenticated-session.mjs`, starts the built
 - an unauthenticated browser sees the Twitch sign-in boundary;
 - the real API resolves the opaque HTTP-only session cookie and returns the expected stable Twitch identity;
 - the dashboard can explicitly create a workspace through the real authenticated API;
+- a second disposable workspace owned by another identity is absent from the authenticated user's workspace list, and both read and mutation attempts against its scene API return the non-disclosing not-found boundary;
 - the dashboard creates a published starter scene through the real workspace-scoped API;
 - the built OBS overlay loads that scene snapshot through the real bearer-token endpoint and scrubs the fragment token from browser history;
 - published snapshot responses enforce private no-store caching, no-referrer, and authorization-vary headers;
