@@ -13,9 +13,9 @@ test('CI uses a read-only token and does not persist checkout credentials', () =
   assert.match(workflow, /persist-credentials: false/);
 });
 
-test('CI requires lint, type checking, migration validation, tests, and builds', () => {
+test('CI requires changed-file lint, type checking, migration validation, tests, and builds', () => {
   for (const command of [
-    'pnpm lint',
+    'pnpm lint:changed',
     'pnpm typecheck',
     'pnpm db:migrations:check',
     'pnpm test',
