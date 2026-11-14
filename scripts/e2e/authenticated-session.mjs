@@ -541,7 +541,7 @@ try {
   assert.equal(typeof starter.body.scene.id, 'string');
   assert.match(starter.body.accessToken, /^[A-Za-z0-9_-]{43}$/);
 
-  const overlayPage = await context.newPage();
+  let overlayPage = await context.newPage();
   const overlaySnapshot = overlayPage.waitForResponse((response) =>
     response.url().includes(`/api/overlay/scenes/${starter.body.scene.id}/snapshot`),
   );
@@ -635,6 +635,16 @@ try {
     },
   );
   assert.equal(publishDraftResponse.status, 201);
+
+  // This E2E process starts the API and web apps, but not the outbox dispatcher.
+  // Open a fresh overlay session to verify that the newly published snapshot is
+  // visible without depending on an outbox-driven realtime invalidation.
+  await overlayPage.close();
+  overlayPage = await context.newPage();
+  await overlayPage.goto(
+    `${overlayUrl}${starter.body.overlayPath}#${starter.body.accessToken}`,
+    { waitUntil: 'domcontentloaded' },
+  );
   await overlayPage.getByText('Draft Must Stay Private', { exact: true }).waitFor({ timeout: 10_000 });
 
   const connection = await context.newCDPSession(overlayPage);
