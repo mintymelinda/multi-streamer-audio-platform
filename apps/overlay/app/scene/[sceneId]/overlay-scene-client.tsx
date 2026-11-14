@@ -201,9 +201,20 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
       socket.addEventListener('error', () => socket?.close());
     };
 
+    const handleOnline = () => {
+      if (stopped) return;
+      // A websocket can survive browser network emulation or a brief interface
+      // transition without closing. Refresh the published snapshot explicitly,
+      // then force a fresh socket handshake so missed invalidations are recovered.
+      void loadSnapshot(token).catch(() => setStatus('error'));
+      socket?.close();
+    };
+
+    window.addEventListener('online', handleOnline);
     connect();
     return () => {
       stopped = true;
+      window.removeEventListener('online', handleOnline);
       if (retryTimer) clearTimeout(retryTimer);
       window.clearInterval(refreshTimer);
       socket?.close();
