@@ -330,3 +330,16 @@ The workflow builds one image tagged with the exact tested commit SHA and publis
 A failed routine presentation-only deployment attempts to restore the previous application image. High-risk deployments do not automatically roll back the application image because a schema or data change may make the previous image incompatible; follow the operator recovery procedure and assess database/PITR recovery separately. Image rollback is not database rollback.
 
 The remote override is validated alongside the staging Compose model in CI. The actual SSH deployment is intentionally not run by pull-request CI. Configure the staging host and environment secrets only when a disposable non-production target is ready; enabling the workflow is an explicit operator action.
+
+
+## Item 74 — release audit, post-deployment verification, and recovery
+
+Every staging deployment job writes a sanitized `release-audit.json` in an `always()` step, including when image publication, remote deployment, container readiness, or public ingress fails. The workflow uploads that record together with `staging-ingress-checks.json` as a run-specific Actions artifact retained for 90 days. The job summary includes the release commit, risk class, immutable image reference, build/deploy/ingress outcomes, and rollback outcome. The record deliberately excludes SSH credentials, secret values, environment contents, and private service URLs.
+
+The ingress evidence is emitted by `scripts/ops/staging-deployment-smoke.mjs` and covers API liveness/readiness, dashboard and overlay HTTP responses, object-storage readiness, Socket.IO WebSocket upgrade, and exact Twitch sign-in/integration callback configuration. The remote deployment gate separately requires healthy PostgreSQL, Redis, API, worker, dashboard, and overlay containers, successful object-storage initialization, and a running edge container before the public ingress checks run.
+
+Routine image rollback is limited to presentation-only releases. Both the in-deploy rollback path and the post-ingress rollback step wait for API, worker, dashboard, and overlay to report `running:healthy`; a rollback is not reported as successful merely because Compose accepted the restart command. The audit record reports the dedicated rollback step result. If the in-deploy routine rollback is triggered inside the remote deployment command, its detailed result remains in that step log and the audit explicitly marks the result as not independently reported rather than claiming success.
+
+High-risk releases do not automatically restore the previous image or database. If one fails, the audit marks operator recovery as required. Follow the backup/PITR and failed-release runbook, assess schema/data compatibility, restore only from a verified recovery point when authorized, and rerun the complete staging health probe before considering the environment recovered. Image rollback is not database rollback.
+
+The artifacts are release evidence for the non-production staging workflow, not proof of a production release or authorization to deploy to the NAS. Actual SSH deployment, external DNS/ACME, real Twitch callback exchange, and volume restoration still require a separately provisioned disposable staging environment.
