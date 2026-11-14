@@ -300,7 +300,7 @@ The release workflow is `.github/workflows/staging-deploy.yml`. It deploys only 
 
 The workflow runs automatically only after the `CI` workflow completes successfully for a push to `main` from this repository. It refuses to deploy if a newer commit has already reached `main`, compares the tested commit with the previous successful main-branch CI push, and applies the conservative classifier in `scripts/release/classify-change.mjs`:
 
-- **Routine:** every runtime change is limited to dashboard/overlay CSS or static presentation assets under the relevant app's `public` directory. If staging deployment is enabled, the immutable image is deployed automatically.
+- **Routine:** every runtime change is limited to dashboard/overlay CSS or static raster/font presentation assets under the relevant app's `public` directory. Active SVG content and all other paths require approval. If staging deployment is enabled, the immutable image is deployed automatically.
 - **Documentation-only:** no application deployment is needed.
 - **Approval required:** all other paths, including application logic, API/worker code, provider behavior, authorization/security, dependencies, migrations, infrastructure, CI/workflow changes, and unknown or incomplete change lists.
 
