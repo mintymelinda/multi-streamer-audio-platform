@@ -126,6 +126,8 @@ A second browser test, `scripts/e2e/authenticated-session.mjs`, starts the built
 - the dashboard can explicitly create a workspace through the real authenticated API;
 - the dashboard creates a published starter scene through the real workspace-scoped API;
 - the built OBS overlay loads that scene snapshot through the real bearer-token endpoint and scrubs the fragment token from browser history;
+- published snapshot responses enforce private no-store caching, no-referrer, and authorization-vary headers;
+- unknown well-formed bearer tokens are rejected without scene disclosure, and malformed fragment tokens are rejected before any snapshot request;
 - publishing a changed scene while the overlay browser is offline is recovered from the latest published snapshot after the Socket.IO connection reconnects;
 - saving a draft does not alter the public overlay until the draft is explicitly published, after which the live overlay receives the published state;
 - revoking the scene token through the authenticated API invalidates the live overlay connection and returns the browser to the revoked-token boundary;
