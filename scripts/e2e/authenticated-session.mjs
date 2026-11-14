@@ -204,7 +204,7 @@ try {
   ], overlayEnvironment);
   await waitFor(overlayUrl, overlayProcess);
 
-  browser = await chromium.launch({ headless: true });
+  browser = await chromium.launch({ channel: 'chrome', headless: true });
   const context = await browser.newContext();
   const page = await context.newPage();
 
