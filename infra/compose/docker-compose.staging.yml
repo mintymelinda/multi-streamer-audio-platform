@@ -93,7 +93,7 @@ services:
       - data
 
   api:
-    image: platform-staging-app:local
+    image: ${PLATFORM_IMAGE:-platform-staging-app:local}
     build:
       context: ../..
       dockerfile: infra/compose/Deployment.Dockerfile
@@ -148,7 +148,7 @@ services:
       - data
 
   worker:
-    image: platform-staging-app:local
+    image: ${PLATFORM_IMAGE:-platform-staging-app:local}
     restart: unless-stopped
     init: true
     command: ["node", "apps/worker/dist/main.js"]
@@ -179,7 +179,7 @@ services:
       - data
 
   dashboard:
-    image: platform-staging-app:local
+    image: ${PLATFORM_IMAGE:-platform-staging-app:local}
     restart: unless-stopped
     init: true
     command:
@@ -203,7 +203,7 @@ services:
       - app
 
   overlay:
-    image: platform-staging-app:local
+    image: ${PLATFORM_IMAGE:-platform-staging-app:local}
     restart: unless-stopped
     init: true
     command:
