@@ -16,8 +16,6 @@ on:
 permissions:
   contents: read
   actions: read
-  contents: read
-  actions: read
 
 concurrency:
   group: staging-deployment
@@ -175,9 +173,9 @@ jobs:
           scp -i "$HOME/.ssh/id_ed25519" -o BatchMode=yes -o StrictHostKeyChecking=yes infra/compose/docker-compose.staging.yml infra/compose/docker-compose.staging.remote.yml infra/compose/docker-compose.edge.yml infra/compose/Caddyfile "$target:$STAGING_DEPLOY_PATH/infra/compose/"
           scp -r -i "$HOME/.ssh/id_ed25519" -o BatchMode=yes -o StrictHostKeyChecking=yes infra/postgres/init infra/postgres/migrations "$target:$STAGING_DEPLOY_PATH/infra/postgres/"
 
-          printf '%s' "$STAGING_GHCR_READ_TOKEN" | ssh -i "$HOME/.ssh/id_ed25519" -o BatchMode=yes "$target" "docker login ghcr.io --username '$STAGING_GHCR_USERNAME' --password-stdin"
+          printf '%s' "$STAGING_GHCR_READ_TOKEN" | ssh -i "$HOME/.ssh/id_ed25519" -o BatchMode=yes -o StrictHostKeyChecking=yes "$target" "docker login ghcr.io --username '$STAGING_GHCR_USERNAME' --password-stdin"
 
-          ssh -i "$HOME/.ssh/id_ed25519" -o BatchMode=yes "$target" bash -s -- "$STAGING_DEPLOY_PATH" "$IMAGE" "$RELEASE_RISK" <<'REMOTE'
+          ssh -i "$HOME/.ssh/id_ed25519" -o BatchMode=yes -o StrictHostKeyChecking=yes "$target" bash -s -- "$STAGING_DEPLOY_PATH" "$IMAGE" "$RELEASE_RISK" <<'REMOTE'
           set -euo pipefail
           deploy_path="$1"
           image="$2"
@@ -311,7 +309,7 @@ jobs:
         run: |
           set -euo pipefail
           target="$STAGING_SSH_USER@$STAGING_SSH_HOST"
-          ssh -i "$HOME/.ssh/id_ed25519" -o BatchMode=yes "$target" bash -s -- "$STAGING_DEPLOY_PATH" <<'REMOTE'
+          ssh -i "$HOME/.ssh/id_ed25519" -o BatchMode=yes -o StrictHostKeyChecking=yes "$target" bash -s -- "$STAGING_DEPLOY_PATH" <<'REMOTE'
           set -euo pipefail
           deploy_path="$1"
           previous_image="$(cat "$deploy_path/.previous-staging-image" 2>/dev/null || true)"
@@ -320,7 +318,7 @@ jobs:
             exit 1
           fi
           compose_dir="$deploy_path/infra/compose"
-          PLATFORM_IMAGE="$previous_image" docker compose --env-file "$compose_dir/.env.staging" -f "$compose_dir/docker-compose.staging.yml" -f "$compose_dir/docker-compose.staging.remote.yml" up -d --no-build
+          PLATFORM_IMAGE="$previous_image" docker compose --env-file "$compose_dir/.env.staging" -f "$compose_dir/docker-compose.staging.yml" -f "$compose_dir/docker-compose.staging.remote.yml" up -d --no-build --no-deps api worker dashboard overlay
           REMOTE
 
       - name: Preserve failed high-risk deployment for operator recovery
