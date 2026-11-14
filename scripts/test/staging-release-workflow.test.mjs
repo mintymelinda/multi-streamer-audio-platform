@@ -8,6 +8,7 @@ const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 const workflow = readFileSync(resolve(repositoryRoot, '.github/workflows/staging-deploy.yml'), 'utf8');
 const compose = readFileSync(resolve(repositoryRoot, 'infra/compose/docker-compose.staging.yml'), 'utf8');
 const remoteOverride = readFileSync(resolve(repositoryRoot, 'infra/compose/docker-compose.staging.remote.yml'), 'utf8');
+const ingressSmoke = readFileSync(resolve(repositoryRoot, 'scripts/ops/staging-deployment-smoke.mjs'), 'utf8');
 
 test('automatic staging deployment only follows successful main-branch CI pushes', () => {
   assert.match(workflow, /workflow_run:\n\s+workflows: \["CI"\]/);
@@ -75,9 +76,13 @@ test('every staging deployment attempt writes and retains sanitized audit eviden
   assert.match(workflow, /id: rollback/);
 });
 
-test('post-deployment ingress evidence is captured for API, dashboard, overlay, storage, WebSocket, and Twitch callbacks', () => {
+test('post-deployment ingress evidence invokes the smoke test covering API, dashboard, overlay, storage, WebSocket, and Twitch callbacks', () => {
   assert.match(workflow, /staging-deployment-smoke\.mjs/);
   assert.match(workflow, /tee staging-ingress-checks\.json/);
-  assert.match(workflow, /health\/ready/);
   assert.match(workflow, /twitch-integration-callback-url/);
+  assert.match(ingressSmoke, /health\/ready/);
+  assert.match(ingressSmoke, /minio\/health\/ready/);
+  assert.match(ingressSmoke, /socket\.io-websocket-upgrade/);
+  assert.match(ingressSmoke, /twitch-login-callback/);
+  assert.match(ingressSmoke, /twitch-integration-callback/);
 });
