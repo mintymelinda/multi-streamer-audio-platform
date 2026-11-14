@@ -55,3 +55,23 @@ test('deployment workflow does not target production or run for pull-request eve
   assert.doesNotMatch(workflow, /environment:\s*production/);
   assert.doesNotMatch(workflow, /pull_request:/);
 });
+
+test('every staging deployment attempt writes and retains sanitized audit evidence, including failures', () => {
+  assert.match(workflow, /Write sanitized release audit record/);
+  assert.match(workflow, /id: audit/);
+  assert.match(workflow, /if: always\(\)/);
+  assert.match(workflow, /Upload release audit and ingress evidence/);
+  assert.match(workflow, /retention-days: 90/);
+  assert.match(workflow, /staging-ingress-checks\.json/);
+  assert.match(workflow, /steps\.deploy\.outcome/);
+  assert.match(workflow, /steps\.ingress\.outcome/);
+  assert.match(workflow, /steps\.rollback\.outcome/);
+  assert.match(workflow, /id: rollback/);
+});
+
+test('post-deployment ingress evidence is captured for API, dashboard, overlay, storage, WebSocket, and Twitch callbacks', () => {
+  assert.match(workflow, /staging-deployment-smoke\.mjs/);
+  assert.match(workflow, /tee staging-ingress-checks\.json/);
+  assert.match(workflow, /health\/ready/);
+  assert.match(workflow, /twitch-integration-callback-url/);
+});
