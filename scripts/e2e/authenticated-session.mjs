@@ -325,6 +325,7 @@ try {
     NODE_ENV: 'test',
     DATABASE_URL: postgresUrl,
     API_PORT: '3300',
+    PROVIDER_EXECUTION_HANDOFF_SECRET: handoffSecret,
     REDIS_URL: process.env.REDIS_URL ?? 'redis://127.0.0.1:6379',
     PROVIDER_EXECUTION_HANDOFF_SECRET: handoffSecret,
     INVIDIOUS_INSTANCE_URL: providerFixture.url,
