@@ -93,6 +93,10 @@ services:
       POSTGRES_DB: platform
       POSTGRES_USER: platform_bootstrap
       POSTGRES_PASSWORD: ${POSTGRES_BOOTSTRAP_PASSWORD:-local-bootstrap-only}
+      PLATFORM_MIGRATOR_PASSWORD: ${PLATFORM_MIGRATOR_PASSWORD:-local-migration-only}
+      PLATFORM_RUNTIME_PASSWORD: ${PLATFORM_RUNTIME_PASSWORD:-local-runtime-only}
+      PLATFORM_WORKER_PASSWORD: ${PLATFORM_WORKER_PASSWORD:-local-worker-only}
+      PLATFORM_PROVIDER_WORKER_PASSWORD: ${PLATFORM_PROVIDER_WORKER_PASSWORD:-local-provider-worker-only}
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
