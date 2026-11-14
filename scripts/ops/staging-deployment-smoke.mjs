@@ -30,9 +30,9 @@ export function parseOptions(argv) {
   options.overlay = parseHttpsOrigin(options['overlay-url'], 'overlay');
   options.assets = parseHttpsOrigin(options['assets-url'], 'assets');
   options.integrationCallback = options['twitch-integration-callback-url'];
-  const expectedIntegration = new URL('/auth/twitch/integration/callback', options.api).toString();
+  const expectedIntegration = new URL('/auth/twitch/integration/callback', options.dashboard).toString();
   if (options.integrationCallback !== expectedIntegration) {
-    throw new Error('The configured Twitch integration callback must exactly match ' + expectedIntegration);
+    throw new Error('The configured Twitch integration callback must exactly match the dashboard-origin URL ' + expectedIntegration);
   }
   return options;
 }
@@ -68,7 +68,7 @@ export function validateTwitchLoginRedirect(location, expectedCallback) {
     throw new Error('Twitch sign-in redirected to an unexpected authorization endpoint.');
   }
   if (target.searchParams.get('redirect_uri') !== expectedCallback) {
-    throw new Error('Twitch sign-in redirect_uri does not match the public API callback URL.');
+    throw new Error('Twitch sign-in redirect_uri does not match the dashboard-origin callback URL.');
   }
   if (!target.searchParams.get('state')) {
     throw new Error('Twitch sign-in authorization URL is missing its state parameter.');
@@ -119,14 +119,14 @@ async function checkWebSocket(apiOrigin) {
 
 async function main(argv) {
   const options = parseOptions(argv);
-  const loginCallback = new URL('/auth/twitch/callback', options.api).toString();
+  const loginCallback = new URL('/auth/twitch/callback', options.dashboard).toString();
   const checks = [];
   checks.push(await checkHttp('api-live', new URL('/health/live', options.api)));
   checks.push(await checkHttp('api-ready', new URL('/health/ready', options.api)));
   checks.push(await checkHttp('dashboard', options.dashboard + '/'));
   checks.push(await checkHttp('overlay', options.overlay + '/'));
   checks.push(await checkHttp('object-storage-ready', new URL('/minio/health/ready', options.assets)));
-  const login = await fetch(new URL('/auth/twitch/start', options.api), {
+  const login = await fetch(new URL('/api/auth/twitch/start', options.dashboard), {
     redirect: 'manual',
     signal: AbortSignal.timeout(15_000),
   });
