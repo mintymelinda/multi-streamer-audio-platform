@@ -11,6 +11,7 @@ if (!playwrightModule) {
 const { chromium } = await import(pathToFileURL(playwrightModule).href);
 
 const dashboardUrl = 'http://127.0.0.1:3100';
+const overlayUrl = 'http://127.0.0.1:3200';
 const apiUrl = 'http://127.0.0.1:3300';
 const postgresUrl = 'postgresql://platform_runtime:local-runtime-only@127.0.0.1:5432/platform';
 const actorId = randomUUID();
@@ -162,6 +163,25 @@ try {
   ], dashboardEnvironment);
   await waitFor(dashboardUrl, dashboardProcess);
 
+  const overlayEnvironment = {
+    ...process.env,
+    NODE_ENV: 'production',
+    API_INTERNAL_URL: apiUrl,
+    PORT: '3200',
+    HOSTNAME: '127.0.0.1',
+  };
+  const overlayProcess = start('pnpm', [
+    '--filter',
+    '@platform/overlay',
+    'start',
+    '--',
+    '--hostname',
+    '127.0.0.1',
+    '--port',
+    '3200',
+  ], overlayEnvironment);
+  await waitFor(overlayUrl, overlayProcess);
+
   browser = await chromium.launch({ headless: true });
   const context = await browser.newContext();
   const page = await context.newPage();
@@ -200,8 +220,53 @@ try {
   assert.equal(identity.body.user.twitchUserId, twitchUserId);
 
   await page.getByPlaceholder('Workspace name').fill('Browser E2E Workspace');
+  const workspaceResponsePromise = page.waitForResponse((response) =>
+    response.url().endsWith('/api/workspaces') && response.request().method() === 'POST',
+  );
   await page.getByRole('button', { name: 'Create workspace' }).click();
+  const workspaceResponse = await workspaceResponsePromise;
+  assert.equal(workspaceResponse.status(), 201);
+  const workspace = await workspaceResponse.json();
+  assert.equal(typeof workspace.id, 'string');
   await page.getByRole('heading', { name: 'Browser E2E Workspace' }).waitFor();
+
+  const starter = await page.evaluate(async ({ workspaceId, token }) => {
+    const response = await fetch(`/api/workspaces/${workspaceId}/scenes/starter`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'x-csrf-token': token },
+    });
+    return { status: response.status, body: await response.json() };
+  }, { workspaceId: workspace.id, token: csrfToken });
+  assert.equal(starter.status, 201);
+  assert.equal(typeof starter.body.scene.id, 'string');
+  assert.match(starter.body.accessToken, /^[A-Za-z0-9_-]{43}$/);
+
+  const overlayPage = await context.newPage();
+  const overlaySnapshot = overlayPage.waitForResponse((response) =>
+    response.url().includes(`/api/overlay/scenes/${starter.body.scene.id}/snapshot`),
+  );
+  await overlayPage.goto(
+    `${overlayUrl}${starter.body.overlayPath}#${starter.body.accessToken}`,
+    { waitUntil: 'networkidle' },
+  );
+  const snapshotResponse = await overlaySnapshot;
+  assert.equal(snapshotResponse.status(), 200, 'The overlay must load its published scene from the real API.');
+  await overlayPage.getByText('Now Playing', { exact: true }).first().waitFor();
+  assert.equal(new URL(overlayPage.url()).hash, '', 'The overlay must scrub the bearer token from browser history.');
+
+  const revoke = await page.evaluate(async ({ workspaceId, sceneId, token }) => {
+    const response = await fetch(`/api/workspaces/${workspaceId}/scenes/${sceneId}/access-token`, {
+      method: 'DELETE',
+      credentials: 'include',
+      headers: { 'x-csrf-token': token },
+    });
+    return response.status;
+  }, { workspaceId: workspace.id, sceneId: starter.body.scene.id, token: csrfToken });
+  assert.equal(revoke, 200);
+  await overlayPage.getByText('This overlay URL is invalid or has been revoked.', { exact: true }).waitFor({
+    timeout: 20_000,
+  });
 
   const rejectedLogout = await page.evaluate(async () => {
     const response = await fetch('/api/auth/logout', {
@@ -226,7 +291,7 @@ try {
   await page.getByRole('heading', { name: 'Your channel.' }).waitFor();
 
   process.stdout.write(
-    'Authenticated browser E2E passed: real API session resolution, explicit workspace creation, CSRF enforcement, logout, and revoked-session boundary.\n',
+    'Authenticated browser E2E passed: real API session resolution, workspace creation, published overlay snapshot, bearer-token revocation, CSRF enforcement, and logout.\n',
   );
 } finally {
   if (browser) await browser.close();

@@ -222,7 +222,7 @@ jobs:
           PLAYWRIGHT_MODULE: ${{ runner.temp }}/playwright/node_modules/playwright/index.mjs
         run: node scripts/e2e/browser-smoke.mjs
 
-      - name: Run authenticated browser session E2E
+      - name: Run authenticated browser and overlay runtime E2E
         env:
           PLAYWRIGHT_MODULE: ${{ runner.temp }}/playwright/node_modules/playwright/index.mjs
         run: node scripts/e2e/authenticated-session.mjs
