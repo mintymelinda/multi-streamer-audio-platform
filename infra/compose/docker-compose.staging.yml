@@ -175,7 +175,13 @@ services:
     image: platform-staging-app:local
     restart: unless-stopped
     init: true
-    command: ["node", "apps/dashboard/.next/standalone/server.js"]
+    command:
+      - sh
+      - -lc
+      - >-
+        server="$(find apps/dashboard/.next/standalone -type d -name node_modules -prune -o -type f -name server.js -print -quit)" &&
+        test -n "$server" &&
+        exec node "$server"
     environment:
       NODE_ENV: production
       HOSTNAME: 0.0.0.0
@@ -193,7 +199,13 @@ services:
     image: platform-staging-app:local
     restart: unless-stopped
     init: true
-    command: ["node", "apps/overlay/.next/standalone/server.js"]
+    command:
+      - sh
+      - -lc
+      - >-
+        server="$(find apps/overlay/.next/standalone -type d -name node_modules -prune -o -type f -name server.js -print -quit)" &&
+        test -n "$server" &&
+        exec node "$server"
     environment:
       NODE_ENV: production
       HOSTNAME: 0.0.0.0
