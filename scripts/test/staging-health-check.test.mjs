@@ -37,7 +37,7 @@ test('parses Docker Compose JSON array and newline-delimited output', () => {
   ]);
   assert.deepEqual(parseComposePsOutput('{"Service":"api","State":"running"}\n{"Service":"worker","State":"running"}'), [
     { Service: 'api', State: 'running' },
-    { Service: 'worker', State: 'running', Health: 'healthy' },
+    { Service: 'worker', State: 'running' },
   ]);
   assert.deepEqual(parseComposePsOutput(''), []);
   assert.throws(() => parseComposePsOutput('not-json'), /invalid service status/);
@@ -46,11 +46,11 @@ test('parses Docker Compose JSON array and newline-delimited output', () => {
 test('requires all services to be running and configured healthchecks to be healthy', () => {
   const checks = evaluateComposeServices([
     { Service: 'api', State: 'running', Health: 'healthy' },
-    { Service: 'worker', State: 'running' },
+    { Service: 'worker', State: 'running', Health: 'healthy' },
     { Service: 'redis', State: 'running', Health: 'unhealthy' },
   ], [
     { service: 'api', healthcheck: true },
-    { service: 'worker' },
+    { service: 'worker', healthcheck: true },
     { service: 'redis', healthcheck: true },
     { service: 'postgres', healthcheck: true },
   ]);
@@ -67,7 +67,7 @@ test('produces a passing report when container and public endpoint checks succee
     { Service: 'redis', State: 'running', Health: 'healthy' },
     { Service: 'object-storage', State: 'running' },
     { Service: 'api', State: 'running', Health: 'healthy' },
-    { Service: 'worker', State: 'running' },
+    { Service: 'worker', State: 'running', Health: 'healthy' },
     { Service: 'dashboard', State: 'running', Health: 'healthy' },
     { Service: 'overlay', State: 'running', Health: 'healthy' },
   ];
