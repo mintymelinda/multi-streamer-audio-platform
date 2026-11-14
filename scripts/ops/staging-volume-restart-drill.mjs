@@ -76,7 +76,7 @@ function composePrefix(options) {
 }
 
 function serviceContainer(options, service) {
-  const id = docker([...composePrefix(options), 'ps', '-q', service]);
+  const id = docker([...composePrefix(options), 'ps', '-aq', service]);
   if (!id) throw new Error('Compose service ' + service + ' is not running.');
   return id.split('\n')[0];
 }
