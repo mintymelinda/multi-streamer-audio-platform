@@ -234,3 +234,41 @@ node scripts/ops/staging-volume-restart-drill.mjs \
 
 The drill never runs `docker compose down --volumes` and never deletes the named volumes. Run both the application and edge Compose stacks before starting it; Caddy must already have issued its staging certificates. It briefly interrupts staging database, Redis, and object-storage connections while the three containers are recreated. If interrupted before cleanup, the PostgreSQL probe table is removed on the next successful run and Redis/object-storage probes have unique identifiers; inspect any leftover object before manually deleting it. A passing drill proves persistence across container recreation, not backup restoration or disaster recovery.
 
+### Preparing staging secrets
+
+Keep `infra/compose/.env.staging` private (`chmod 600`) and use URL-safe hexadecimal values for database and MinIO passwords so they can safely appear in PostgreSQL connection URLs. Generate unique values; never copy the example strings or CI credentials:
+
+```sh
+umask 077
+cp infra/compose/.env.staging.example infra/compose/.env.staging
+# Edit .env.staging: set each password to a different value from: openssl rand -hex 32
+mkdir -p infra/compose/secrets
+chmod 700 infra/compose/secrets
+set -a
+. infra/compose/.env.staging
+set +a
+printf 'postgres://platform_runtime:%s@postgres:5432/platform' "$PLATFORM_RUNTIME_PASSWORD" > infra/compose/secrets/api-database-url
+printf 'postgres://platform_worker:%s@postgres:5432/platform' "$PLATFORM_WORKER_PASSWORD" > infra/compose/secrets/worker-database-url
+printf 'postgres://platform_provider_worker:%s@postgres:5432/platform' "$PLATFORM_PROVIDER_WORKER_PASSWORD" > infra/compose/secrets/provider-execution-database-url
+printf '%s' 'redis://redis:6379' > infra/compose/secrets/redis-url
+openssl rand -hex 32 > infra/compose/secrets/provider-execution-handoff-secret
+node --input-type=module -e 'import { randomBytes } from "node:crypto"; const key = randomBytes(32).toString("base64"); process.stdout.write(JSON.stringify({ currentVersion: "v1", keys: { v1: key } }));' > infra/compose/secrets/integration-kek-ring.json
+install -m 600 /secure/location/twitch-client-secret infra/compose/secrets/twitch-client-secret
+chmod 600 infra/compose/secrets/* infra/compose/.env.staging
+```
+
+Keep the generated KEK ring independent of database/object-storage backups and retain its recovery copy securely. The KEK ring is not interchangeable between staging and production. The Twitch client secret file must contain the exact secret from the registered Twitch application. The database URL files must use the matching role password from `.env.staging`. Do not print or commit any of these files.
+
+### Safe staging domain migration
+
+Treat a domain change as a coordinated configuration and OAuth change, not just a DNS edit:
+
+1. Lower the DNS TTL for the existing hostnames in advance, then add the new dashboard, overlay, API, and asset records pointing at the staging host.
+2. Register both new Twitch callback URLs in the Twitch developer console before switching the API configuration: `https://<new-api-host>/auth/twitch/callback` and `https://<new-api-host>/auth/twitch/integration/callback`.
+3. Update the four domain values and both callback URLs in `.env.staging`. Add temporary old-host site blocks to `infra/compose/Caddyfile` that reverse-proxy to the same internal services so existing browser/OBS clients and outstanding signed asset URLs continue to work during the transition.
+4. Recreate the edge and API services using the updated environment. Caddy obtains certificates for the new names and retains its account/certificate state in the existing `caddy_data` volume.
+5. Run the ingress smoke runner against the new four origins. Confirm the Twitch sign-in `redirect_uri` matches the new API host and the broadcaster callback value is exact.
+6. Keep the old host routes until DNS caches have expired and existing overlay clients have had time to reconnect. Keep the old asset host available for at least the maximum signed-URL lifetime. Then remove the temporary old-host blocks and retire the old DNS records.
+
+Do not delete Caddy or application data volumes as part of a domain migration. This procedure is for the isolated staging environment; production migration requires a separately approved maintenance and rollback plan.
+
