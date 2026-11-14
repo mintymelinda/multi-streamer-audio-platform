@@ -201,3 +201,4 @@ Before starting staging:
 6. Verify `/health/ready`, dashboard and overlay pages, a real Socket.IO connection through the API hostname, an upload/download round trip through the assets hostname, and both Twitch OAuth redirect destinations. Confirm PostgreSQL, Redis, object storage, and Caddy data volumes survive container recreation.
 
 The app network is shared with Caddy so the proxy can reach only the intended HTTP upstreams. PostgreSQL and Redis use a separate internal-only network. The Compose definitions and Caddyfile are validated in CI; the runtime checks above still require a disposable staging host with real DNS and provider callback registration. This stack is a staging verification target, not a production/NAS deployment recipe.
+
