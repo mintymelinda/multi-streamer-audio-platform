@@ -34,8 +34,8 @@ const invitationId = randomUUID();
 const invitationTokenHash = createHash('sha256').update(randomUUID()).digest('hex');
 const sourceProviderId = randomUUID();
 const outputProviderId = randomUUID();
-const outputId = 'browser-e2e-output-' + randomUUID();
-const playerId = 'browser-e2e-player-' + randomUUID();
+const outputId = `browser-e2e-output-${randomUUID()}`;
+const playerId = `browser-e2e-player-${randomUUID()}`;
 const handoffSecret = 'browser-e2e-provider-handoff-secret-with-more-than-32-bytes';
 const children = [];
 let browser;
@@ -46,7 +46,7 @@ function run(command, args, options = {}) {
   const result = spawnSync(command, args, { encoding: 'utf8', ...options });
   if (result.status !== 0) {
     throw new Error(
-      command + ' failed (' + result.status + '): ' + (result.stderr || result.stdout).trim(),
+      `${command} failed (${result.status}): ${(result.stderr || result.stdout).trim()}`,
     );
   }
   return result.stdout.trim();
@@ -155,7 +155,7 @@ async function startProviderFixture() {
     });
   });
   return {
-    url: 'http://127.0.0.1:' + address.port,
+    url: `http://127.0.0.1:${address.port}`,
     commands,
     playSeen: playObserved,
     async close() {
@@ -185,15 +185,17 @@ async function startRequestPlaybackWorker(environment) {
     }
     child.once('error', (error) => finish(error));
     child.once('exit', (code, signal) => finish(
-      new Error('Request/playback worker exited before readiness (' + code + '/' + signal + ').'),
+      new Error(`Request/playback worker exited before readiness (${code}/${signal}).`),
     ));
     child.stdout.setEncoding('utf8');
     child.stdout.on('data', (chunk) => {
       buffer += chunk;
       let newline;
-      while ((newline = buffer.indexOf('\n')) >= 0) {
+      newline = buffer.indexOf('\n');
+      while (newline >= 0) {
         const line = buffer.slice(0, newline);
         buffer = buffer.slice(newline + 1);
+        newline = buffer.indexOf('\n');
         if (!line.trim()) continue;
         let message;
         try { message = JSON.parse(line); }
@@ -203,7 +205,7 @@ async function startRequestPlaybackWorker(environment) {
         }
         if (message.type === 'ready') finish(null, child);
         else if (message.type === 'boot-error') {
-          finish(new Error('Request/playback worker failed: ' + message.message));
+          finish(new Error(`Request/playback worker failed: ${message.message}`));
         }
       }
     });
@@ -213,15 +215,10 @@ async function startRequestPlaybackWorker(environment) {
 function seedPlaybackProviders(containerId, workspaceId, fixtureUrl) {
   sql(containerId, [
     'BEGIN;',
-    "INSERT INTO workspace_rights_attestations (workspace_id, policy_version, accepted_by_user_id, accepted_at) VALUES ('"
-      + workspaceId + "', '2026-11', '" + actorId + "', now());",
-    "INSERT INTO provider_instances (id, workspace_id, provider_id, instance_key, contract_version, capabilities, connection_health, enabled) VALUES ('"
-      + sourceProviderId + "', '" + workspaceId + "', 'youtube', 'browser-e2e-youtube', 1, '{\"resolve\":true,\"mediaTypes\":[\"audio\"]}'::jsonb, 'healthy', true);",
-    "INSERT INTO provider_instances (id, workspace_id, provider_id, instance_key, contract_version, capabilities, connection_health, enabled, configuration) VALUES ('"
-      + outputProviderId + "', '" + workspaceId + "', 'lyrion', 'browser-e2e-lyrion', 1, '{\"playback\":true,\"mediaTypes\":[\"audio\"],\"supportedSourceProviderIds\":[\"youtube\"]}'::jsonb, 'healthy', true, jsonb_build_object('baseUrl', '"
-      + fixtureUrl + "'));",
-    "INSERT INTO provider_output_assignments (workspace_id, provider_instance_id, output_id, player_id, assigned_by, active) VALUES ('"
-      + workspaceId + "', '" + outputProviderId + "', '" + outputId + "', '" + playerId + "', '" + actorId + "', true);",
+    `INSERT INTO workspace_rights_attestations (workspace_id, policy_version, accepted_by_user_id, accepted_at) VALUES ('${workspaceId}', '2026-11', '${actorId}', now());`,
+    `INSERT INTO provider_instances (id, workspace_id, provider_id, instance_key, contract_version, capabilities, connection_health, enabled) VALUES ('${sourceProviderId}', '${workspaceId}', 'youtube', 'browser-e2e-youtube', 1, '{"resolve":true,"mediaTypes":["audio"]}'::jsonb, 'healthy', true);`,
+    `INSERT INTO provider_instances (id, workspace_id, provider_id, instance_key, contract_version, capabilities, connection_health, enabled, configuration) VALUES ('${outputProviderId}', '${workspaceId}', 'lyrion', 'browser-e2e-lyrion', 1, '{"playback":true,"mediaTypes":["audio"],"supportedSourceProviderIds":["youtube"]}'::jsonb, 'healthy', true, jsonb_build_object('baseUrl', '${fixtureUrl}'));`,
+    `INSERT INTO provider_output_assignments (workspace_id, provider_instance_id, output_id, player_id, assigned_by, active) VALUES ('${workspaceId}', '${outputProviderId}', '${outputId}', '${playerId}', '${actorId}', true);`,
     'COMMIT;',
   ].join('\n'));
 }
@@ -261,7 +258,7 @@ async function waitFor(url, child, expectedStatus = 200) {
   const deadline = Date.now() + 45_000;
   while (Date.now() < deadline) {
     if (child.exitCode !== null) {
-      throw new Error('Server exited before becoming ready (code ' + child.exitCode + ').');
+      throw new Error(`Server exited before becoming ready (code ${child.exitCode}).`);
     }
     try {
       const response = await fetch(url, { signal: AbortSignal.timeout(1_000) });
@@ -271,7 +268,7 @@ async function waitFor(url, child, expectedStatus = 200) {
     }
     await delay(250);
   }
-  throw new Error('Server did not become ready: ' + url);
+  throw new Error(`Server did not become ready: ${url}`);
 }
 
 async function stopServers() {
@@ -292,14 +289,12 @@ async function stopServers() {
 function seedSession(containerId) {
   sql(containerId, [
     'BEGIN;',
-    "INSERT INTO platform_users (id, twitch_user_id) VALUES ('" + actorId + "', '" + twitchUserId + "');",
-    "INSERT INTO platform_users (id, twitch_user_id) VALUES ('" + foreignActorId + "', '" + foreignTwitchUserId + "');",
-    "INSERT INTO workspaces (id, name, owner_user_id, broadcaster_twitch_user_id) VALUES ('" + foreignWorkspaceId + "', 'Isolation Canary Workspace', '" + foreignActorId + "', '" + foreignTwitchUserId + "');",
-    "INSERT INTO workspace_memberships (workspace_id, user_id, role) VALUES ('" + foreignWorkspaceId + "', '" + foreignActorId + "', 'owner');",
-    "INSERT INTO user_sessions (user_id, session_token_hash, csrf_token_hash, expires_at) VALUES ('"
-      + actorId + "', '" + sessionHash + "', '" + csrfHash + "', now() + interval '10 minutes');",
-    "INSERT INTO user_sessions (user_id, session_token_hash, csrf_token_hash, expires_at) VALUES ('"
-      + foreignActorId + "', '" + foreignSessionHash + "', '" + foreignCsrfHash + "', now() + interval '10 minutes');",
+    `INSERT INTO platform_users (id, twitch_user_id) VALUES ('${actorId}', '${twitchUserId}');`,
+    `INSERT INTO platform_users (id, twitch_user_id) VALUES ('${foreignActorId}', '${foreignTwitchUserId}');`,
+    `INSERT INTO workspaces (id, name, owner_user_id, broadcaster_twitch_user_id) VALUES ('${foreignWorkspaceId}', 'Isolation Canary Workspace', '${foreignActorId}', '${foreignTwitchUserId}');`,
+    `INSERT INTO workspace_memberships (workspace_id, user_id, role) VALUES ('${foreignWorkspaceId}', '${foreignActorId}', 'owner');`,
+    `INSERT INTO user_sessions (user_id, session_token_hash, csrf_token_hash, expires_at) VALUES ('${actorId}', '${sessionHash}', '${csrfHash}', now() + interval '10 minutes');`,
+    `INSERT INTO user_sessions (user_id, session_token_hash, csrf_token_hash, expires_at) VALUES ('${foreignActorId}', '${foreignSessionHash}', '${foreignCsrfHash}', now() + interval '10 minutes');`,
     'COMMIT;',
   ].join('\n'));
   seeded = true;
@@ -307,17 +302,15 @@ function seedSession(containerId) {
 
 function seedInvitation(containerId, workspaceId) {
   sql(containerId, [
-    "INSERT INTO workspace_invitations (id, workspace_id, invited_twitch_user_id, assigned_role, token_hash, invited_by_user_id, expires_at) VALUES ('"
-      + invitationId + "', '" + workspaceId + "', '" + foreignTwitchUserId + "', 'moderator', '"
-      + invitationTokenHash + "', '" + actorId + "', now() + interval '7 days');",
+    `INSERT INTO workspace_invitations (id, workspace_id, invited_twitch_user_id, assigned_role, token_hash, invited_by_user_id, expires_at) VALUES ('${invitationId}', '${workspaceId}', '${foreignTwitchUserId}', 'moderator', '${invitationTokenHash}', '${actorId}', now() + interval '7 days');`,
   ].join('\n'));
 }
 
 function cleanSession(containerId) {
   sql(containerId, [
     'BEGIN;',
-    "DELETE FROM workspaces WHERE id IN ('" + actorId + "', '" + foreignWorkspaceId + "') OR owner_user_id IN ('" + actorId + "', '" + foreignActorId + "');",
-    "DELETE FROM platform_users WHERE id IN ('" + actorId + "', '" + foreignActorId + "');",
+    `DELETE FROM workspaces WHERE id IN ('${actorId}', '${foreignWorkspaceId}') OR owner_user_id IN ('${actorId}', '${foreignActorId}');`,
+    `DELETE FROM platform_users WHERE id IN ('${actorId}', '${foreignActorId}');`,
     'COMMIT;',
   ].join('\n'));
 }
@@ -345,7 +338,7 @@ try {
   };
   delete apiEnvironment.DATABASE_URL_FILE;
   const apiProcess = start('pnpm', ['--filter', '@platform/api', 'start'], apiEnvironment);
-  await waitFor(apiUrl + '/health/ready', apiProcess);
+  await waitFor(`${apiUrl}/health/ready`, apiProcess);
 
   prepareStandaloneAssets('apps/dashboard');
   prepareStandaloneAssets('apps/overlay');
@@ -475,7 +468,7 @@ try {
   assert.equal(wrongIdentityAcceptance, 404, 'An invitation cannot be accepted by a different signed-in Twitch identity.');
 
   await inviteePage.getByRole('button', { name: 'Accept' }).click();
-  await inviteePage.waitForURL(dashboardUrl + '/');
+  await inviteePage.waitForURL(`${dashboardUrl}/`);
   const acceptedMemberships = await inviteePage.evaluate(async () => {
     const response = await fetch('/api/workspaces', { credentials: 'include', cache: 'no-store' });
     return { status: response.status, body: await response.json() };
@@ -645,7 +638,7 @@ try {
     DATABASE_URL: 'postgresql://platform_worker:local-worker-only@127.0.0.1:5432/platform',
     PROVIDER_EXECUTION_DATABASE_URL: 'postgresql://platform_provider_worker:local-provider-worker-only@127.0.0.1:5432/platform',
     REDIS_URL: apiEnvironment.REDIS_URL,
-    PROVIDER_EXECUTION_HANDOFF_URL: apiUrl + '/internal/provider-executions/handoff',
+    PROVIDER_EXECUTION_HANDOFF_URL: `${apiUrl}/internal/provider-executions/handoff`,
     PROVIDER_EXECUTION_HANDOFF_SECRET: handoffSecret,
   };
   delete workerEnvironment.DATABASE_URL_FILE;
@@ -655,12 +648,13 @@ try {
   await startRequestPlaybackWorker(workerEnvironment);
   await providerFixture.playSeen;
 
-  const playbackStateQuery = "SELECT r.status || ':' || execution.state || ':' || count(session.id)::text "
-    + "FROM media_requests r "
-    + "JOIN provider_execution_states execution ON execution.workspace_id = r.workspace_id AND execution.request_id = r.id "
-    + "LEFT JOIN playback_sessions session ON session.workspace_id = r.workspace_id AND session.request_id = r.id "
-    + "WHERE r.workspace_id = '" + workspace.id + "' AND r.id = '" + approvedRequest.id + "' "
-    + "GROUP BY r.status, execution.state";
+  const playbackStateQuery = `SELECT r.status || ':' || execution.state || ':' || count(session.id)::text
+    FROM media_requests r
+    JOIN provider_execution_states execution ON execution.workspace_id = r.workspace_id AND execution.request_id = r.id
+    LEFT JOIN playback_sessions session ON session.workspace_id = r.workspace_id AND session.request_id = r.id
+    WHERE r.workspace_id = '${workspace.id}' AND r.id = '${approvedRequest.id}'
+    GROUP BY r.status, execution.state`;
+
   const playbackDeadline = Date.now() + 20_000;
   let playbackState = '';
   while (Date.now() < playbackDeadline) {
