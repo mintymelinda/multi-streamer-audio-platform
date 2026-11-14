@@ -4,7 +4,7 @@ import { Module } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 
 function send(value) {
-  process.stdout.write(JSON.stringify(value) + '\n');
+  process.stdout.write(`${JSON.stringify(value)}\n`);
 }
 
 async function main() {
@@ -42,7 +42,7 @@ async function main() {
 
 main().catch((error) => {
   const message = error instanceof Error ? error.message : 'unknown-error';
-  process.stderr.write((error instanceof Error ? error.stack : message) + '\n');
+  process.stderr.write(`${error instanceof Error ? error.stack : message}\n`);
   send({ type: 'boot-error', message });
   process.exitCode = 1;
 });
