@@ -166,7 +166,7 @@ function inspectCompose(options, composeFile) {
   return parseComposePsOutput(result.stdout);
 }
 
-async function runHealthCheck(options, dependencies = {}) {
+export async function runHealthCheck(options, dependencies = {}) {
   const inspect = dependencies.inspectCompose ?? ((file) => inspectCompose(options, file));
   const checks = [];
   try {
