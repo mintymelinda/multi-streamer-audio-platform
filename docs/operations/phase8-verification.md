@@ -125,6 +125,7 @@ A second browser test, `scripts/e2e/authenticated-session.mjs`, starts the built
 - the real API resolves the opaque HTTP-only session cookie and returns the expected stable Twitch identity;
 - the dashboard can explicitly create a workspace through the real authenticated API;
 - a second disposable workspace owned by another identity is absent from the authenticated user's workspace list, and both read and mutation attempts against its scene API return the non-disclosing not-found boundary;
+- an invitation is visible only to the matching signed-in Twitch identity, acceptance grants exactly the assigned Moderator role, and the owner can revoke that membership with subsequent protected access denied immediately;
 - the dashboard creates a published starter scene through the real workspace-scoped API;
 - the built OBS overlay loads that scene snapshot through the real bearer-token endpoint and scrubs the fragment token from browser history;
 - published snapshot responses enforce private no-store caching, no-referrer, and authorization-vary headers;
@@ -135,7 +136,7 @@ A second browser test, `scripts/e2e/authenticated-session.mjs`, starts the built
 - an invalid CSRF token cannot log out the session;
 - a valid CSRF token revokes the session and the next page load returns to the sign-in boundary.
 
-This exercises the production session guard, workspace creation transaction, PostgreSQL runtime role, RLS-backed workspace queries, scene creation and publication, overlay bearer-token authentication, live Socket.IO access revocation, CSRF guard, and session revocation through the browser/API boundary. The identity is seeded directly; the test does **not** exercise Twitch's external OAuth authorization-code exchange or prove actual Twitch identity validation. It also does not yet cover authenticated multi-workspace selection, moderator workflows, or OBS rendering. The reconnect check verifies snapshot recovery after a deliberately missed publication event, not every transport failure mode. The API proxy origin is fixed to the local CI API address at build time for this test suite.
+This exercises the production session guard, workspace creation transaction, PostgreSQL runtime role, RLS-backed workspace queries, scene creation and publication, overlay bearer-token authentication, live Socket.IO access revocation, CSRF guard, and session revocation through the browser/API boundary. The identity is seeded directly; the test does **not** exercise Twitch's external OAuth authorization-code exchange or prove actual Twitch identity validation. It also does not yet cover moderator queue workflows, full Twitch OAuth issuance, or OBS rendering. The reconnect check verifies snapshot recovery after a deliberately missed publication event, not every transport failure mode. The API proxy origin is fixed to the local CI API address at build time for this test suite.
 
 The HTTP workload runner and API tests still do not cover a complete user playback journey.
 
