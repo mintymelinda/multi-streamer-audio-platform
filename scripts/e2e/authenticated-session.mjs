@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { cpSync, existsSync, mkdirSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { createHash, randomInt, randomUUID } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -75,6 +77,27 @@ function sql(containerId, statement) {
     '-c',
     statement,
   ]);
+}
+
+function prepareStandaloneAssets(appDirectory) {
+  const appRoot = resolve(process.cwd(), appDirectory);
+  const standaloneRoot = resolve(appRoot, '.next/standalone', appDirectory);
+  const staticSource = resolve(appRoot, '.next/static');
+  const staticDestination = resolve(standaloneRoot, '.next/static');
+
+  // Next.js deliberately omits static assets from standalone output. Without
+  // these files, the server returns HTML but the browser cannot hydrate client
+  // components (including the dashboard's sign-in heading).
+  if (existsSync(staticSource)) {
+    mkdirSync(resolve(standaloneRoot, '.next'), { recursive: true });
+    cpSync(staticSource, staticDestination, { recursive: true });
+  }
+
+  const publicSource = resolve(appRoot, 'public');
+  const publicDestination = resolve(standaloneRoot, 'public');
+  if (existsSync(publicSource)) {
+    cpSync(publicSource, publicDestination, { recursive: true });
+  }
 }
 
 function start(command, args, env) {
@@ -171,6 +194,9 @@ try {
   delete apiEnvironment.DATABASE_URL_FILE;
   const apiProcess = start('pnpm', ['--filter', '@platform/api', 'start'], apiEnvironment);
   await waitFor(apiUrl + '/health/ready', apiProcess);
+
+  prepareStandaloneAssets('apps/dashboard');
+  prepareStandaloneAssets('apps/overlay');
 
   const dashboardEnvironment = {
     ...process.env,
