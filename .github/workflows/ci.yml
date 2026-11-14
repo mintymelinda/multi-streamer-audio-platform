@@ -83,6 +83,20 @@ jobs:
       - name: Validate local infrastructure definition
         run: docker compose --env-file infra/compose/.env.example -f infra/compose/docker-compose.yml config --quiet
 
+      - name: Validate staging Compose deployment definitions
+        run: |
+          mkdir -p infra/compose/secrets
+          printf '%s' 'postgres://platform_runtime:ci-runtime-only@postgres:5432/platform' > infra/compose/secrets/api-database-url
+          printf '%s' 'postgres://platform_worker:ci-worker-only@postgres:5432/platform' > infra/compose/secrets/worker-database-url
+          printf '%s' 'postgres://platform_provider_worker:ci-provider-worker-only@postgres:5432/platform' > infra/compose/secrets/provider-execution-database-url
+          printf '%s' 'redis://redis:6379' > infra/compose/secrets/redis-url
+          printf '%s' 'ci-twitch-client-secret' > infra/compose/secrets/twitch-client-secret
+          printf '%s' '{"currentVersion":"ci","keys":{"ci":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}}' > infra/compose/secrets/integration-kek-ring.json
+          printf '%s' 'ci-provider-execution-handoff-secret-at-least-32-bytes' > infra/compose/secrets/provider-execution-handoff-secret
+          docker compose --env-file infra/compose/.env.staging.example -f infra/compose/docker-compose.staging.yml config --quiet
+          docker compose --env-file infra/compose/.env.staging.example -f infra/compose/docker-compose.edge.yml config --quiet
+          rm -rf infra/compose/secrets
+
       - name: Validate staging edge proxy Compose definition
         run: docker compose --env-file infra/compose/.env.edge.example -f infra/compose/docker-compose.edge.yml config --quiet
 
@@ -92,6 +106,7 @@ jobs:
             --env DASHBOARD_DOMAIN=dashboard.staging.example.net \
             --env OVERLAY_DOMAIN=overlay.staging.example.net \
             --env API_DOMAIN=api.staging.example.net \
+            --env ASSET_DOMAIN=assets.staging.example.net \
             --env ACME_EMAIL=operator@example.net \
             -v "$PWD/infra/compose/Caddyfile:/etc/caddy/Caddyfile:ro" \
             caddy:2.10.2-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
