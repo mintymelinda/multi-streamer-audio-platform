@@ -98,6 +98,6 @@ test('emits sanitized actionable alerts for failed dependencies and endpoints', 
   assert.equal(report.status, 'failed');
   assert.ok(report.alerts.some((alert) => alert.check === 'container:postgres'));
   assert.ok(report.alerts.some((alert) => alert.check === 'api-ready'));
-  assert.ok(report.alerts.every((alert) => alert.action.includes('do not delete volumes')));
+  assert.ok(report.alerts.every((alert) => alert.action.toLowerCase().includes('do not delete volumes')));
   assert.equal(JSON.stringify(report).includes('secret'), false);
 });
