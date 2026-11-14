@@ -347,6 +347,19 @@ jobs:
           echo "Previous application image restored and API, worker, dashboard, and overlay are healthy."
           REMOTE
 
+      - name: Verify public ingress after routine rollback
+        id: rollback_ingress
+        if: always() && steps.rollback.outcome == 'success'
+        env:
+          STAGING_API_URL: ${{ secrets.STAGING_API_URL }}
+          STAGING_DASHBOARD_URL: ${{ secrets.STAGING_DASHBOARD_URL }}
+          STAGING_OVERLAY_URL: ${{ secrets.STAGING_OVERLAY_URL }}
+          STAGING_ASSETS_URL: ${{ secrets.STAGING_ASSETS_URL }}
+          STAGING_TWITCH_INTEGRATION_CALLBACK_URL: ${{ secrets.STAGING_TWITCH_INTEGRATION_CALLBACK_URL }}
+        run: |
+          set -euo pipefail
+          node scripts/ops/staging-deployment-smoke.mjs --api-url "$STAGING_API_URL" --dashboard-url "$STAGING_DASHBOARD_URL" --overlay-url "$STAGING_OVERLAY_URL" --assets-url "$STAGING_ASSETS_URL" --twitch-integration-callback-url "$STAGING_TWITCH_INTEGRATION_CALLBACK_URL" --i-confirm-non-production | tee staging-rollback-ingress-checks.json
+
       - name: Preserve failed high-risk deployment for operator recovery
         if: failure() && needs.classify.outputs.risk == 'approval-required'
         run: |
@@ -363,6 +376,7 @@ jobs:
           DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
           INGRESS_OUTCOME: ${{ steps.ingress.outcome }}
           ROLLBACK_OUTCOME: ${{ steps.rollback.outcome }}
+          ROLLBACK_INGRESS_OUTCOME: ${{ steps.rollback_ingress.outcome }}
         run: node scripts/ops/write-staging-release-audit.mjs
 
       - name: Upload release audit and ingress evidence
@@ -373,5 +387,6 @@ jobs:
           path: |
             release-audit.json
             staging-ingress-checks.json
+            staging-rollback-ingress-checks.json
           if-no-files-found: warn
           retention-days: 90
