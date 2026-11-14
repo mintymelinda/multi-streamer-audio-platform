@@ -140,7 +140,7 @@ function seedInvitation(containerId, workspaceId) {
     "INSERT INTO workspace_invitations (id, workspace_id, invited_twitch_user_id, assigned_role, token_hash, invited_by_user_id, expires_at) VALUES ('"
       + invitationId + "', '" + workspaceId + "', '" + foreignTwitchUserId + "', 'moderator', '"
       + invitationTokenHash + "', '" + actorId + "', now() + interval '7 days');",
-  ].join('\\n'));
+  ].join('\n'));
 }
 
 function cleanSession(containerId) {
