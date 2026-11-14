@@ -25,9 +25,8 @@ function readHealthSetting(fileVariable: string, directVariable: string): string
 }
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.createApplicationContext(WorkerModule, {
-    logger: new ConsoleLogger({ json: true }),
-  });
+  const logger = new ConsoleLogger({ json: true });
+  const app = await NestFactory.createApplicationContext(WorkerModule, { logger });
   const healthPool = new Pool({
     connectionString: readHealthSetting('DATABASE_URL_FILE', 'DATABASE_URL'),
     max: 1,
@@ -56,11 +55,11 @@ async function bootstrap(): Promise<void> {
     await listenWorkerHealthServer(healthServer, configuredPort);
   } catch (error) {
     await app.close();
-    await Promise.allSettled([healthPool.end(), healthRedis.quit()]);
+    await Promise.allSettled([healthPool.end(), Promise.resolve(healthRedis.disconnect())]);
     throw error;
   }
 
-  app.getLogger().log(`Worker health endpoint listening on 127.0.0.1:${process.env.WORKER_HEALTH_PORT ?? '3002'}`);
+  logger.log(`Worker health endpoint listening on 127.0.0.1:${process.env.WORKER_HEALTH_PORT ?? '3002'}`);
   let shuttingDown = false;
   const shutdown = async () => {
     if (shuttingDown) return;
