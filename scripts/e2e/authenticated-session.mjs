@@ -145,15 +145,19 @@ async function startProviderFixture() {
   if (!address || typeof address === 'string') {
     throw new Error('Browser E2E provider fixture did not bind to a TCP port.');
   }
+  const playObserved = new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error('The real provider execution worker did not issue a Lyrion play command.'));
+    }, 30_000);
+    playSeen.then(() => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
   return {
     url: 'http://127.0.0.1:' + address.port,
     commands,
-    playSeen: Promise.race([
-      playSeen,
-      delay(30_000).then(() => {
-        throw new Error('The real provider execution worker did not issue a Lyrion play command.');
-      }),
-    ]),
+    playSeen: playObserved,
     async close() {
       server.closeAllConnections?.();
       if (server.listening) await new Promise((resolve) => server.close(() => resolve()));
