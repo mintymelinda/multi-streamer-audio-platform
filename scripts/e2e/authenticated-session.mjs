@@ -244,9 +244,9 @@ function prepareStandaloneAssets(appDirectory) {
   }
 }
 
-function start(command, args, env) {
+function start(command, args, env, cwd = process.cwd()) {
   const child = spawn(command, args, {
-    cwd: process.cwd(),
+    cwd,
     env,
     stdio: 'inherit',
   });
@@ -359,7 +359,8 @@ try {
   const dashboardProcess = start(
     process.execPath,
     [resolve(dashboardStandaloneRoot, 'server.js')],
-    { ...dashboardEnvironment, cwd: dashboardStandaloneRoot },
+    dashboardEnvironment,
+    dashboardStandaloneRoot,
   );
   await waitFor(dashboardUrl, dashboardProcess);
 
@@ -377,7 +378,8 @@ try {
   const overlayProcess = start(
     process.execPath,
     [resolve(overlayStandaloneRoot, 'server.js')],
-    { ...overlayEnvironment, cwd: overlayStandaloneRoot },
+    overlayEnvironment,
+    overlayStandaloneRoot,
   );
   await waitFor(overlayUrl, overlayProcess);
 
