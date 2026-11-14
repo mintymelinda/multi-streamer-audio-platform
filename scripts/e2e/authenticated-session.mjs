@@ -304,6 +304,106 @@ try {
     item.id === workspace.id && item.role === 'moderator',
   ), 'The invitation must grant only its assigned Moderator role.');
 
+  const requestSettingsResponse = await fetch(
+    `${apiUrl}/workspaces/${workspace.id}/requests/settings`,
+    {
+      method: 'PATCH',
+      headers: {
+        cookie: `platform_session=${sessionToken}; platform_csrf=${csrfToken}`,
+        'content-type': 'application/json',
+        'x-csrf-token': csrfToken,
+      },
+      body: JSON.stringify({
+        moderationMode: 'manual',
+        queueLimit: 50,
+        perUserLimit: 5,
+        perSourceLimit: 50,
+        holdTerms: [],
+        rejectTerms: [],
+      }),
+    },
+  );
+  assert.equal(requestSettingsResponse.status, 200, 'The workspace owner must be able to configure manual moderation.');
+
+  async function submitModerationRequest(title) {
+    const response = await fetch(`${apiUrl}/workspaces/${workspace.id}/requests`, {
+      method: 'POST',
+      headers: {
+        cookie: `platform_session=${sessionToken}; platform_csrf=${csrfToken}`,
+        'content-type': 'application/json',
+        'x-csrf-token': csrfToken,
+      },
+      body: JSON.stringify({ title, requesterDisplayName: 'Browser E2E' }),
+    });
+    assert.equal(response.status, 201, 'The owner must be able to submit a request.');
+    return response.json();
+  }
+
+  const rejectedRequest = await submitModerationRequest('E2E moderator rejects this');
+  const approvedRequest = await submitModerationRequest('E2E moderator approves this');
+  assert.equal(rejectedRequest.status, 'pending');
+  assert.equal(approvedRequest.status, 'pending');
+
+  const moderatorSettingsAttempt = await inviteePage.evaluate(async ({ workspaceId, token }) => {
+    const response = await fetch(`/api/workspaces/${workspaceId}/requests/settings`, {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json', 'x-csrf-token': token },
+      body: JSON.stringify({
+        moderationMode: 'automatic',
+        queueLimit: 50,
+        perUserLimit: 5,
+        perSourceLimit: 50,
+        holdTerms: [],
+        rejectTerms: [],
+      }),
+    });
+    return response.status;
+  }, { workspaceId: workspace.id, token: foreignCsrfToken });
+  assert.equal(moderatorSettingsAttempt, 403, 'A Moderator must not change workspace-level request settings.');
+
+  const moderationResults = await inviteePage.evaluate(async ({ workspaceId, rejectId, approveId, token }) => {
+    async function moderate(requestId, action) {
+      const response = await fetch(`/api/workspaces/${workspaceId}/requests/${requestId}/moderation`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json', 'x-csrf-token': token },
+        body: JSON.stringify({ action, reason: 'Verified by browser E2E' }),
+      });
+      return { status: response.status, body: await response.json() };
+    }
+    const rejected = await moderate(rejectId, 'reject');
+    const approved = await moderate(approveId, 'approve');
+    const queue = await fetch(`/api/workspaces/${workspaceId}/queue`, {
+      credentials: 'include',
+      cache: 'no-store',
+    });
+    return {
+      rejected,
+      approved,
+      queueStatus: queue.status,
+      queue: await queue.json(),
+    };
+  }, {
+    workspaceId: workspace.id,
+    rejectId: rejectedRequest.id,
+    approveId: approvedRequest.id,
+    token: foreignCsrfToken,
+  });
+  assert.equal(moderationResults.rejected.status, 200);
+  assert.equal(moderationResults.rejected.body.status, 'rejected');
+  assert.equal(moderationResults.approved.status, 200);
+  assert.equal(moderationResults.approved.body.status, 'queued');
+  assert.equal(moderationResults.queueStatus, 200);
+  assert.ok(
+    moderationResults.queue.some((entry) => entry.id === approvedRequest.id),
+    'The Moderator must be able to see the approved request in the playable queue.',
+  );
+  assert.ok(
+    !moderationResults.queue.some((entry) => entry.id === rejectedRequest.id),
+    'Rejected requests must not appear in the playable queue.',
+  );
+
   const revokedMembership = await page.evaluate(async ({ workspaceId, memberId, token }) => {
     const response = await fetch(`/api/workspaces/${workspaceId}/members/${memberId}`, {
       method: 'DELETE',
