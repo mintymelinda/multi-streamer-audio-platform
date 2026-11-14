@@ -19,19 +19,18 @@ ENV API_INTERNAL_URL=$API_INTERNAL_URL
 
 RUN pnpm install --frozen-lockfile
 RUN pnpm build
-RUN set -eu; \
-    for app in dashboard overlay; do \
-      standalone="apps/$app/.next/standalone"; \
-      server="$(find "$standalone" -type d -name node_modules -prune -o -type f -name server.js -print -quit)"; \
-      test -n "$server"; \
-      runtime_dir="$(dirname "$server")"; \
-      mkdir -p "$runtime_dir/.next/static"; \
-      cp -a "apps/$app/.next/static/." "$runtime_dir/.next/static/"; \
+RUN for app in dashboard overlay; do \
+      mkdir -p "apps/$app/.next/standalone/.next"; \
+      cp -a "apps/$app/.next/static/." "apps/$app/.next/standalone/.next/static/"; \
       if [ -d "apps/$app/public" ]; then \
-        mkdir -p "$runtime_dir/public"; \
-        cp -a "apps/$app/public/." "$runtime_dir/public/"; \
+        mkdir -p "apps/$app/.next/standalone/public"; \
+        cp -a "apps/$app/public/." "apps/$app/.next/standalone/public/"; \
       fi; \
     done
+RUN find apps/dashboard/.next/standalone -type f -name server.js -print \
+    && find apps/dashboard/.next/standalone -type d -name static -print \
+    && find apps/overlay/.next/standalone -type f -name server.js -print \
+    && find apps/overlay/.next/standalone -type d -name static -print
 
 # One immutable application image is reused by API, worker, dashboard, and
 # overlay containers. Commands are selected by the Compose service definition.
