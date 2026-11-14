@@ -194,7 +194,18 @@ jobs:
           rollback_routine_image() {
             if [[ "$risk" == "routine" && -n "$previous_image" ]]; then
               PLATFORM_IMAGE="$previous_image" docker compose --env-file "$compose_dir/.env.staging" -f "$compose_dir/docker-compose.staging.yml" -f "$compose_dir/docker-compose.staging.remote.yml" up -d --no-build --no-deps api worker dashboard overlay
-              echo "Routine deployment rolled back to $previous_image." >&2
+              rollback_healthy=false
+              for attempt in $(seq 1 30); do
+                rollback_healthy=true
+                for service in api worker dashboard overlay; do
+                  container="$(docker compose --env-file "$compose_dir/.env.staging" -f "$compose_dir/docker-compose.staging.yml" -f "$compose_dir/docker-compose.staging.remote.yml" ps -q "$service" || true)"
+                  if [[ -z "$container" ]] || [[ "$(docker inspect --format '{{.State.Status}}:{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$container")" != "running:healthy" ]]; then rollback_healthy=false; break; fi
+                done
+                if [[ "$rollback_healthy" == true ]]; then break; fi
+                sleep 5
+              done
+              if [[ "$rollback_healthy" != true ]]; then echo "Previous application image was restored but did not become healthy." >&2; return 1; fi
+              echo "Routine deployment rolled back to $previous_image and restored services are healthy." >&2
             fi
           }
 
@@ -322,6 +333,18 @@ jobs:
           fi
           compose_dir="$deploy_path/infra/compose"
           PLATFORM_IMAGE="$previous_image" docker compose --env-file "$compose_dir/.env.staging" -f "$compose_dir/docker-compose.staging.yml" -f "$compose_dir/docker-compose.staging.remote.yml" up -d --no-build --no-deps api worker dashboard overlay
+          healthy=false
+          for attempt in $(seq 1 30); do
+            healthy=true
+            for service in api worker dashboard overlay; do
+              container="$(docker compose --env-file "$compose_dir/.env.staging" -f "$compose_dir/docker-compose.staging.yml" -f "$compose_dir/docker-compose.staging.remote.yml" ps -q "$service" || true)"
+              if [[ -z "$container" ]] || [[ "$(docker inspect --format '{{.State.Status}}:{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$container")" != "running:healthy" ]]; then healthy=false; break; fi
+            done
+            if [[ "$healthy" == true ]]; then break; fi
+            sleep 5
+          done
+          if [[ "$healthy" != true ]]; then echo "Previous application image restored but readiness verification failed." >&2; exit 1; fi
+          echo "Previous application image restored and API, worker, dashboard, and overlay are healthy."
           REMOTE
 
       - name: Preserve failed high-risk deployment for operator recovery
