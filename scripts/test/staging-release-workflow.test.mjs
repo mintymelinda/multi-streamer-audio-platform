@@ -13,9 +13,9 @@ test('automatic staging deployment only follows successful main-branch CI pushes
   assert.match(workflow, /workflow_run:\n\s+workflows: \["CI"\]/);
   assert.match(workflow, /types: \[completed\]/);
   assert.match(workflow, /branches: \[main\]/);
-  assert.match(workflow, /workflow\.run\.conclusion == 'success'/);
-  assert.match(workflow, /workflow\.run\.event == 'push'/);
-  assert.match(workflow, /workflow\.run\.head_branch == 'main'/);
+  assert.match(workflow, /workflow_run\.conclusion == 'success'/);
+  assert.match(workflow, /workflow_run\.event == 'push'/);
+  assert.match(workflow, /workflow_run\.head_branch == 'main'/);
   assert.match(workflow, /STAGING_DEPLOY_ENABLED == 'true'/);
 });
 
