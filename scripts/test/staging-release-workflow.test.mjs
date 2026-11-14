@@ -45,6 +45,7 @@ test('routine rollback is limited to routine changes; high-risk recovery is manu
   assert.match(workflow, /No automatic image rollback was attempted/);
   assert.match(workflow, /Previous application image was restored but did not become healthy/);
   assert.match(workflow, /Previous application image restored and API, worker, dashboard, and overlay are healthy/);
+  assert.match(workflow, /Verify public ingress after routine rollback/);
   assert.match(workflow, /rollback_healthy/);
 });
 
@@ -69,6 +70,8 @@ test('every staging deployment attempt writes and retains sanitized audit eviden
   assert.match(workflow, /steps\.deploy\.outcome/);
   assert.match(workflow, /steps\.ingress\.outcome/);
   assert.match(workflow, /steps\.rollback\.outcome/);
+  assert.match(workflow, /steps\.rollback_ingress\.outcome/);
+  assert.match(workflow, /staging-rollback-ingress-checks\.json/);
   assert.match(workflow, /id: rollback/);
 });
 
