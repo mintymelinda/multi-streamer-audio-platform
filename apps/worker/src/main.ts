@@ -31,6 +31,7 @@ async function bootstrap(): Promise<void> {
     connectionString: readHealthSetting('DATABASE_URL_FILE', 'DATABASE_URL'),
     max: 1,
     connectionTimeoutMillis: 1_500,
+    statement_timeout: 1_500,
     idleTimeoutMillis: 5_000,
     application_name: 'multi-streamer-audio-platform-worker-health',
   });
@@ -66,7 +67,7 @@ async function bootstrap(): Promise<void> {
     shuttingDown = true;
     await closeWorkerHealthServer(healthServer).catch(() => undefined);
     await app.close();
-    await Promise.allSettled([healthPool.end(), healthRedis.quit()]);
+    await Promise.allSettled([healthPool.end(), Promise.resolve(healthRedis.disconnect())]);
   };
   process.once('SIGTERM', () => void shutdown());
   process.once('SIGINT', () => void shutdown());
