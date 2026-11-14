@@ -219,3 +219,4 @@ node scripts/ops/staging-deployment-smoke.mjs \
 The runner checks API liveness/readiness, dashboard and overlay HTTP responses, MinIO readiness through the asset hostname, a real Socket.IO Engine.IO WebSocket handshake through Caddy, and the Twitch sign-in redirect URI returned by the API. It also checks that the supplied broadcaster-authorization callback exactly matches the API hostname. The Twitch sign-in probe creates a short-lived OAuth state record but does not authorize an account or exchange a code. The runner does not print the authorization URL or its state token.
 
 Use the exact configured callback from the staging environment file. The probe intentionally requires HTTPS and an explicit non-production confirmation; it is not a production health checker. A passing result is evidence of public ingress only, not full OAuth provider approval, browser behavior, asset upload authorization, or persistence across container recreation.
+

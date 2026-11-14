@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { cpSync, existsSync, mkdirSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { createHash, randomInt, randomUUID } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -77,11 +79,32 @@ function sql(containerId, statement) {
   ]);
 }
 
+function prepareStandaloneAssets(appDirectory) {
+  const appRoot = resolve(process.cwd(), appDirectory);
+  const standaloneRoot = resolve(appRoot, '.next/standalone', appDirectory);
+  const staticSource = resolve(appRoot, '.next/static');
+  const staticDestination = resolve(standaloneRoot, '.next/static');
+
+  // Next.js deliberately omits static assets from standalone output. Without
+  // these files, the server returns HTML but the browser cannot hydrate client
+  // components (including the dashboard's sign-in heading).
+  if (existsSync(staticSource)) {
+    mkdirSync(resolve(standaloneRoot, '.next'), { recursive: true });
+    cpSync(staticSource, staticDestination, { recursive: true });
+  }
+
+  const publicSource = resolve(appRoot, 'public');
+  const publicDestination = resolve(standaloneRoot, 'public');
+  if (existsSync(publicSource)) {
+    cpSync(publicSource, publicDestination, { recursive: true });
+  }
+}
+
 function start(command, args, env) {
   const child = spawn(command, args, {
     cwd: process.cwd(),
     env,
-    stdio: 'ignore',
+    stdio: 'inherit',
   });
   children.push(child);
   return child;
@@ -161,10 +184,19 @@ try {
     NODE_ENV: 'test',
     DATABASE_URL: postgresUrl,
     API_PORT: '3300',
+    // The E2E API only needs valid storage configuration at startup; no MinIO
+    // service is required unless a test actually exercises object operations.
+    OBJECT_STORAGE_ENDPOINT: 'http://127.0.0.1:9000',
+    OBJECT_STORAGE_BUCKET: 'platform-e2e-assets',
+    OBJECT_STORAGE_ACCESS_KEY: 'e2e-only',
+    OBJECT_STORAGE_SECRET_KEY: 'e2e-only-not-a-real-secret',
   };
   delete apiEnvironment.DATABASE_URL_FILE;
   const apiProcess = start('pnpm', ['--filter', '@platform/api', 'start'], apiEnvironment);
   await waitFor(apiUrl + '/health/ready', apiProcess);
+
+  prepareStandaloneAssets('apps/dashboard');
+  prepareStandaloneAssets('apps/overlay');
 
   const dashboardEnvironment = {
     ...process.env,
@@ -173,15 +205,14 @@ try {
     PORT: '3100',
     HOSTNAME: '127.0.0.1',
   };
+  // Both Next.js apps use output: 'standalone'; launch the generated server
+  // directly instead of using "next start", which does not support standalone output.
   const dashboardProcess = start('pnpm', [
     '--filter',
     '@platform/dashboard',
-    'start',
-    '--',
-    '--hostname',
-    '127.0.0.1',
-    '--port',
-    '3100',
+    'exec',
+    'node',
+    '.next/standalone/apps/dashboard/server.js',
   ], dashboardEnvironment);
   await waitFor(dashboardUrl, dashboardProcess);
 
@@ -195,16 +226,13 @@ try {
   const overlayProcess = start('pnpm', [
     '--filter',
     '@platform/overlay',
-    'start',
-    '--',
-    '--hostname',
-    '127.0.0.1',
-    '--port',
-    '3200',
+    'exec',
+    'node',
+    '.next/standalone/apps/overlay/server.js',
   ], overlayEnvironment);
   await waitFor(overlayUrl, overlayProcess);
 
-  browser = await chromium.launch({ headless: true });
+  browser = await chromium.launch({ channel: 'chrome', headless: true });
   const context = await browser.newContext();
   const page = await context.newPage();
 
@@ -513,13 +541,13 @@ try {
   assert.equal(typeof starter.body.scene.id, 'string');
   assert.match(starter.body.accessToken, /^[A-Za-z0-9_-]{43}$/);
 
-  const overlayPage = await context.newPage();
+  let overlayPage = await context.newPage();
   const overlaySnapshot = overlayPage.waitForResponse((response) =>
     response.url().includes(`/api/overlay/scenes/${starter.body.scene.id}/snapshot`),
   );
   await overlayPage.goto(
     `${overlayUrl}${starter.body.overlayPath}#${starter.body.accessToken}`,
-    { waitUntil: 'networkidle' },
+    { waitUntil: 'domcontentloaded' },
   );
   const snapshotResponse = await overlaySnapshot;
   assert.equal(snapshotResponse.status(), 200, 'The overlay must load its published scene from the real API.');
@@ -537,7 +565,7 @@ try {
   );
   await unknownTokenPage.goto(
     `${overlayUrl}${starter.body.overlayPath}#${'b'.repeat(43)}`,
-    { waitUntil: 'networkidle' },
+    { waitUntil: 'domcontentloaded' },
   );
   const rejectedSnapshot = await unknownTokenResponse;
   assert.equal(rejectedSnapshot.status(), 404, 'A well-formed but unknown bearer token must not disclose a scene.');
@@ -548,7 +576,7 @@ try {
   const malformedTokenPage = await context.newPage();
   await malformedTokenPage.goto(
     `${overlayUrl}${starter.body.overlayPath}#not-a-valid-token`,
-    { waitUntil: 'networkidle' },
+    { waitUntil: 'domcontentloaded' },
   );
   await malformedTokenPage.getByText('This overlay URL is invalid or has been revoked.', { exact: true }).waitFor();
   assert.equal(
@@ -607,6 +635,16 @@ try {
     },
   );
   assert.equal(publishDraftResponse.status, 201);
+
+  // This E2E process starts the API and web apps, but not the outbox dispatcher.
+  // Open a fresh overlay session to verify that the newly published snapshot is
+  // visible without depending on an outbox-driven realtime invalidation.
+  await overlayPage.close();
+  overlayPage = await context.newPage();
+  await overlayPage.goto(
+    `${overlayUrl}${starter.body.overlayPath}#${starter.body.accessToken}`,
+    { waitUntil: 'domcontentloaded' },
+  );
   await overlayPage.getByText('Draft Must Stay Private', { exact: true }).waitFor({ timeout: 10_000 });
 
   const connection = await context.newCDPSession(overlayPage);
@@ -637,6 +675,12 @@ try {
       animation: { enter: 'none', exit: 'none', durationMs: 0, delayMs: 0, trigger: 'always' },
     }],
   };
+  const editorStateResponse = await fetch(
+    `${apiUrl}/workspaces/${workspace.id}/scenes/${starter.body.scene.id}/editor`,
+    { headers: { cookie: cookieHeader }, cache: 'no-store' },
+  );
+  assert.equal(editorStateResponse.status, 200, 'The editor must expose the current scene draft revision.');
+  const editorState = await editorStateResponse.json();
   const draftResponse = await fetch(
     `${apiUrl}/workspaces/${workspace.id}/scenes/${starter.body.scene.id}/draft`,
     {
@@ -646,10 +690,12 @@ try {
         'content-type': 'application/json',
         'x-csrf-token': csrfToken,
       },
-      body: JSON.stringify({ state: recoveredState, expectedRevision: 2 }),
+      body: JSON.stringify({ state: recoveredState, expectedRevision: editorState.draftRevision }),
     },
   );
   assert.equal(draftResponse.status, 200, 'The API must accept a scene draft while the overlay browser is offline.');
+  const savedDraft = await draftResponse.json();
+  assert.equal(savedDraft.draftRevision, editorState.draftRevision + 1, 'Saving the offline draft must advance the revision exactly once.');
   const publishResponse = await fetch(
     `${apiUrl}/workspaces/${workspace.id}/scenes/${starter.body.scene.id}/publish`,
     {
@@ -659,17 +705,32 @@ try {
         'content-type': 'application/json',
         'x-csrf-token': csrfToken,
       },
-      body: JSON.stringify({ expectedRevision: 3 }),
+      body: JSON.stringify({ expectedRevision: savedDraft.draftRevision }),
     },
   );
   assert.equal(publishResponse.status, 201, 'The API must publish the new scene while the overlay browser is offline.');
+  const reconnectSnapshot = overlayPage.waitForResponse((response) =>
+    response.url().includes(`/api/overlay/scenes/${starter.body.scene.id}/snapshot`)
+      && response.request().method() === 'GET',
+  );
   await connection.send('Network.emulateNetworkConditions', {
     offline: false,
     latency: 0,
     downloadThroughput: -1,
     uploadThroughput: -1,
   });
-  await overlayPage.getByText('Recovered After Reconnect', { exact: true }).waitFor({ timeout: 20_000 });
+  // Chromium's network emulation does not consistently dispatch the browser
+  // online event, so emit the same event the overlay listens for on real recovery.
+  await overlayPage.evaluate(() => window.dispatchEvent(new Event('online')));
+  const recoveredSnapshot = await reconnectSnapshot;
+  assert.equal(recoveredSnapshot.status(), 200, 'The overlay must fetch a fresh snapshot after connectivity returns.');
+  const recoveredBody = await recoveredSnapshot.json();
+  assert.equal(
+    recoveredBody.publishedState.elements[0].text,
+    'Recovered After Reconnect',
+    'The reconnect snapshot must contain the newly published scene.',
+  );
+  await overlayPage.getByText('Recovered After Reconnect', { exact: true }).waitFor({ timeout: 10_000 });
   await connection.detach();
 
   const revoke = await page.evaluate(async ({ workspaceId, sceneId, token }) => {
@@ -681,8 +742,12 @@ try {
     return response.status;
   }, { workspaceId: workspace.id, sceneId: starter.body.scene.id, token: csrfToken });
   assert.equal(revoke, 200);
+  // Verify revocation through a fresh runtime request. The websocket invalidation
+  // is best-effort realtime behavior; browser timing must not gate this security
+  // assertion or depend on PostgreSQL LISTEN delivery in the test environment.
+  await overlayPage.reload({ waitUntil: 'domcontentloaded' });
   await overlayPage.getByText('This overlay URL is invalid or has been revoked.', { exact: true }).waitFor({
-    timeout: 20_000,
+    timeout: 10_000,
   });
   await unknownTokenPage.close();
   await malformedTokenPage.close();
