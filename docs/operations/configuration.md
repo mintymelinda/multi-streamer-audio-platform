@@ -41,3 +41,9 @@ Platform sign-in and workspace broadcaster authorization are separate OAuth gran
 Register both callback URLs in the Twitch developer console. The workspace callback URL must be HTTPS outside localhost and must not contain a query string or fragment. Workspace authorization is initiated by the workspace owner and must be granted by the same Twitch broadcaster account that owns the workspace. The app requests `channel:manage:redemptions`, which Twitch requires for creating, updating, deleting, and listing the app's manageable Channel Point rewards.
 
 Workspace access and refresh tokens are stored only inside the authenticated encrypted credential envelope in `workspace_integrations`. Never expose tokens, refresh tokens, encryption envelopes, or the KEK ring to the browser, logs, audit details, or outbox payloads.
+
+## PostgreSQL deployment credentials
+
+The PostgreSQL initialization script reads four independent role passwords from the container environment: `PLATFORM_MIGRATOR_PASSWORD`, `PLATFORM_RUNTIME_PASSWORD`, `PLATFORM_WORKER_PASSWORD`, and `PLATFORM_PROVIDER_WORKER_PASSWORD`. The local Compose example provides disposable development-only defaults. A staging deployment must override all four with distinct, randomly generated secrets before the first database initialization.
+
+These values are consumed only when the persistent PostgreSQL data directory is initialized. Changing the environment variables after initialization does not rotate existing PostgreSQL role passwords; rotate them explicitly with an authenticated SQL operation and update the corresponding application connection secrets as one controlled change. Never mount the local example file into a public staging or production deployment.
