@@ -191,6 +191,13 @@ jobs:
           fi
           printf '%s\n' "$previous_image" > "$deploy_path/.previous-staging-image"
 
+          rollback_routine_image() {
+            if [[ "$risk" == "routine" && -n "$previous_image" ]]; then
+              PLATFORM_IMAGE="$previous_image" docker compose --env-file "$compose_dir/.env.staging" -f "$compose_dir/docker-compose.staging.yml" -f "$compose_dir/docker-compose.staging.remote.yml" up -d --no-build --no-deps api worker dashboard overlay
+              echo "Routine deployment rolled back to $previous_image." >&2
+            fi
+          }
+
           PLATFORM_IMAGE="$image" docker compose --env-file "$compose_dir/.env.staging" -f "$compose_dir/docker-compose.staging.yml" -f "$compose_dir/docker-compose.staging.remote.yml" pull
           docker compose --env-file "$compose_dir/.env.staging" -f "$compose_dir/docker-compose.staging.yml" -f "$compose_dir/docker-compose.staging.remote.yml" up -d postgres redis object-storage object-storage-init
 
@@ -248,6 +255,7 @@ jobs:
             sleep 5
           done
           if [[ "$api_healthy" != true ]]; then
+            rollback_routine_image
             echo "API did not become healthy; dependent services were not restarted." >&2
             exit 1
           fi
@@ -272,10 +280,7 @@ jobs:
           done
 
           if [[ "$healthy" != true ]]; then
-            if [[ "$risk" == "routine" && -n "$previous_image" ]]; then
-              PLATFORM_IMAGE="$previous_image" docker compose --env-file "$compose_dir/.env.staging" -f "$compose_dir/docker-compose.staging.yml" -f "$compose_dir/docker-compose.staging.remote.yml" up -d --no-build --no-deps api worker dashboard overlay --no-deps api worker dashboard overlay
-              echo "Routine deployment rolled back to $previous_image." >&2
-            fi
+            rollback_routine_image
             echo "Staging containers did not become healthy. Previous image: $previous_image; release risk: $risk" >&2
             exit 1
           fi
