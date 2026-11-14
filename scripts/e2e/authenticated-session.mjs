@@ -733,6 +733,10 @@ try {
   await overlayPage.getByText('Recovered After Reconnect', { exact: true }).waitFor({ timeout: 10_000 });
   await connection.detach();
 
+  const revokedSnapshot = overlayPage.waitForResponse((response) =>
+    response.url().includes(`/api/overlay/scenes/${starter.body.scene.id}/snapshot`)
+      && response.request().method() === 'GET',
+  );
   const revoke = await page.evaluate(async ({ workspaceId, sceneId, token }) => {
     const response = await fetch(`/api/workspaces/${workspaceId}/scenes/${sceneId}/access-token`, {
       method: 'DELETE',
@@ -742,8 +746,10 @@ try {
     return response.status;
   }, { workspaceId: workspace.id, sceneId: starter.body.scene.id, token: csrfToken });
   assert.equal(revoke, 200);
+  const revokedSnapshotResponse = await revokedSnapshot;
+  assert.equal(revokedSnapshotResponse.status(), 404, 'The active overlay must revalidate its token after the server closes its socket.');
   await overlayPage.getByText('This overlay URL is invalid or has been revoked.', { exact: true }).waitFor({
-    timeout: 20_000,
+    timeout: 10_000,
   });
   await unknownTokenPage.close();
   await malformedTokenPage.close();
