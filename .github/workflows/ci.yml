@@ -220,14 +220,14 @@ jobs:
       - name: Install isolated browser test runtime
         run: |
           google-chrome --version
-          npm install --prefix "$RUNNER_TEMP/playwright" --no-save --no-package-lock playwright@1.56.1
+          npm install --prefix "$RUNNER_TEMP/playwright" --no-save --no-package-lock playwright-core@1.56.1
 
       - name: Run browser UI smoke tests
         env:
-          PLAYWRIGHT_MODULE: ${{ runner.temp }}/playwright/node_modules/playwright/index.mjs
+          PLAYWRIGHT_MODULE: ${{ runner.temp }}/playwright/node_modules/playwright-core/index.mjs
         run: node scripts/e2e/browser-smoke.mjs
 
       - name: Run authenticated browser and overlay runtime E2E
         env:
-          PLAYWRIGHT_MODULE: ${{ runner.temp }}/playwright/node_modules/playwright/index.mjs
+          PLAYWRIGHT_MODULE: ${{ runner.temp }}/playwright/node_modules/playwright-core/index.mjs
         run: node scripts/e2e/authenticated-session.mjs
