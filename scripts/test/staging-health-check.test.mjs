@@ -46,11 +46,11 @@ test('parses Docker Compose JSON array and newline-delimited output', () => {
 test('requires all services to be running and configured healthchecks to be healthy', () => {
   const checks = evaluateComposeServices([
     { Service: 'api', State: 'running', Health: 'healthy' },
-    { Service: 'worker', State: 'running' },
+    { Service: 'worker', State: 'running', Health: 'healthy' },
     { Service: 'redis', State: 'running', Health: 'unhealthy' },
   ], [
     { service: 'api', healthcheck: true },
-    { service: 'worker' },
+    { service: 'worker', healthcheck: true },
     { service: 'redis', healthcheck: true },
     { service: 'postgres', healthcheck: true },
   ]);
@@ -67,7 +67,7 @@ test('produces a passing report when container and public endpoint checks succee
     { Service: 'redis', State: 'running', Health: 'healthy' },
     { Service: 'object-storage', State: 'running' },
     { Service: 'api', State: 'running', Health: 'healthy' },
-    { Service: 'worker', State: 'running' },
+    { Service: 'worker', State: 'running', Health: 'healthy' },
     { Service: 'dashboard', State: 'running', Health: 'healthy' },
     { Service: 'overlay', State: 'running', Health: 'healthy' },
   ];
@@ -100,4 +100,12 @@ test('emits sanitized actionable alerts for failed dependencies and endpoints', 
   assert.ok(report.alerts.some((alert) => alert.check === 'api-ready'));
   assert.ok(report.alerts.every((alert) => alert.action.toLowerCase().includes('do not delete volumes')));
   assert.equal(JSON.stringify(report).includes('secret'), false);
+});
+
+test('requires worker readiness healthcheck instead of container state alone', () => {
+  const checks = evaluateComposeServices([
+    { Service: 'worker', State: 'running', Health: 'unhealthy' },
+  ], [{ service: 'worker', healthcheck: true }]);
+  assert.equal(checks[0].status, 'failed');
+  assert.match(checks[0].message, /unhealthy/);
 });

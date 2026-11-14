@@ -178,7 +178,7 @@ function recommendedAction(checkName) {
     return 'Follow the object-storage/asset delivery runbook; check MinIO readiness, bucket access, disk capacity, and the asset edge route.';
   }
   if (checkName === 'container:worker') {
-    return 'Inspect worker logs and BullMQ oldest-job/failed-job counts; the worker check proves process state only.';
+    return 'Inspect the worker readiness endpoint through Compose health, then review worker logs and BullMQ oldest-job/failed-job counts; readiness confirms PostgreSQL and Redis connectivity, not that every individual job is succeeding.';
   }
   if (checkName === 'container:edge') {
     return 'Inspect the Caddy edge container, certificate state, DNS, and upstream reachability.';
@@ -202,7 +202,7 @@ export async function runHealthCheck(options, dependencies = {}) {
       { service: 'redis', healthcheck: true },
       { service: 'object-storage' },
       { service: 'api', healthcheck: true },
-      { service: 'worker' },
+      { service: 'worker', healthcheck: true },
       { service: 'dashboard', healthcheck: true },
       { service: 'overlay', healthcheck: true },
     ]));

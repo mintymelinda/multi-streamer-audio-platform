@@ -17,7 +17,7 @@ This handbook is the day-to-day operating guide for the hosted Multi-Streamer Au
 | Service | Responsibility | Durable state / dependency | First checks |
 |---|---|---|---|
 | API | Authentication, workspace APIs, request intake, authorization, health endpoints | PostgreSQL; Redis for cross-instance Socket.IO | `/health/live`, `/health/ready`, API logs |
-| Worker | Event processing, outbox delivery, provider execution, retention and export jobs | PostgreSQL and Redis/BullMQ | Container state, worker logs, queue age/failure counts |
+| Worker | Event processing, outbox delivery, provider execution, retention and export jobs | PostgreSQL and Redis/BullMQ | Container health (`/health/ready` on loopback), worker logs, queue age/failure counts |
 | Dashboard | Streamer and moderator browser application | API | HTTPS page, browser network errors |
 | Overlay | OBS browser-source runtime | API snapshot and Socket.IO | HTTPS page, overlay snapshot, reconnect |
 | PostgreSQL | Authoritative application data | Named volume; encrypted backups and WAL/PITR | Container health, connection availability, migration status |
@@ -25,7 +25,7 @@ This handbook is the day-to-day operating guide for the hosted Multi-Streamer Au
 | Object storage | Workspace assets and exports | Named volume; independent object backup | MinIO readiness, bucket access, asset URL |
 | Caddy edge | Public HTTPS and WebSocket reverse proxy | Persistent certificate/config volumes | Container health, certificate state, public ingress |
 
-The API's current readiness endpoint checks PostgreSQL only. It does not assert worker health, Redis/BullMQ health, object-storage readiness, provider availability, or successful delivery of background jobs. Do not interpret `/health/ready` as a complete service-health dashboard.
+The API's `/health/ready` endpoint checks PostgreSQL only. The worker exposes its own loopback-only `/health/live` and `/health/ready` endpoints on port 3002; readiness is published only after the worker's Nest application context (including consumers) has initialized, and each readiness request checks PostgreSQL and Redis connectivity. The worker check does not prove that individual jobs are succeeding or that queues are keeping up. Neither endpoint asserts object-storage readiness or provider availability. Do not interpret either endpoint as a complete service-health dashboard.
 
 ## Routine operator checks
 
@@ -62,7 +62,7 @@ node scripts/ops/staging-health-check.mjs \
 
 The probe checks the application and edge Compose service states, configured container health checks, API liveness/readiness, dashboard and overlay HTTPS, object-storage readiness through the public asset hostname, and the Socket.IO WebSocket handshake. It prints sanitized JSON with per-check status and actionable alert records, and exits non-zero when any required check fails. A scheduler or external monitoring service can consume the exit code/output; the script does not send notifications or create a hosted dashboard.
 
-Treat a failed check as a signal to start the matching incident runbook below, not as permission to restart or delete state. In particular, do not flush Redis, remove volumes, or replay uncertain playback operations as an automatic response. The worker currently has no application-level health endpoint, so its check proves only that its container is running; queue lag and failed-job trends still require inspection of the job system.
+Treat a failed check as a signal to start the matching incident runbook below, not as permission to restart or delete state. In particular, do not flush Redis, remove volumes, or replay uncertain playback operations as an automatic response. The worker readiness check confirms PostgreSQL and Redis connectivity after consumer initialization; queue lag, stalled jobs, and failed-job trends still require inspection of BullMQ and worker logs.
 
 ## Useful read-only commands
 
