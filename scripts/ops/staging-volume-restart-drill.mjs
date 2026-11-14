@@ -120,7 +120,7 @@ async function waitForServices(options) {
 
 function readEnvironmentFile(path) {
   const values = {};
-  for (const line of readFileSync(path, 'utf8').split(/\\r?\\n/)) {
+  for (const line of readFileSync(path, 'utf8').split(String.fromCharCode(10))) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#')) continue;
     const separator = trimmed.indexOf('=');
@@ -136,7 +136,7 @@ function runMinioClient(options, command) {
   if (!environment.MINIO_ROOT_USER || !environment.MINIO_ROOT_PASSWORD) {
     throw new Error('The staging environment file must define MinIO credentials.');
   }
-  docker([
+  return docker([
     'run', '--rm', '--network', network, '--entrypoint', '/bin/sh',
     '--env', 'MINIO_ROOT_USER', '--env', 'MINIO_ROOT_PASSWORD',
     'minio/mc:RELEASE.2025-08-13T08-35-41Z', '-lc', command,
@@ -189,7 +189,7 @@ async function main(argv) {
   const redisValue = docker([...prefix, 'exec', '-T', 'redis', 'redis-cli', 'GET', redisKey]);
   if (redisValue !== token) throw new Error('Redis AOF probe data did not survive container recreation.');
   const minioCommandAfter = 'mc alias set local http://object-storage:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" && mc cat local/platform-assets/' + objectKey;
-  const objectValue = runMinioClientOutput(options, minioCommandAfter);
+  const objectValue = runMinioClient(options, minioCommandAfter);
   if (objectValue !== token) throw new Error('Object-storage probe data did not survive container recreation.');
 
   const cleanupSql = "DELETE FROM public.staging_volume_probe WHERE probe_id='" + token + "'" + (createdProbeTable ? '; DROP TABLE public.staging_volume_probe' : '');
