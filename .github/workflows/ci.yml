@@ -96,7 +96,7 @@ jobs:
           for secret in api-database-url worker-database-url provider-execution-database-url redis-url twitch-client-secret integration-kek-ring.json provider-execution-handoff-secret; do
             : > "infra/compose/secrets/$secret"
           done
-          docker compose --env-file infra/compose/.env.staging.example -f infra/compose/docker-compose.staging.yml config --quiet
+          docker compose --env-file infra/compose/.env.staging.example -f infra/compose/docker-compose.staging.yml -f infra/compose/docker-compose.staging.remote.yml config --quiet
 
       - name: Validate PostgreSQL migration/runtime role separation
         run: |

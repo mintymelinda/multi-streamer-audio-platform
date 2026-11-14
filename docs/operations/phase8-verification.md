@@ -290,3 +290,43 @@ The CI workflow uses a read-only repository token and disables persisted checkou
 Protect the default branch in repository settings: require pull requests, require the `Quality gates` and `Analyze JavaScript and TypeScript` checks, dismiss stale approvals when new commits are pushed, and restrict bypasses to the platform owner. The GitHub connector available during this implementation cannot configure branch-protection rules, so these repository settings remain an explicit operator setup step.
 
 This section records the CI baseline only. The controlled deployment path and its risk/approval policy are implemented separately; passing CI alone is not authorization to deploy.
+
+
+## Item 73 — controlled staging releases
+
+The release workflow is `.github/workflows/staging-deploy.yml`. It deploys only to a separately provisioned non-production staging host; it does not deploy to production or the operator's NAS.
+
+### Release classification
+
+The workflow runs automatically only after the `CI` workflow completes successfully for a push to `main` from this repository. It refuses to deploy if a newer commit has already reached `main`, compares the tested commit with the previous successful main-branch CI push, and applies the conservative classifier in `scripts/release/classify-change.mjs`:
+
+- **Routine:** every runtime change is limited to dashboard/overlay CSS or static raster/font presentation assets under the relevant app's `public` directory. Active SVG content and all other paths require approval. If staging deployment is enabled, the immutable image is deployed automatically.
+- **Documentation-only:** no application deployment is needed.
+- **Approval required:** all other paths, including application logic, API/worker code, provider behavior, authorization/security, dependencies, migrations, infrastructure, CI/workflow changes, and unknown or incomplete change lists.
+
+If no trustworthy prior successful CI baseline is available, the workflow defaults to approval required. A manual deployment is always treated as high risk, even if its changed files would otherwise be routine.
+
+### High-risk approval
+
+A high-risk staging release must be started through the workflow's `workflow_dispatch` entry on `main`, with `approve_high_risk` explicitly checked. The initiating GitHub actor must be the platform owner account `mintymelinda`, and the exact main commit must already have a successful CI push run. The job uses the `staging-approval` GitHub environment as an additional review gate.
+
+Routine deployments use the separate `staging-auto` environment. Configure `staging-approval` with the platform owner as a required reviewer; configure self-review according to the owner's approval policy. Do not add reviewers to `staging-auto` if automatic routine deployment is desired.
+
+### One-time GitHub configuration
+
+Automatic and manual deployment remain disabled until the repository variable `STAGING_DEPLOY_ENABLED` is set to `true`. Configure the following secrets in **both** `staging-auto` and `staging-approval` environments:
+
+- `STAGING_SSH_HOST`, `STAGING_SSH_USER`, and `STAGING_DEPLOY_PATH` (an absolute path on the disposable staging host);
+- `STAGING_SSH_PRIVATE_KEY` and `STAGING_SSH_KNOWN_HOSTS` (the latter must contain a host key fingerprint verified out of band; the workflow does not trust runtime `ssh-keyscan`);
+- `STAGING_GHCR_USERNAME` and `STAGING_GHCR_READ_TOKEN` (a registry identity/token with package read access);
+- `STAGING_API_URL`, `STAGING_DASHBOARD_URL`, `STAGING_OVERLAY_URL`, `STAGING_ASSETS_URL`, and `STAGING_TWITCH_INTEGRATION_CALLBACK_URL` (the exact public HTTPS origins and registered callback for that staging environment).
+
+The host must already have Docker Engine and the Compose plugin. Provision `infra/compose/.env.staging` and every referenced secret file on the host before enabling the workflow. Keep those values out of GitHub logs and repository files. The deployment copies only the Compose definitions, Caddyfile, PostgreSQL initialization SQL, and migrations; it does not copy or overwrite the staging environment file, credentials, or persistent volumes.
+
+### Deployment and recovery behavior
+
+The workflow builds one image tagged with the exact tested commit SHA and publishes it to GHCR, then deploys that image through the remote no-build Compose override. It first verifies PostgreSQL, Redis, and object-storage initialization. Only an explicitly approved high-risk release runs the migration service; the workflow waits for successful migration completion before updating the API, then waits for API readiness before restarting the worker, dashboard, and overlay. It verifies all application containers and the edge container before running the public ingress smoke test for HTTPS, API readiness, Socket.IO WebSocket upgrade, and Twitch callback configuration. Routine presentation-only releases do not rerun database migrations.
+
+A failed routine presentation-only deployment attempts to restore the previous application image. High-risk deployments do not automatically roll back the application image because a schema or data change may make the previous image incompatible; follow the operator recovery procedure and assess database/PITR recovery separately. Image rollback is not database rollback.
+
+The remote override is validated alongside the staging Compose model in CI. The actual SSH deployment is intentionally not run by pull-request CI. Configure the staging host and environment secrets only when a disposable non-production target is ready; enabling the workflow is an explicit operator action.
