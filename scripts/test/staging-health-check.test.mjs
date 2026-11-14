@@ -37,7 +37,7 @@ test('parses Docker Compose JSON array and newline-delimited output', () => {
   ]);
   assert.deepEqual(parseComposePsOutput('{"Service":"api","State":"running"}\n{"Service":"worker","State":"running"}'), [
     { Service: 'api', State: 'running' },
-    { Service: 'worker', State: 'running' },
+    { Service: 'worker', State: 'running', Health: 'healthy' },
   ]);
   assert.deepEqual(parseComposePsOutput(''), []);
   assert.throws(() => parseComposePsOutput('not-json'), /invalid service status/);
@@ -100,4 +100,12 @@ test('emits sanitized actionable alerts for failed dependencies and endpoints', 
   assert.ok(report.alerts.some((alert) => alert.check === 'api-ready'));
   assert.ok(report.alerts.every((alert) => alert.action.toLowerCase().includes('do not delete volumes')));
   assert.equal(JSON.stringify(report).includes('secret'), false);
+});
+
+test('requires worker readiness healthcheck instead of container state alone', () => {
+  const checks = evaluateComposeServices([
+    { Service: 'worker', State: 'running', Health: 'unhealthy' },
+  ], [{ service: 'worker', healthcheck: true }]);
+  assert.equal(checks[0].status, 'failed');
+  assert.match(checks[0].message, /unhealthy/);
 });
