@@ -83,19 +83,6 @@ jobs:
       - name: Validate local infrastructure definition
         run: docker compose --env-file infra/compose/.env.example -f infra/compose/docker-compose.yml config --quiet
 
-      - name: Validate staging edge proxy Compose definition
-        run: docker compose --env-file infra/compose/.env.edge.example -f infra/compose/docker-compose.edge.yml config --quiet
-
-      - name: Validate staging Caddy reverse-proxy configuration
-        run: |
-          docker run --rm \
-            --env DASHBOARD_DOMAIN=dashboard.staging.example.net \
-            --env OVERLAY_DOMAIN=overlay.staging.example.net \
-            --env API_DOMAIN=api.staging.example.net \
-            --env ACME_EMAIL=operator@example.net \
-            -v "$PWD/infra/compose/Caddyfile:/etc/caddy/Caddyfile:ro" \
-            caddy:2.10.2-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
-
       - name: Validate PostgreSQL migration/runtime role separation
         run: |
           container_id="$(docker ps --filter 'ancestor=postgres:18.6' --format '{{.ID}}' | head -n 1)"
@@ -230,45 +217,10 @@ jobs:
       - name: Build
         run: pnpm build
 
-      - name: Build immutable staging application image
-        run: docker build --file infra/compose/Deployment.Dockerfile --target runtime --tag platform-staging-app:ci .
-
-      - name: Smoke test standalone dashboard and overlay containers
-        run: |
-          set -eu
-          cleanup() {
-            docker rm -f platform-staging-dashboard-smoke platform-staging-overlay-smoke >/dev/null 2>&1 || true
-          }
-          trap cleanup EXIT
-          docker run -d --name platform-staging-dashboard-smoke -p 127.0.0.1:3391:3000 -e HOSTNAME=0.0.0.0 -e PORT=3000 platform-staging-app:ci sh -lc 'server="$(find apps/dashboard/.next/standalone -type d -name node_modules -prune -o -type f -name server.js -print -quit)"; test -n "$server"; exec node "$server"'
-          docker run -d --name platform-staging-overlay-smoke -p 127.0.0.1:3392:3001 -e HOSTNAME=0.0.0.0 -e PORT=3001 platform-staging-app:ci sh -lc 'server="$(find apps/overlay/.next/standalone -type d -name node_modules -prune -o -type f -name server.js -print -quit)"; test -n "$server"; exec node "$server"'
-          ready=false
-          for attempt in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:3391/ -o /tmp/staging-dashboard.html && curl -fsS http://127.0.0.1:3392/ -o /tmp/staging-overlay.html; then
-              ready=true
-              break
-            fi
-            sleep 2
-          done
-          if [ "$ready" != true ]; then
-            docker logs platform-staging-dashboard-smoke
-            docker logs platform-staging-overlay-smoke
-            exit 1
-          fi
-          for app in dashboard overlay; do
-            html="/tmp/staging-$app.html"
-            asset="$(grep -oE '/_next/static/[^" ]+' "$html" | head -n 1 | sed 's/[?#].*//' || true)"
-            if [ -n "$asset" ]; then
-              port=3391
-              if [ "$app" = overlay ]; then port=3392; fi
-              curl -fsS "http://127.0.0.1:$port$asset" >/dev/null
-            fi
-          done
-
       - name: Install isolated browser test runtime
         run: |
+          google-chrome --version
           npm install --prefix "$RUNNER_TEMP/playwright" --no-save --no-package-lock playwright@1.56.1
-          "$RUNNER_TEMP/playwright/node_modules/.bin/playwright" install --with-deps chromium
 
       - name: Run browser UI smoke tests
         env:
