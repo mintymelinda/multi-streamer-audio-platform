@@ -119,6 +119,7 @@ jobs:
           persist-credentials: false
 
       - name: Build and publish immutable application image
+        id: image
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_SHA: ${{ needs.classify.outputs.head_sha }}
@@ -130,6 +131,7 @@ jobs:
           docker build --pull --file infra/compose/Deployment.Dockerfile --target runtime --tag "$image" .
           docker push "$image"
           echo "IMAGE=$image" >> "$GITHUB_ENV"
+          echo "RELEASE_IMAGE=$image" >> "$GITHUB_ENV"
 
       - name: Configure pinned SSH host verification
         id: ssh_setup
@@ -298,9 +300,10 @@ jobs:
             echo "::error::Configure all staging ingress URLs and the Twitch integration callback in the selected GitHub environment."
             exit 1
           fi
-          node scripts/ops/staging-deployment-smoke.mjs --api-url "$STAGING_API_URL" --dashboard-url "$STAGING_DASHBOARD_URL" --overlay-url "$STAGING_OVERLAY_URL" --assets-url "$STAGING_ASSETS_URL" --twitch-integration-callback-url "$STAGING_TWITCH_INTEGRATION_CALLBACK_URL" --i-confirm-non-production
+          node scripts/ops/staging-deployment-smoke.mjs --api-url "$STAGING_API_URL" --dashboard-url "$STAGING_DASHBOARD_URL" --overlay-url "$STAGING_OVERLAY_URL" --assets-url "$STAGING_ASSETS_URL" --twitch-integration-callback-url "$STAGING_TWITCH_INTEGRATION_CALLBACK_URL" --i-confirm-non-production | tee staging-ingress-checks.json
 
       - name: Roll back a failed routine deployment
+        id: rollback
         if: failure() && needs.classify.outputs.risk == 'routine' && steps.deploy.outcome == 'success' && steps.ingress.outcome == 'failure'
         env:
           STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
@@ -325,3 +328,27 @@ jobs:
         if: failure() && needs.classify.outputs.risk == 'approval-required'
         run: |
           echo "::error::High-risk staging deployment failed. No automatic image rollback was attempted because schema/data compatibility may have changed. Follow the documented recovery procedure."
+      - name: Write sanitized release audit record
+        id: audit
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+          RELEASE_SHA: ${{ needs.classify.outputs.head_sha }}
+          RELEASE_RISK: ${{ needs.classify.outputs.risk }}
+          RELEASE_IMAGE: ${{ env.RELEASE_IMAGE }}
+          BUILD_OUTCOME: ${{ steps.image.outcome }}
+          DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
+          INGRESS_OUTCOME: ${{ steps.ingress.outcome }}
+          ROLLBACK_OUTCOME: ${{ steps.rollback.outcome }}
+        run: node scripts/ops/write-staging-release-audit.mjs
+
+      - name: Upload release audit and ingress evidence
+        if: always() && steps.audit.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-release-audit-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            release-audit.json
+            staging-ingress-checks.json
+          if-no-files-found: warn
+          retention-days: 90
