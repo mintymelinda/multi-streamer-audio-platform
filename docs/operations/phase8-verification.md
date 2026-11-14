@@ -125,7 +125,7 @@ A second browser test, `scripts/e2e/authenticated-session.mjs`, starts the built
 - the real API resolves the opaque HTTP-only session cookie and returns the expected stable Twitch identity;
 - the dashboard can explicitly create a workspace through the real authenticated API;
 - a second disposable workspace owned by another identity is absent from the authenticated user's workspace list, and both read and mutation attempts against its scene API return the non-disclosing not-found boundary;
-- an invitation is visible only to the matching signed-in Twitch identity, acceptance grants exactly the assigned Moderator role, and the owner can revoke that membership with subsequent protected access denied immediately;
+- a pending invitation grants no workspace access, a different signed-in identity cannot accept it, acceptance by the intended Twitch identity grants exactly the assigned Moderator role, and the owner can revoke that membership with subsequent protected access denied immediately;
 - the dashboard creates a published starter scene through the real workspace-scoped API;
 - the built OBS overlay loads that scene snapshot through the real bearer-token endpoint and scrubs the fragment token from browser history;
 - published snapshot responses enforce private no-store caching, no-referrer, and authorization-vary headers;
