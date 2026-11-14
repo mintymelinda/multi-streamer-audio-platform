@@ -285,7 +285,7 @@ The required pull-request check is the `Quality gates` job in `.github/workflows
 - standalone dashboard/overlay container smoke tests; and
 - browser UI smoke tests plus authenticated browser/API/overlay E2E.
 
-The CI workflow uses a read-only repository token and disables persisted checkout credentials. It does not mutate or push lockfile changes. Dependency lockfile updates must be reviewed and committed as ordinary source changes. The repository-wide `pnpm lint` command currently reports pre-existing lint debt, so it is not used as a blanket gate; changed supported files are linted instead, preventing unrelated legacy findings from making every PR red.
+The CI workflow uses a read-only repository token and disables persisted checkout credentials. It does not mutate or push lockfile changes. Dependency lockfile updates must be reviewed and committed as ordinary source changes. The repository-wide `pnpm lint` command currently reports pre-existing lint debt, so it is not used as a blanket gate; changed supported files are linted instead, preventing unrelated legacy findings from making every PR red. The changed-file runner uses the pull-request base/head range or push before/head range, ignores deleted files and unsupported formats, and fails closed when it cannot determine the event range.
 
 Protect the default branch in repository settings: require pull requests, require the `Quality gates` and `Analyze JavaScript and TypeScript` checks, dismiss stale approvals when new commits are pushed, and restrict bypasses to the platform owner. The GitHub connector available during this implementation cannot configure branch-protection rules, so these repository settings remain an explicit operator setup step.
 
