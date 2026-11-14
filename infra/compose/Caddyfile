@@ -1,0 +1,23 @@
+{
+	admin off
+	email {$ACME_EMAIL}
+}
+
+{$DASHBOARD_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy dashboard:3000
+}
+
+{$OVERLAY_DOMAIN} {
+	encode zstd gzip
+	header {
+		Referrer-Policy no-referrer
+		X-Content-Type-Options nosniff
+	}
+	reverse_proxy overlay:3001
+}
+
+{$API_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy api:3000
+}
