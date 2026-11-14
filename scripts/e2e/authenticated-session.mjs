@@ -316,7 +316,6 @@ try {
       method: 'POST',
       credentials: 'include',
       headers: { 'x-csrf-token': token },
-      signal: AbortSignal.timeout(5_000),
     });
     return response.status;
   }, { invitationId, token: csrfToken });
@@ -769,6 +768,7 @@ try {
       method: 'POST',
       credentials: 'include',
       headers: { 'x-csrf-token': token },
+      signal: AbortSignal.timeout(5_000),
     });
     return response.status;
   }, csrfToken);
