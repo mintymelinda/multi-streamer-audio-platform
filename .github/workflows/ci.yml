@@ -214,7 +214,7 @@ jobs:
       - name: Install isolated browser test runtime
         run: |
           npm install --prefix "$RUNNER_TEMP/playwright" --no-save --no-package-lock playwright@1.56.1
-          "$RUNNER_TEMP/playwright/node_modules/.bin/playwright" install chromium
+          "$RUNNER_TEMP/playwright/node_modules/.bin/playwright" install --only-shell chromium
 
       - name: Run browser UI smoke tests
         env:
