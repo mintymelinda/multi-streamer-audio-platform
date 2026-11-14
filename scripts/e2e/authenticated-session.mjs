@@ -701,13 +701,28 @@ try {
     },
   );
   assert.equal(publishResponse.status, 201, 'The API must publish the new scene while the overlay browser is offline.');
+  const reconnectSnapshot = overlayPage.waitForResponse((response) =>
+    response.url().includes(`/api/overlay/scenes/${starter.body.scene.id}/snapshot`)
+      && response.request().method() === 'GET',
+  );
   await connection.send('Network.emulateNetworkConditions', {
     offline: false,
     latency: 0,
     downloadThroughput: -1,
     uploadThroughput: -1,
   });
-  await overlayPage.getByText('Recovered After Reconnect', { exact: true }).waitFor({ timeout: 20_000 });
+  // Chromium's network emulation does not consistently dispatch the browser
+  // online event, so emit the same event the overlay listens for on real recovery.
+  await overlayPage.evaluate(() => window.dispatchEvent(new Event('online')));
+  const recoveredSnapshot = await reconnectSnapshot;
+  assert.equal(recoveredSnapshot.status(), 200, 'The overlay must fetch a fresh snapshot after connectivity returns.');
+  const recoveredBody = await recoveredSnapshot.json();
+  assert.equal(
+    recoveredBody.publishedState.elements[0].text,
+    'Recovered After Reconnect',
+    'The reconnect snapshot must contain the newly published scene.',
+  );
+  await overlayPage.getByText('Recovered After Reconnect', { exact: true }).waitFor({ timeout: 10_000 });
   await connection.detach();
 
   const revoke = await page.evaluate(async ({ workspaceId, sceneId, token }) => {
