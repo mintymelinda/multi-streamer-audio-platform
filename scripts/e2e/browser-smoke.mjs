@@ -20,7 +20,6 @@ function startApp(packageName, port) {
       '--filter',
       packageName,
       'start',
-      '--',
       '--hostname',
       '127.0.0.1',
       '--port',
