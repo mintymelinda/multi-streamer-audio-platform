@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { readFile } from 'node:fs/promises';
+import { pathToFileURL } from 'node:url';
 
 const documentationPattern = /^(?:docs\/|[^/]+\.md$|README(?:\.|$)|CHANGELOG(?:\.|$))/i;
 const staticPresentationPattern = /^(?:apps\/(?:dashboard|overlay)\/(?:public\/.*\.(?:css|svg|png|jpe?g|webp|gif|ico|woff2?)|.*\.(?:css|scss)))$/i;
@@ -15,7 +16,7 @@ export function classifyChangedFiles(files) {
 
   const normalized = files
     .filter((file) => typeof file === 'string' && file.trim())
-    .map((file) => file.trim().replaceAll('\\\\', '/'));
+    .map((file) => file.trim().replaceAll('\\', '/'));
 
   if (normalized.length === 0) {
     return {
@@ -53,13 +54,13 @@ export function classifyChangedFiles(files) {
 
 async function main() {
   const input = await readFile(0, 'utf8');
-  const files = input.split(/\\r?\\n/).filter(Boolean);
-  process.stdout.write(JSON.stringify(classifyChangedFiles(files)) + '\\n');
+  const files = input.split(/\r?\n/).filter(Boolean);
+  process.stdout.write(JSON.stringify(classifyChangedFiles(files)) + '\n');
 }
 
-if (process.argv[1] && import.meta.url === new URL('file://' + process.argv[1]).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch(() => {
-    process.stderr.write('Unable to classify release changes.\\n');
+    process.stderr.write('Unable to classify release changes.\n');
     process.exitCode = 1;
   });
 }
