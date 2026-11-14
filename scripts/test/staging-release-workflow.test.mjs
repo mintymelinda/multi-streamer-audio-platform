@@ -43,6 +43,9 @@ test('routine rollback is limited to routine changes; high-risk recovery is manu
   assert.match(workflow, /failure\(\) && needs\.classify\.outputs\.risk == 'routine'/);
   assert.match(workflow, /Preserve failed high-risk deployment for operator recovery/);
   assert.match(workflow, /No automatic image rollback was attempted/);
+  assert.match(workflow, /Previous application image was restored but did not become healthy/);
+  assert.match(workflow, /Previous application image restored and API, worker, dashboard, and overlay are healthy/);
+  assert.match(workflow, /rollback_healthy/);
 });
 
 test('staging Compose supports a caller-supplied immutable image and remote mode disables builds', () => {
