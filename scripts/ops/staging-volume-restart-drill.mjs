@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { randomUUID } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -57,11 +57,12 @@ export function findNamedVolumeMount(mounts, destination) {
   return mount.Name;
 }
 
-function docker(args, allowFailure = false) {
+function docker(args, allowFailure = false, extraEnv = {}) {
   const result = spawnSync('docker', args, {
     cwd: repositoryRoot,
     encoding: 'utf8',
     maxBuffer: 4 * 1024 * 1024,
+    env: { ...process.env, ...extraEnv },
   });
   if (result.error) throw result.error;
   if (result.status !== 0 && !allowFailure) {
@@ -117,27 +118,57 @@ async function waitForServices(options) {
   throw new Error('Staging services did not recover after container recreation: ' + JSON.stringify(last));
 }
 
+function readEnvironmentFile(path) {
+  const values = {};
+  for (const line of readFileSync(path, 'utf8').split(/\\r?\\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const separator = trimmed.indexOf('=');
+    if (separator < 1) continue;
+    values[trimmed.slice(0, separator).trim()] = trimmed.slice(separator + 1).trim().replace(/^['"]|['"]$/g, '');
+  }
+  return values;
+}
+
+function runMinioClient(options, command) {
+  const environment = readEnvironmentFile(options.envFile);
+  const network = environment.PLATFORM_NETWORK_NAME || 'platform-staging';
+  if (!environment.MINIO_ROOT_USER || !environment.MINIO_ROOT_PASSWORD) {
+    throw new Error('The staging environment file must define MinIO credentials.');
+  }
+  docker([
+    'run', '--rm', '--network', network, '--entrypoint', '/bin/sh',
+    '--env', 'MINIO_ROOT_USER', '--env', 'MINIO_ROOT_PASSWORD',
+    'minio/mc:RELEASE.2025-08-13T08-35-41Z', '-lc', command,
+  ], false, {
+    MINIO_ROOT_USER: environment.MINIO_ROOT_USER,
+    MINIO_ROOT_PASSWORD: environment.MINIO_ROOT_PASSWORD,
+  });
+}
+
 async function main(argv) {
   const options = parseOptions(argv);
   const prefix = composePrefix(options);
   const token = randomUUID();
   const redisKey = 'staging:volume-drill:' + token;
   const objectKey = 'staging-volume-drill/' + token + '.txt';
+  const initialReadiness = await waitForServices(options);
   const before = {
     postgres: volumeFor(options, 'postgres', '/var/lib/postgresql'),
     redis: volumeFor(options, 'redis', '/data'),
     objectStorage: volumeFor(options, 'object-storage', '/data'),
   };
 
-  const probeSql = [
-    'CREATE TABLE IF NOT EXISTS public.staging_volume_probe (probe_id text PRIMARY KEY)',
-    "INSERT INTO public.staging_volume_probe (probe_id) VALUES ('" + token + "') ON CONFLICT DO NOTHING",
-  ].join('; ');
-  docker([...prefix, 'exec', '-T', 'postgres', 'psql', '-U', 'platform_bootstrap', '-d', 'platform', '-v', 'ON_ERROR_STOP=1', '-c', probeSql]);
+  const probeTableExists = docker([...prefix, 'exec', '-T', 'postgres', 'psql', '-U', 'platform_bootstrap', '-d', 'platform', '-Atqc', "SELECT to_regclass('public.staging_volume_probe') IS NOT NULL"]);
+  const createdProbeTable = probeTableExists !== 't';
+  if (createdProbeTable) {
+    docker([...prefix, 'exec', '-T', 'postgres', 'psql', '-U', 'platform_bootstrap', '-d', 'platform', '-v', 'ON_ERROR_STOP=1', '-c', 'CREATE TABLE public.staging_volume_probe (probe_id text PRIMARY KEY)']);
+  }
+  docker([...prefix, 'exec', '-T', 'postgres', 'psql', '-U', 'platform_bootstrap', '-d', 'platform', '-v', 'ON_ERROR_STOP=1', '-c', "INSERT INTO public.staging_volume_probe (probe_id) VALUES ('" + token + "') ON CONFLICT DO NOTHING"]);
   docker([...prefix, 'exec', '-T', 'redis', 'redis-cli', 'SET', redisKey, token, 'EX', '900']);
 
-  const minioCommand = 'mc alias set local http://object-storage:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" && printf %s ' + token + ' | mc pipe local/platform-assets/' + objectKey;
-  docker([...prefix, 'run', '--rm', '--no-deps', 'object-storage-init', minioCommand]);
+  const minioCommand = 'mc alias set local http://object-storage:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" && printf %s ' + token + ' | mc pipe local/platform-assets/' + objectKey;
+  runMinioClient(options, minioCommand);
 
   docker([...prefix, 'up', '-d', '--force-recreate', 'postgres', 'redis', 'object-storage']);
   const readiness = await waitForServices(options);
@@ -157,19 +188,21 @@ async function main(argv) {
   if (postgresValue !== token) throw new Error('PostgreSQL probe data did not survive container recreation.');
   const redisValue = docker([...prefix, 'exec', '-T', 'redis', 'redis-cli', 'GET', redisKey]);
   if (redisValue !== token) throw new Error('Redis AOF probe data did not survive container recreation.');
-  const minioCommandAfter = 'mc alias set local http://object-storage:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" && mc cat local/platform-assets/' + objectKey;
-  const objectValue = docker([...prefix, 'run', '--rm', '--no-deps', 'object-storage-init', minioCommandAfter]);
+  const minioCommandAfter = 'mc alias set local http://object-storage:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" && mc cat local/platform-assets/' + objectKey;
+  const objectValue = runMinioClientOutput(options, minioCommandAfter);
   if (objectValue !== token) throw new Error('Object-storage probe data did not survive container recreation.');
 
-  docker([...prefix, 'exec', '-T', 'postgres', 'psql', '-U', 'platform_bootstrap', '-d', 'platform', '-c', "DELETE FROM public.staging_volume_probe WHERE probe_id='" + token + "'; DROP TABLE IF EXISTS public.staging_volume_probe;"]);
+  const cleanupSql = "DELETE FROM public.staging_volume_probe WHERE probe_id='" + token + "'" + (createdProbeTable ? '; DROP TABLE public.staging_volume_probe' : '');
+  docker([...prefix, 'exec', '-T', 'postgres', 'psql', '-U', 'platform_bootstrap', '-d', 'platform', '-c', cleanupSql]);
   docker([...prefix, 'exec', '-T', 'redis', 'redis-cli', 'DEL', redisKey]);
-  const minioCleanup = 'mc alias set local http://object-storage:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" && mc rm local/platform-assets/' + objectKey;
-  docker([...prefix, 'run', '--rm', '--no-deps', 'object-storage-init', minioCleanup]);
+  const minioCleanup = 'mc alias set local http://object-storage:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" && mc rm local/platform-assets/' + objectKey;
+  runMinioClient(options, minioCleanup);
 
   process.stdout.write(JSON.stringify({
     status: 'passed',
     scope: 'non-production persistent-volume recreation drill',
     volumes: after,
+    initialReadiness,
     readiness,
     verified: ['postgresql-data', 'redis-aof-data', 'object-storage-data'],
     note: 'Containers were recreated without removing named volumes. No docker compose down --volumes command is used.',
