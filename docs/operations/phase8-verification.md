@@ -180,3 +180,24 @@ The registered Twitch callback URLs must exactly match the externally reachable 
 Set the API's `TWITCH_REDIRECT_URI` and `TWITCH_INTEGRATION_REDIRECT_URI` to those exact HTTPS URLs. The app uses explicit configured callback URLs rather than reconstructing them from proxy headers. Keep the API, dashboard, overlay, PostgreSQL, Redis, and object-storage services on the private application network; only the Caddy edge publishes host ports.
 
 CI validates the edge Compose model and parses/validates the Caddyfile. These static checks do not prove public DNS, ACME issuance, upstream reachability, WebSocket operation, OAuth provider registration, or persistence across a real staging restart; those remain runtime acceptance checks for this item. Do not use the example `.net` hostnames as real deployment values.
+
+### Staging Compose application stack
+
+The non-production application deployment is defined in `infra/compose/docker-compose.staging.yml` and built with `infra/compose/Deployment.Dockerfile`. The deployment uses one immutable image for the API, background worker, dashboard, and overlay, while each runs as a separate container/process.
+
+Before starting staging:
+
+1. Copy `infra/compose/.env.staging.example` to a private `.env.staging` file and replace all example values. Use distinct randomly generated PostgreSQL role passwords and MinIO credentials; set the file mode to `0600`.
+2. Create the secret files named by the `*_SECRET_FILE` settings under `infra/compose/secrets/`. They must contain the matching API, worker, provider-worker, and Redis connection URLs; the Twitch client secret; a valid integration KEK ring; and a provider-execution handoff secret of at least 32 characters. Generate a unique 32-byte KEK for the staging environment. Never reuse CI or example values.
+3. Register the two exact Twitch callback URLs shown above and use the same API hostname in the staging environment file.
+4. Point all four hostnames (dashboard, overlay, API, assets) at the staging host. Only the Caddy edge publishes ports 80/443; PostgreSQL and Redis are on an internal-only network, and object storage has no direct host port.
+5. Start the application stack, wait for the migration job and service health checks, then start the edge proxy using the same staging environment file:
+
+   ```sh
+   docker compose --env-file infra/compose/.env.staging -f infra/compose/docker-compose.staging.yml up -d --build
+   docker compose --env-file infra/compose/.env.staging -f infra/compose/docker-compose.edge.yml up -d
+   ```
+
+6. Verify `/health/ready`, dashboard and overlay pages, a real Socket.IO connection through the API hostname, an upload/download round trip through the assets hostname, and both Twitch OAuth redirect destinations. Confirm PostgreSQL, Redis, object storage, and Caddy data volumes survive container recreation.
+
+The app network is shared with Caddy so the proxy can reach only the intended HTTP upstreams. PostgreSQL and Redis use a separate internal-only network. The Compose definitions and Caddyfile are validated in CI; the runtime checks above still require a disposable staging host with real DNS and provider callback registration. This stack is a staging verification target, not a production/NAS deployment recipe.
