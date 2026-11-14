@@ -161,6 +161,12 @@ try {
     NODE_ENV: 'test',
     DATABASE_URL: postgresUrl,
     API_PORT: '3300',
+    // The E2E API only needs valid storage configuration at startup; no MinIO
+    // service is required unless a test actually exercises object operations.
+    OBJECT_STORAGE_ENDPOINT: 'http://127.0.0.1:9000',
+    OBJECT_STORAGE_BUCKET: 'platform-e2e-assets',
+    OBJECT_STORAGE_ACCESS_KEY: 'e2e-only',
+    OBJECT_STORAGE_SECRET_KEY: 'e2e-only-not-a-real-secret',
   };
   delete apiEnvironment.DATABASE_URL_FILE;
   const apiProcess = start('pnpm', ['--filter', '@platform/api', 'start'], apiEnvironment);
