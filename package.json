@@ -15,7 +15,8 @@
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "pnpm --filter @platform/api build && pnpm --filter @platform/worker build && node --test packages/contracts/test/*.test.mjs apps/api/test/*.test.mjs apps/worker/test/*.test.mjs scripts/test/*.test.mjs",
     "build": "pnpm -r --if-present build",
-    "db:migrations:check": "node scripts/check-migrations.mjs"
+    "db:migrations:check": "node scripts/check-migrations.mjs",
+    "lint:changed": "node scripts/ci/lint-changed.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.5",
