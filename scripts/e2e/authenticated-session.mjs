@@ -273,6 +273,26 @@ try {
   await inviteePage.goto(`${dashboardUrl}/invitations`, { waitUntil: 'networkidle' });
   await inviteePage.getByRole('heading', { name: 'Invitation inbox' }).waitFor();
   await inviteePage.getByRole('heading', { name: 'Browser E2E Workspace' }).waitFor();
+
+  const pendingAccess = await inviteePage.evaluate(async (workspaceId) => {
+    const response = await fetch(`/api/workspaces/${workspaceId}`, {
+      credentials: 'include',
+      cache: 'no-store',
+    });
+    return response.status;
+  }, workspace.id);
+  assert.equal(pendingAccess, 404, 'A pending invitation must not grant workspace access.');
+
+  const wrongIdentityAcceptance = await page.evaluate(async ({ invitationId, token }) => {
+    const response = await fetch(`/api/me/invitations/${invitationId}/accept`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'x-csrf-token': token },
+    });
+    return response.status;
+  }, { invitationId, token: csrfToken });
+  assert.equal(wrongIdentityAcceptance, 404, 'An invitation cannot be accepted by a different signed-in Twitch identity.');
+
   await inviteePage.getByRole('button', { name: 'Accept' }).click();
   await inviteePage.waitForURL(dashboardUrl + '/');
   const acceptedMemberships = await inviteePage.evaluate(async () => {
