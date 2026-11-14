@@ -254,6 +254,38 @@ try {
   assert.equal(snapshotResponse.status(), 200, 'The overlay must load its published scene from the real API.');
   await overlayPage.getByText('Now Playing', { exact: true }).first().waitFor();
   assert.equal(new URL(overlayPage.url()).hash, '', 'The overlay must scrub the bearer token from browser history.');
+  const snapshotHeaders = snapshotResponse.headers();
+  assert.match(snapshotHeaders['cache-control'] ?? '', /no-store/);
+  assert.match(snapshotHeaders['cache-control'] ?? '', /private/);
+  assert.equal(snapshotHeaders['referrer-policy'], 'no-referrer');
+  assert.match(snapshotHeaders.vary ?? '', /authorization/i);
+
+  const unknownTokenPage = await context.newPage();
+  const unknownTokenResponse = unknownTokenPage.waitForResponse((response) =>
+    response.url().includes(`/api/overlay/scenes/${starter.body.scene.id}/snapshot`),
+  );
+  await unknownTokenPage.goto(
+    `${overlayUrl}${starter.body.overlayPath}#${'b'.repeat(43)}`,
+    { waitUntil: 'networkidle' },
+  );
+  const rejectedSnapshot = await unknownTokenResponse;
+  assert.equal(rejectedSnapshot.status(), 404, 'A well-formed but unknown bearer token must not disclose a scene.');
+  assert.match(rejectedSnapshot.headers()['cache-control'] ?? '', /no-store/);
+  assert.equal(rejectedSnapshot.headers()['referrer-policy'], 'no-referrer');
+  await unknownTokenPage.getByText('This overlay URL is invalid or has been revoked.', { exact: true }).waitFor();
+
+  const malformedTokenPage = await context.newPage();
+  await malformedTokenPage.goto(
+    `${overlayUrl}${starter.body.overlayPath}#not-a-valid-token`,
+    { waitUntil: 'networkidle' },
+  );
+  await malformedTokenPage.getByText('This overlay URL is invalid or has been revoked.', { exact: true }).waitFor();
+  assert.equal(
+    await malformedTokenPage.evaluate(() => performance.getEntriesByType('resource')
+      .some((entry) => entry.name.includes('/api/overlay/scenes/'))),
+    false,
+    'Malformed fragment tokens must be rejected before making an API request.',
+  );
 
   const draftOnlyState = {
     version: 1,
@@ -381,6 +413,8 @@ try {
   await overlayPage.getByText('This overlay URL is invalid or has been revoked.', { exact: true }).waitFor({
     timeout: 20_000,
   });
+  await unknownTokenPage.close();
+  await malformedTokenPage.close();
 
   const rejectedLogout = await page.evaluate(async () => {
     const response = await fetch('/api/auth/logout', {
