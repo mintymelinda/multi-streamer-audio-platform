@@ -118,7 +118,7 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
   const previousSceneState = useRef<string | null>(null);
   const lastHandledEvent = useRef(0);
 
-  const loadSnapshot = useCallback(async (accessToken: string) => {
+  const loadSnapshot = useCallback(async (accessToken: string): Promise<boolean> => {
     const response = await fetch(apiUrl(`/overlay/scenes/${sceneId}/snapshot`), {
       headers: { Authorization: `Bearer ${accessToken}` },
       cache: 'no-store',
@@ -126,11 +126,12 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
     });
     if (response.status === 404 || response.status === 401) {
       setStatus('unauthorized');
-      return;
+      return false;
     }
     if (!response.ok) throw new Error(`Overlay request failed (${response.status}).`);
     setSnapshot((await response.json()) as SceneSnapshot);
     setStatus('ready');
+    return true;
   }, [sceneId]);
 
   useEffect(() => {
@@ -194,16 +195,41 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
       });
       socket.addEventListener('close', () => {
         if (stopped || rejected) return;
-        setStatus((current) => current === 'unauthorized' ? current : 'connecting');
-        retryTimer = setTimeout(connect, retryDelay);
-        retryDelay = Math.min(retryDelay * 2, 30_000);
+        // A server-side access revocation closes the authenticated socket. Check
+        // the bearer token before reconnecting so the overlay switches to its
+        // revoked state instead of retrying an invalid token forever.
+        void loadSnapshot(token).then((authorized) => {
+          if (stopped || !authorized) {
+            rejected = true;
+            return;
+          }
+          setStatus('connecting');
+          retryTimer = setTimeout(connect, retryDelay);
+          retryDelay = Math.min(retryDelay * 2, 30_000);
+        }).catch(() => {
+          if (stopped || rejected) return;
+          setStatus('error');
+          retryTimer = setTimeout(connect, retryDelay);
+          retryDelay = Math.min(retryDelay * 2, 30_000);
+        });
       });
       socket.addEventListener('error', () => socket?.close());
     };
 
+    const handleOnline = () => {
+      if (stopped) return;
+      // A websocket can survive browser network emulation or a brief interface
+      // transition without closing. Refresh the published snapshot explicitly,
+      // then force a fresh socket handshake so missed invalidations are recovered.
+      void loadSnapshot(token).catch(() => setStatus('error'));
+      socket?.close();
+    };
+
+    window.addEventListener('online', handleOnline);
     connect();
     return () => {
       stopped = true;
+      window.removeEventListener('online', handleOnline);
       if (retryTimer) clearTimeout(retryTimer);
       window.clearInterval(refreshTimer);
       socket?.close();

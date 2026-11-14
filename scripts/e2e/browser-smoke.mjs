@@ -29,7 +29,7 @@ function startApp(packageName, port) {
     {
       cwd: process.cwd(),
       env: { ...process.env, PORT: String(port), HOSTNAME: '127.0.0.1' },
-      stdio: ['ignore', 'inherit', 'inherit'],
+      stdio: 'inherit',
     },
   );
   children.push(child);
