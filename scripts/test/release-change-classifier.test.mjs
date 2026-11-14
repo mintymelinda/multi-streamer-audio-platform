@@ -22,6 +22,7 @@ test('requires owner approval for application logic and security-sensitive paths
   for (const path of [
     'apps/api/src/auth/auth.service.ts',
     'apps/worker/src/main.ts',
+    'apps/overlay/public/active-content.svg',
     'packages/contracts/src/request.ts',
     'infra/postgres/migrations/202611140001.sql',
     '.github/workflows/ci.yml',
