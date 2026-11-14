@@ -25,7 +25,8 @@ The repository contains implementation and automated tests across the agreed fir
 - [x] Provider-observed natural completion and retryable queue advancement are implemented.
 - [x] Manual terminal recovery closes the active durable playback session so a stale monitor cannot later complete or advance it.
 - [x] Phase 3 coordinator/recovery tests and coverage matrix updates are present on the reviewed stacked release branch.
-- [ ] Complete the remaining restart/fencing/uncertain-outcome acceptance work described under item 70, including manual recovery after process restart.
+- [x] API coordinator restart after a provider accepted a play command but before the API received its response is covered by a multi-process test: the durable operation remains uncertain, the same idempotency key does not replay play, and a different command is blocked while the outcome is unresolved.
+- [ ] Complete provider-worker crash/stalled-job recovery, scheduler overlap, expired-lease reclaim, stale-fencing-token rejection, and manual recovery after restart; the current restart fixture uses deterministic HTTP providers, not live hardware.
 - [ ] Complete the rights/use approvals and provider assessments required for each enabled provider before public use.
 
 ## Phase 7 — Backups, privacy, and legal materials
@@ -63,7 +64,9 @@ The drafts are not legal advice and are not approved for publication. Do not tre
 - [x] A two-independent-PostgreSQL-session lease contention test is added and included through the existing scripts test glob.
 - [x] PostgreSQL readiness behavior has unit coverage.
 - [x] CI builds and exercises the production dashboard/overlay in Playwright, including sign-in boundary, authenticated workspace creation and isolation, moderator invitation/acceptance/revocation, starter scene creation, draft/publish isolation, bearer-token security, overlay snapshot/reconnect, and session/CSRF revocation.
-- [ ] Extend browser E2E to cover the full request/moderation/queue/provider-playback/recovery journey, real Twitch OAuth exchange, export/deletion, and deletion-safe restore; the existing authenticated test seeds its session identity and does not contact Twitch OAuth.
+- [x] Browser E2E covers request submission, moderation approval, queue ordering, provider-fixture execution, and the resulting playback state, in addition to authenticated workspace/overlay flows.
+- [ ] Exercise the real Twitch OAuth authorization-code exchange; the browser test seeds a server-side session and does not contact Twitch OAuth.
+- [ ] Extend browser E2E to cover export/deletion and deletion-safe restore; those currently have service/worker/database tests but not the full browser journey.
 - [ ] Verify each relevant test against the actual non-production application and service topology, not only mocked HTTP servers or internal service methods.
 
 ### 69. Capacity and SLOs
@@ -79,7 +82,8 @@ The drafts are not legal advice and are not approved for publication. Do not tre
 - [x] The PostgreSQL lease upsert is verified using two independent database sessions; the test checks the live lease owner and fencing token.
 - [x] Two independent API coordinator processes run against shared PostgreSQL/Redis with the production Redis Socket.IO adapter; real WebSocket clients verify cross-instance room broadcast and outbox fan-out, while duplicate play commands issue one provider start.
 - [x] Two independent BullMQ provider consumers share PostgreSQL/Redis and use the live API handoff, Playback Coordinator, Invidious resolver, and Lyrion adapter with deterministic HTTP fixtures; five workspaces reach `playing` without duplicate handoffs/starts.
-- [ ] Complete worker crash/restart, scheduler-overlap, expired-lease reclaim, stale-fencing-token rejection, uncertain-outcome recovery, and natural-completion/queue-advance tests across process boundaries; current automated fixtures do not exercise live provider hardware.
+- [x] API coordinator process restart with an uncertain provider outcome is tested across two real API processes sharing PostgreSQL/Redis; recovery does not replay the ambiguous play command and blocks conflicting commands.
+- [ ] Complete provider-worker crash/stalled-job recovery, scheduler overlap, expired-lease reclaim, stale-fencing-token rejection, and natural-completion/queue-advance tests across process boundaries; current fixtures do not exercise live provider hardware.
 - [ ] Verify cross-tenant realtime isolation and the complete overlay reconnect/missed-event behavior across independently deployed API instances.
 
 ### 71. Non-production deployment
@@ -105,7 +109,8 @@ The API `/health/ready` endpoint currently checks PostgreSQL only. The worker re
 
 - [x] The existing CI workflow runs dependency installation, database role/migration/isolation checks, type checking, migration naming checks, tests, and build; CodeQL runs separately.
 - [x] The new tests are discovered by the existing test glob without workflow edits.
-- [ ] Require green CI and CodeQL for the exact release candidate commit and retain the workflow-run evidence.
+- [x] CI and CodeQL both pass on Phase 8 integration commit `cdd01df3517d02f5aa4cb29a6b832c9b04193c00`; CI run [#43636257506](https://github.com/mintymelinda/multi-streamer-audio-platform/actions/runs/43636257506) and CodeQL run [#43636257385](https://github.com/mintymelinda/multi-streamer-audio-platform/actions/runs/43636257385) are retained in GitHub Actions.
+- [ ] Re-run both checks for any later release-candidate code change and retain the exact final candidate evidence.
 - [ ] Confirm no suppressed/ skipped release-critical test, unresolved security finding, or unreviewed migration remains.
 - [ ] Keep formatting/lint policy aligned with the repository owner's explicit CI decision; do not silently introduce new CI gates in this launch checklist.
 
@@ -129,7 +134,7 @@ The API `/health/ready` endpoint currently checks PostgreSQL only. The worker re
 
 **Launch decision: NOT APPROVED.** The implementation has substantial automated coverage, but the release-blocking operator, legal, provider, deployment, capacity, restore, and end-to-end evidence above is not complete. No production or NAS deployment is authorized by this review.
 
-**Reviewed repository commit:** `ce7b524ded66bae28c697de04ab939d5d1170b33` (stacked release branch after Phase 8 item 74).
+**Reviewed repository commit:** `cdd01df3517d02f5aa4cb29a6b832c9b04193c00` (Phase 8 integration branch after item 74 release-audit work and item 70 API restart-recovery coverage).
 
 **Review date:** 2026-11-14
 
