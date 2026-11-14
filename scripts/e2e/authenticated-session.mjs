@@ -547,7 +547,7 @@ try {
   );
   await overlayPage.goto(
     `${overlayUrl}${starter.body.overlayPath}#${starter.body.accessToken}`,
-    { waitUntil: 'networkidle' },
+    { waitUntil: 'domcontentloaded' },
   );
   const snapshotResponse = await overlaySnapshot;
   assert.equal(snapshotResponse.status(), 200, 'The overlay must load its published scene from the real API.');
@@ -565,7 +565,7 @@ try {
   );
   await unknownTokenPage.goto(
     `${overlayUrl}${starter.body.overlayPath}#${'b'.repeat(43)}`,
-    { waitUntil: 'networkidle' },
+    { waitUntil: 'domcontentloaded' },
   );
   const rejectedSnapshot = await unknownTokenResponse;
   assert.equal(rejectedSnapshot.status(), 404, 'A well-formed but unknown bearer token must not disclose a scene.');
@@ -576,7 +576,7 @@ try {
   const malformedTokenPage = await context.newPage();
   await malformedTokenPage.goto(
     `${overlayUrl}${starter.body.overlayPath}#not-a-valid-token`,
-    { waitUntil: 'networkidle' },
+    { waitUntil: 'domcontentloaded' },
   );
   await malformedTokenPage.getByText('This overlay URL is invalid or has been revoked.', { exact: true }).waitFor();
   assert.equal(
