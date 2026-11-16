@@ -182,8 +182,8 @@ importers:
         specifier: 12.4.0
         version: 12.4.0(@nestjs/common@12.4.0(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/websockets@12.4.0)(reflect-metadata@0.2.2)(rxjs@7.8.2)
       '@nestjs/platform-fastify':
-        specifier: 12.4.0
-        version: 12.4.0(@nestjs/common@12.4.0(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.4.0)(rxjs@7.8.2)
+        specifier: 12.5.0
+        version: 12.5.0(@nestjs/common@12.4.0(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.4.0)(rxjs@7.8.2)
       '@nestjs/platform-socket.io':
         specifier: 12.4.0
         version: 12.4.0(@nestjs/common@12.4.0(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/websockets@12.4.0)(rxjs@7.8.2)
@@ -666,8 +666,8 @@ packages:
       class-validator:
         optional: true
 
-  '@nestjs/platform-fastify@12.4.0':
-    resolution: {integrity: sha512-IQOZQtnCA0Glg7e0un7XGSt2MHp0Y6dcT2wg8dRWJLse13gRuv1JRsKLUlTfJNuqA1ZuBcsLUXMeCPz9hNIyjQ==}
+  '@nestjs/platform-fastify@12.5.0':
+    resolution: {integrity: sha512-u0R9z1FbgrSjoQTsufHrcZ5As2XDhjmQ2eejpWodYEPZXZAahT5sEoGPd03AusEvlX5Bh89hiavLWxeglpR6mg==}
     peerDependencies:
       '@fastify/multipart': ^10.1.0
       '@fastify/static': ^10.1.10
@@ -1695,7 +1695,7 @@ snapshots:
       '@nestjs/common': 12.4.0(reflect-metadata@0.2.2)(rxjs@7.8.2)
       reflect-metadata: 0.2.2
 
-  '@nestjs/platform-fastify@12.4.0(@nestjs/common@12.4.0(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.4.0)(rxjs@7.8.2)':
+  '@nestjs/platform-fastify@12.5.0(@nestjs/common@12.4.0(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.4.0)(rxjs@7.8.2)':
     dependencies:
       '@fastify/cors': 11.4.1
       '@fastify/formbody': 9.0.1
