@@ -165,6 +165,70 @@ function createHandoffFixture(expectedCount) {
   };
 }
 
+function createCrashHandoffFixture() {
+  const firstReceived = deferred();
+  const secondReceived = deferred();
+  const requests = [];
+  const appliedExecutions = new Set();
+  let effectCount = 0;
+  const server = createServer(async (request, response) => {
+    try {
+      const chunks = [];
+      for await (const chunk of request) chunks.push(chunk);
+      const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      const validSignature = verifyHandoffSignature(
+        request.headers['x-provider-execution-timestamp'],
+        request.headers['x-provider-execution-signature'],
+        body,
+      );
+      requests.push({ body, validSignature });
+      if (!appliedExecutions.has(body.executionStateId)) {
+        appliedExecutions.add(body.executionStateId);
+        effectCount += 1;
+      }
+      if (requests.length === 1) {
+        firstReceived.resolve();
+        return;
+      }
+      if (requests.length === 2) secondReceived.resolve();
+      response.writeHead(202, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({
+        accepted: true,
+        operationId: 'phase8-recovered-operation-' + body.executionStateId,
+        status: 'accepted',
+      }));
+    } catch {
+      if (!response.headersSent) response.writeHead(400);
+      response.end();
+    }
+  });
+  return {
+    requests,
+    firstReceived: firstReceived.promise,
+    secondReceived: secondReceived.promise,
+    get effectCount() { return effectCount; },
+    async start() {
+      return listen(server);
+    },
+    async close() {
+      server.closeAllConnections?.();
+      if (server.listening) {
+        await new Promise((resolve) => server.close(() => resolve()));
+      }
+    },
+  };
+}
+
+function withTimeout(promise, timeoutMs, message) {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
+
 function startWorkerProcess(environment) {
   const child = spawn(process.execPath, [processFixture], {
     cwd: process.cwd(),
@@ -456,6 +520,154 @@ test('two independent BullMQ provider workers consume five parallel workspaces t
         'COMMIT;',
       ].join('\n');
       runSql(postgresContainer, cleanup);
+    }
+  }
+});
+
+
+test('a replacement worker reclaims a crashed worker delivery without duplicating the handoff effect', { timeout: 90000 }, async (t) => {
+  if (process.env.CI !== 'true' && process.env.GITHUB_ACTIONS !== 'true') {
+    t.skip('Runs in CI with disposable Redis and the PostgreSQL service container.');
+    return;
+  }
+
+  const postgresContainer = findPostgresContainer();
+  if (!postgresContainer) {
+    t.skip('No PostgreSQL 18.6 CI service container is available.');
+    return;
+  }
+
+  const redisContainer = 'phase8-worker-restart-' + process.pid + '-' + randomUUID().slice(0, 8);
+  const fixture = {
+    actorId: randomUUID(),
+    workspaceId: randomUUID(),
+    sourceProviderId: randomUUID(),
+    outputProviderId: randomUUID(),
+    requestId: randomUUID(),
+    executionStateId: randomUUID(),
+    outputId: 'phase8-restart-output-' + randomUUID(),
+    playerId: 'phase8-restart-player-' + randomUUID(),
+    twitchId: String(Date.now()) + String(Math.floor(Math.random() * 1_000_000)),
+  };
+  const handoff = createCrashHandoffFixture();
+  const children = [];
+  let seeded = false;
+  let redisStarted = false;
+  let queue;
+  let queueConnection;
+
+  try {
+    docker([
+      'run', '--detach', '--rm', '--name', redisContainer,
+      '-p', '127.0.0.1::6379',
+      'redis:8.10.3', 'redis-server', '--save', '', '--appendonly', 'no',
+    ]);
+    redisStarted = true;
+    const mappedPort = docker(['port', redisContainer, '6379/tcp'])
+      .split('\n')
+      .map((line) => line.trim())
+      .find((line) => line.startsWith('127.0.0.1:'))
+      ?.split(':')
+      .at(-1);
+    assert.ok(mappedPort, 'Redis container must expose a loopback host port');
+    const redisUrl = 'redis://127.0.0.1:' + mappedPort;
+    await waitForRedis(redisUrl);
+    const handoffUrl = await handoff.start();
+
+    runSql(
+      postgresContainer,
+      [
+        'BEGIN;',
+        "INSERT INTO platform_users (id, twitch_user_id) VALUES ('" + fixture.actorId + "', '" + fixture.twitchId + "');",
+        "INSERT INTO workspaces (id, name, owner_user_id, broadcaster_twitch_user_id) VALUES ('" + fixture.workspaceId + "', 'Phase 8 worker restart', '" + fixture.actorId + "', '" + fixture.twitchId + "');",
+        "INSERT INTO workspace_memberships (workspace_id, user_id, role, status) VALUES ('" + fixture.workspaceId + "', '" + fixture.actorId + "', 'owner', 'active');",
+        "INSERT INTO provider_instances (id, workspace_id, provider_id, instance_key, contract_version, capabilities, connection_health, enabled) VALUES ('" + fixture.sourceProviderId + "', '" + fixture.workspaceId + "', 'youtube', 'phase8-restart-source-" + fixture.sourceProviderId + "', 1, '{\"resolve\":true}'::jsonb, 'healthy', true);",
+        "INSERT INTO provider_instances (id, workspace_id, provider_id, instance_key, contract_version, capabilities, connection_health, enabled) VALUES ('" + fixture.outputProviderId + "', '" + fixture.workspaceId + "', 'lyrion', 'phase8-restart-" + fixture.outputProviderId + "', 1, '{\"playback\":true,\"supportedSourceProviderIds\":[\"youtube\"]}'::jsonb, 'healthy', true);",
+        "INSERT INTO provider_output_assignments (workspace_id, provider_instance_id, output_id, player_id, assigned_by, active) VALUES ('" + fixture.workspaceId + "', '" + fixture.outputProviderId + "', '" + fixture.outputId + "', '" + fixture.playerId + "', '" + fixture.actorId + "', true);",
+        "INSERT INTO media_requests (id, workspace_id, source, submitted_by_user_id, provider, media_id, title, status) VALUES ('" + fixture.requestId + "', '" + fixture.workspaceId + "', 'dashboard', '" + fixture.actorId + "', 'youtube', 'phase8-restart-media', 'Phase 8 worker restart', 'queued');",
+        "INSERT INTO logical_queue_entries (workspace_id, request_id, priority, sequence) VALUES ('" + fixture.workspaceId + "', '" + fixture.requestId + "', 0, 1);",
+        "INSERT INTO provider_execution_states (id, workspace_id, request_id, provider_instance_id, state, dispatch_generation) VALUES ('" + fixture.executionStateId + "', '" + fixture.workspaceId + "', '" + fixture.requestId + "', '" + fixture.outputProviderId + "', 'queued', 1);",
+        'COMMIT;',
+      ].join('\n'),
+    );
+    seeded = true;
+
+    const environment = {
+      ...process.env,
+      NODE_ENV: 'test',
+      PROVIDER_EXECUTION_DATABASE_URL: 'postgresql://platform_provider_worker:local-provider-worker-only@127.0.0.1:5432/platform',
+      REDIS_URL: redisUrl,
+      PROVIDER_EXECUTION_HANDOFF_URL: handoffUrl + '/internal/provider-executions/handoff',
+      PROVIDER_EXECUTION_HANDOFF_SECRET: handoffSecret,
+      PROVIDER_EXECUTION_LOCK_DURATION_MS: '2000',
+      PROVIDER_EXECUTION_STALLED_INTERVAL_MS: '1000',
+    };
+    delete environment.PROVIDER_EXECUTION_DATABASE_URL_FILE;
+    delete environment.REDIS_URL_FILE;
+    delete environment.PROVIDER_EXECUTION_HANDOFF_SECRET_FILE;
+
+    const first = startWorkerProcess(environment);
+    children.push(first);
+    const firstReady = await first.waitFor((message) => message.type === 'ready' || message.type === 'boot-error');
+    assert.equal(firstReady.type, 'ready', JSON.stringify(firstReady));
+
+    queueConnection = new Redis(redisUrl, { maxRetriesPerRequest: null });
+    queue = new Queue('provider-execution', { connection: queueConnection });
+    await queue.waitUntilReady();
+    const job = await queue.add('provider-execution', {
+      executionStateId: fixture.executionStateId,
+      workspaceId: fixture.workspaceId,
+      requestId: fixture.requestId,
+      providerInstanceId: fixture.outputProviderId,
+      dispatchGeneration: 1,
+    }, {
+      jobId: 'phase8-worker-restart-' + fixture.executionStateId,
+      attempts: 1,
+      removeOnComplete: false,
+    });
+
+    await withTimeout(handoff.firstReceived, 20_000, 'The first worker did not reach the handoff fixture.');
+    const firstExit = new Promise((resolve) => first.child.once('exit', (code, signal) => resolve({ code, signal })));
+    first.child.kill('SIGKILL');
+    const { code: exitCode, signal: exitSignal } = await withTimeout(firstExit, 10_000, 'The terminated worker did not exit.');
+    assert.equal(exitCode, null);
+    assert.equal(exitSignal, 'SIGKILL');
+
+    const replacement = startWorkerProcess(environment);
+    children.push(replacement);
+    const replacementReady = await replacement.waitFor(
+      (message) => message.type === 'ready' || message.type === 'boot-error',
+    );
+    assert.equal(replacementReady.type, 'ready', JSON.stringify(replacementReady));
+
+    await withTimeout(
+      handoff.secondReceived,
+      30_000,
+      'BullMQ did not redeliver the stalled job to the replacement worker.',
+    );
+    const deadline = Date.now() + 15_000;
+    while (Date.now() < deadline && await job.getState() !== 'completed') {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    assert.equal(await job.getState(), 'completed');
+    assert.equal(handoff.requests.length, 2, 'The crashed delivery must be retried by the replacement worker.');
+    assert.ok(handoff.requests.every((request) => request.validSignature));
+    assert.deepEqual(
+      handoff.requests.map((request) => request.body.executionStateId),
+      [fixture.executionStateId, fixture.executionStateId],
+    );
+    assert.equal(handoff.effectCount, 1, 'The repeated handoff must have one idempotent effect.');
+  } finally {
+    await Promise.all(children.map((child) => child.close().catch(() => undefined)));
+    await queue?.close().catch(() => undefined);
+    if (queueConnection) await queueConnection.quit().catch(() => undefined);
+    await handoff.close().catch(() => undefined);
+    if (redisStarted) docker(['rm', '--force', redisContainer]);
+    if (seeded) {
+      runSql(
+        postgresContainer,
+        "BEGIN; DELETE FROM workspaces WHERE id = '" + fixture.workspaceId + "'; DELETE FROM platform_users WHERE id = '" + fixture.actorId + "'; COMMIT;",
+      );
     }
   }
 });

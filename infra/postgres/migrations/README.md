@@ -23,6 +23,7 @@ Start the local services with `pnpm dev:infra`, then apply the role bootstrap an
 - `0002_integrations_and_outbox.sql` establishes tenant-scoped provider integration records with encrypted credential-envelope columns, plus the transactional outbox table. Both tables use ENABLE and FORCE ROW LEVEL SECURITY and are inaccessible without verified user/workspace context.
 - `0008_twitch_reward_mappings.sql` establishes tenant-scoped Twitch reward links, one explicit feature handler per reward, validated feature settings, synchronization state, and workspace RLS. Manually linked rewards remain pending verification until confirmed through Twitch.
 - `0009_twitch_workspace_authorization.sql` distinguishes platform sign-in OAuth state from workspace broadcaster authorization and binds each workspace grant to the initiating user and workspace.
+- `0059_twitch_oauth_state_runtime_policy.sql` grants the trusted runtime narrowly shaped access to pre-authentication login state and actor/workspace-bound integration state after workspace tables receive forced RLS.
 - `0011_phase2_recovery_state.sql` persists Twitch authorization pause/reconciliation state and operator-dismissed EventSub delivery outcomes.
 - `0012_outbox_operator_recovery.sql` persists terminal outbox dispatch states and grants the restricted worker only the additional dispatch-state update permission.
 - `0014_provider_instances.sql` establishes stable workspace-scoped provider identity, versioned adapter contracts, declared capabilities, and non-secret connection health metadata.

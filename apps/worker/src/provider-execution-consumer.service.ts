@@ -179,6 +179,21 @@ export async function validateProviderExecutionJob(pool: Pool, value: unknown): 
   );
   return result.rows[0] ?? null;
 }
+function boundedWorkerSetting(
+  name: string,
+  fallback: number,
+  minimum: number,
+  maximum: number,
+): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim() === '') return fallback;
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value < minimum || value > maximum) {
+    throw new Error(`${name} must be an integer between ${minimum} and ${maximum}.`);
+  }
+  return value;
+}
+
 @Injectable()
 export class ProviderExecutionConsumerService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ProviderExecutionConsumerService.name);
@@ -212,9 +227,27 @@ export class ProviderExecutionConsumerService implements OnModuleInit, OnModuleD
     ) {
       throw new Error('Provider execution database identity cannot validate, defer, and monitor playback.');
     }
+    const lockDuration = boundedWorkerSetting(
+      'PROVIDER_EXECUTION_LOCK_DURATION_MS',
+      30_000,
+      1_000,
+      300_000,
+    );
+    const stalledInterval = boundedWorkerSetting(
+      'PROVIDER_EXECUTION_STALLED_INTERVAL_MS',
+      30_000,
+      1_000,
+      300_000,
+    );
     this.worker = new Worker<ProviderExecutionJob>(
       'provider-execution', async (job: Job<ProviderExecutionJob>) => this.process(job),
-      { connection: this.redis, concurrency: 4, lockDuration: 30_000, limiter: { max: 20, duration: 1_000 } },
+      {
+        connection: this.redis,
+        concurrency: 4,
+        lockDuration,
+        stalledInterval,
+        limiter: { max: 20, duration: 1_000 },
+      },
     );
     this.worker.on('failed', (job, error) => this.logger.error(
       `Provider execution validation job ${job?.id ?? 'unknown'} failed: ${error.message}`,

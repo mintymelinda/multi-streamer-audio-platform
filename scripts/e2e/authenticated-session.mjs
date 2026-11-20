@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
-import { cpSync, existsSync, mkdirSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import { createHash, randomInt, randomUUID } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
@@ -22,6 +23,9 @@ const foreignActorId = randomUUID();
 const foreignWorkspaceId = randomUUID();
 const foreignTwitchUserId = String(Date.now() + 1) + String(randomInt(1_000_000));
 const twitchUserId = String(Date.now()) + String(randomInt(1_000_000));
+const oauthTwitchUserId = String(Date.now() + 2) + String(randomInt(1_000_000));
+const oauthClientId = 'phase8-e2e-twitch-client-id';
+const oauthClientSecret = 'phase8-e2e-twitch-client-secret';
 const sessionToken = randomUUID() + randomUUID();
 const csrfToken = randomUUID() + randomUUID();
 const sessionHash = createHash('sha256').update(sessionToken).digest('hex');
@@ -40,6 +44,9 @@ const handoffSecret = 'browser-e2e-provider-handoff-secret-with-more-than-32-byt
 const children = [];
 let browser;
 let providerFixture;
+let oauthFixture;
+let oauthSecretDirectory;
+let oauthActorId;
 let seeded = false;
 
 function run(command, args, options = {}) {
@@ -94,9 +101,91 @@ function querySql(containerId, statement) {
   ]);
 }
 
+async function startTwitchOAuthFixture() {
+  const requests = [];
+  const server = createServer(async (request, response) => {
+    const url = new URL(request.url ?? '/', 'http://127.0.0.1');
+    if (request.method === 'GET' && url.pathname === '/oauth2/authorize') {
+      const clientId = url.searchParams.get('client_id');
+      const redirectUri = url.searchParams.get('redirect_uri');
+      const state = url.searchParams.get('state');
+      if (
+        clientId !== oauthClientId ||
+        url.searchParams.get('response_type') !== 'code' ||
+        url.searchParams.get('scope') !== '' ||
+        !redirectUri ||
+        !state
+      ) {
+        response.writeHead(400).end();
+        return;
+      }
+      requests.push({ type: 'authorize', clientId, redirectUri, state, scope: url.searchParams.get('scope') });
+      const callback = new URL(redirectUri);
+      callback.searchParams.set('code', 'phase8-browser-oauth-code');
+      callback.searchParams.set('state', state);
+      response.writeHead(302, { location: callback.toString() }).end();
+      return;
+    }
+    if (request.method === 'POST' && url.pathname === '/oauth2/token') {
+      const chunks = [];
+      for await (const chunk of request) chunks.push(chunk);
+      const form = new URLSearchParams(Buffer.concat(chunks).toString('utf8'));
+      const tokenRequest = Object.fromEntries(form.entries());
+      requests.push({ type: 'token', ...tokenRequest });
+      if (
+        tokenRequest.client_id !== oauthClientId ||
+        tokenRequest.client_secret !== oauthClientSecret ||
+        tokenRequest.code !== 'phase8-browser-oauth-code' ||
+        tokenRequest.grant_type !== 'authorization_code'
+      ) {
+        response.writeHead(400).end();
+        return;
+      }
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ access_token: 'phase8-e2e-access-token', expires_in: 3600 }));
+      return;
+    }
+    if (request.method === 'GET' && url.pathname === '/oauth2/validate') {
+      if (request.headers.authorization !== 'OAuth phase8-e2e-access-token') {
+        response.writeHead(401).end();
+        return;
+      }
+      requests.push({ type: 'validate' });
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({
+        client_id: oauthClientId,
+        user_id: oauthTwitchUserId,
+        expires_in: 3600,
+      }));
+      return;
+    }
+    response.writeHead(404).end();
+  });
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  const address = server.address();
+  if (!address || typeof address === 'string') {
+    throw new Error('Twitch OAuth fixture did not bind to a TCP port.');
+  }
+  return {
+    url: `http://127.0.0.1:${address.port}`,
+    requests,
+    async close() {
+      server.closeAllConnections?.();
+      if (server.listening) await new Promise((resolve) => server.close(() => resolve()));
+    },
+  };
+}
+
 async function startProviderFixture() {
   const commands = [];
   let resolvePlay;
+  let playbackMode = 'stop';
+  let playbackTime = '0';
+  let playCount = 0;
+  const playWaiters = [];
   const playSeen = new Promise((resolve) => { resolvePlay = resolve; });
   const server = createServer(async (request, response) => {
     try {
@@ -129,9 +218,27 @@ async function startProviderFixture() {
         return;
       }
       commands.push({ playerId: targetPlayer, command });
-      if (command[0] === 'play') resolvePlay();
+      if (command[0] === 'play') {
+        playbackMode = 'play';
+        playbackTime = '0';
+        playCount += 1;
+        resolvePlay();
+        for (const waiter of playWaiters.splice(0)) {
+          if (playCount >= waiter.count) waiter.resolve();
+          else playWaiters.push(waiter);
+        }
+      } else if (command[0] === 'pause') {
+        playbackMode = command[1] === '1' ? 'pause' : 'play';
+      }
       response.writeHead(200, { 'content-type': 'application/json' });
-      response.end(JSON.stringify({ result: { mode: 'play', time: '0', duration: '60' } }));
+      response.end(JSON.stringify({
+        result: {
+          mode: playbackMode,
+          time: playbackTime,
+          duration: '60',
+          playlist_cur_index: String(Math.max(0, playCount - 1)),
+        },
+      }));
     } catch {
       if (!response.headersSent) response.writeHead(400);
       response.end();
@@ -158,6 +265,29 @@ async function startProviderFixture() {
     url: `http://127.0.0.1:${address.port}`,
     commands,
     playSeen: playObserved,
+    get playCount() { return playCount; },
+    waitForPlayCount(count, timeoutMs = 30_000) {
+      if (playCount >= count) return Promise.resolve();
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          const index = playWaiters.indexOf(waiter);
+          if (index >= 0) playWaiters.splice(index, 1);
+          reject(new Error('The provider fixture did not observe play command ' + count + '.'));
+        }, timeoutMs);
+        const waiter = {
+          count,
+          resolve: () => {
+            clearTimeout(timer);
+            resolve();
+          },
+        };
+        playWaiters.push(waiter);
+      });
+    },
+    completeCurrentPlayback() {
+      playbackMode = 'stop';
+      playbackTime = '60';
+    },
     async close() {
       server.closeAllConnections?.();
       if (server.listening) await new Promise((resolve) => server.close(() => resolve()));
@@ -310,7 +440,7 @@ function cleanSession(containerId) {
   sql(containerId, [
     'BEGIN;',
     `DELETE FROM workspaces WHERE id IN ('${actorId}', '${foreignWorkspaceId}') OR owner_user_id IN ('${actorId}', '${foreignActorId}');`,
-    `DELETE FROM platform_users WHERE id IN ('${actorId}', '${foreignActorId}');`,
+    `DELETE FROM platform_users WHERE id IN ('${actorId}', '${foreignActorId}') OR twitch_user_id = '${oauthTwitchUserId}';`,
     'COMMIT;',
   ].join('\n'));
 }
@@ -320,11 +450,19 @@ const databaseContainer = postgresContainer();
 try {
   seedSession(databaseContainer);
   providerFixture = await startProviderFixture();
+  oauthFixture = await startTwitchOAuthFixture();
+  oauthSecretDirectory = mkdtempSync(join(tmpdir(), 'phase8-twitch-oauth-'));
+  const oauthSecretFile = join(oauthSecretDirectory, 'client-secret');
+  writeFileSync(oauthSecretFile, oauthClientSecret, { mode: 0o600 });
   const apiEnvironment = {
     ...process.env,
     NODE_ENV: 'test',
     DATABASE_URL: postgresUrl,
     API_PORT: '3300',
+    TWITCH_CLIENT_ID: oauthClientId,
+    TWITCH_CLIENT_SECRET_FILE: oauthSecretFile,
+    TWITCH_REDIRECT_URI: `${dashboardUrl}/api/auth/twitch/callback`,
+    TWITCH_OAUTH_TEST_PORT: String(new URL(oauthFixture.url).port),
     PROVIDER_EXECUTION_HANDOFF_SECRET: handoffSecret,
     REDIS_URL: process.env.REDIS_URL ?? 'redis://127.0.0.1:6379',
     INVIDIOUS_INSTANCE_URL: providerFixture.url,
@@ -393,6 +531,108 @@ try {
     await page.getByRole('link', { name: 'Continue with Twitch' }).getAttribute('href'),
     '/api/auth/twitch/start?returnTo=%2F',
   );
+
+  const oauthContext = await browser.newContext();
+  const oauthPage = await oauthContext.newPage();
+  await oauthPage.goto(dashboardUrl, { waitUntil: 'networkidle' });
+  await oauthPage.getByRole('link', { name: 'Continue with Twitch' }).click();
+  await oauthPage.waitForURL(`${dashboardUrl}/`, { waitUntil: 'networkidle' });
+  await oauthPage.getByRole('heading', { name: 'Create your workspace' }).waitFor();
+
+  const oauthIdentity = await oauthPage.evaluate(async () => {
+    const response = await fetch('/api/auth/me', { credentials: 'include', cache: 'no-store' });
+    return { status: response.status, body: await response.json() };
+  });
+  assert.equal(oauthIdentity.status, 200, 'The Twitch callback must establish a usable platform session.');
+  oauthActorId = oauthIdentity.body.user.id;
+  assert.equal(oauthIdentity.body.user.twitchUserId, oauthTwitchUserId);
+
+  const oauthCookies = await oauthContext.cookies(dashboardUrl);
+  const oauthSessionCookie = oauthCookies.find((cookie) => cookie.name === 'platform_session');
+  const oauthCsrfCookie = oauthCookies.find((cookie) => cookie.name === 'platform_csrf');
+  assert.ok(oauthSessionCookie?.value, 'The callback must issue a session cookie.');
+  assert.equal(oauthSessionCookie.httpOnly, true);
+  assert.equal(oauthSessionCookie.sameSite, 'Lax');
+  assert.ok(oauthCsrfCookie?.value, 'The callback must issue a CSRF cookie.');
+  assert.equal(oauthCsrfCookie.httpOnly, false);
+  assert.equal(oauthCsrfCookie.sameSite, 'Strict');
+  assert.deepEqual(
+    oauthFixture.requests.map((request) => request.type),
+    ['authorize', 'token', 'validate'],
+    'The browser redirect must complete authorization-code exchange and token validation.',
+  );
+  assert.equal(oauthFixture.requests[0].scope, '', 'Basic platform sign-in must request no Twitch scopes.');
+  assert.equal(
+    oauthFixture.requests[1].redirect_uri,
+    `${dashboardUrl}/api/auth/twitch/callback`,
+  );
+
+  const oauthState = oauthFixture.requests[0].state;
+  const replayedCallback = await oauthPage.evaluate(async (state) => {
+    const response = await fetch(
+      `/api/auth/twitch/callback?code=phase8-browser-oauth-code&state=${encodeURIComponent(state)}`,
+      { redirect: 'manual', credentials: 'include' },
+    );
+    return response.status;
+  }, oauthState);
+  assert.equal(replayedCallback, 401, 'An OAuth state value must be single-use.');
+  const invalidStateCallback = await oauthPage.evaluate(async () => {
+    const response = await fetch(
+      '/api/auth/twitch/callback?code=phase8-browser-oauth-code&state=invalid-state',
+      { redirect: 'manual', credentials: 'include' },
+    );
+    return response.status;
+  });
+  assert.equal(invalidStateCallback, 401, 'An unissued OAuth state value must be rejected.');
+
+  const oauthSessionStorage = querySql(
+    databaseContainer,
+    `SELECT count(*)::text FROM user_sessions
+      WHERE user_id = '${oauthActorId}'
+        AND session_token_hash <> '${oauthSessionCookie.value}'
+        AND session_token_hash ~ '^[a-f0-9]{64}$'`,
+  );
+  assert.equal(
+    oauthSessionStorage,
+    '1',
+    'The database must store a SHA-256 digest rather than the bearer session token.',
+  );
+  const invalidOauthLogout = await oauthPage.evaluate(async () => {
+    const response = await fetch('/api/auth/logout', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'x-csrf-token': 'invalid-csrf-token' },
+    });
+    return response.status;
+  });
+  assert.equal(invalidOauthLogout, 403, 'OAuth-created sessions must enforce CSRF protection.');
+  const oauthLogout = await oauthPage.evaluate(async (token) => {
+    const response = await fetch('/api/auth/logout', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'x-csrf-token': token },
+    });
+    return response.status;
+  }, oauthCsrfCookie.value);
+  assert.equal(oauthLogout, 204);
+  const revokedOauthIdentity = await oauthPage.evaluate(async () => {
+    const response = await fetch('/api/auth/me', { credentials: 'include', cache: 'no-store' });
+    return response.status;
+  });
+  assert.equal(revokedOauthIdentity, 401, 'Logout must revoke the server-side session, not just clear cookies.');
+  assert.equal(
+    querySql(
+      databaseContainer,
+      `SELECT count(*)::text FROM user_sessions
+        WHERE user_id = '${oauthActorId}'
+          AND session_token_hash <> '${oauthSessionCookie.value}'
+          AND session_token_hash ~ '^[a-f0-9]{64}$'
+          AND revoked_at IS NOT NULL`,
+    ),
+    '1',
+    'The hashed OAuth session record must be revoked after logout.',
+  );
+  await oauthContext.close();
 
   await context.addCookies([
     {
@@ -519,6 +759,28 @@ try {
     return response.json();
   }
 
+  async function waitForRequestStatuses(expectedStatuses) {
+    const deadline = Date.now() + 20_000;
+    let latest = [];
+    while (Date.now() < deadline) {
+      const response = await fetch(`${apiUrl}/workspaces/${workspace.id}/requests`, {
+        headers: { cookie: `platform_session=${sessionToken}` },
+      });
+      assert.equal(response.status, 200);
+      latest = await response.json();
+      if (Object.entries(expectedStatuses).every(([requestId, status]) =>
+        latest.find((entry) => entry.id === requestId)?.status === status
+      )) {
+        return latest;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    throw new Error(
+      'Timed out waiting for request statuses: ' + JSON.stringify(expectedStatuses)
+        + '; latest=' + JSON.stringify(latest.map((entry) => ({ id: entry.id, status: entry.status }))),
+    );
+  }
+
   const rejectedRequest = await submitModerationRequest('E2E moderator rejects this');
   const approvedRequest = await submitModerationRequest('E2E moderator approves this', {
     provider: 'youtube',
@@ -527,6 +789,38 @@ try {
   });
   assert.equal(rejectedRequest.status, 'pending');
   assert.equal(approvedRequest.status, 'pending');
+
+  const duplicateSubmissionKey = 'browser-e2e-idempotency-' + randomUUID();
+  const duplicateFirst = await submitModerationRequest('E2E duplicate submission', {
+    idempotencyKey: duplicateSubmissionKey,
+  });
+  const duplicateSecond = await submitModerationRequest('E2E duplicate submission', {
+    idempotencyKey: duplicateSubmissionKey,
+  });
+  assert.equal(duplicateFirst.id, duplicateSecond.id, 'A repeated idempotency key must return the original request.');
+  assert.equal(duplicateSecond.status, 'pending');
+
+  const cancelledRequest = await submitModerationRequest('E2E requester cancels this');
+  const cancellation = await fetch(
+    `${apiUrl}/workspaces/${workspace.id}/requests/${cancelledRequest.id}/cancel`,
+    {
+      method: 'PATCH',
+      headers: {
+        cookie: `platform_session=${sessionToken}; platform_csrf=${csrfToken}`,
+        'x-csrf-token': csrfToken,
+      },
+    },
+  );
+  assert.equal(cancellation.status, 200, 'A requester must be able to cancel a request before playback resolution.');
+  assert.equal((await cancellation.json()).status, 'cancelled');
+  const cancelledQueue = await fetch(`${apiUrl}/workspaces/${workspace.id}/queue`, {
+    headers: { cookie: `platform_session=${sessionToken}` },
+  });
+  assert.equal(cancelledQueue.status, 200);
+  assert.ok(
+    !(await cancelledQueue.json()).some((entry) => entry.id === cancelledRequest.id),
+    'A cancelled request must not remain in the playable queue.',
+  );
 
   const moderatorSettingsAttempt = await inviteePage.evaluate(async ({ workspaceId, token }) => {
     const response = await fetch(`/api/workspaces/${workspaceId}/requests/settings`, {
@@ -639,8 +933,13 @@ try {
     'The Playback Coordinator must resolve the submitted YouTube media through the Invidious fixture before playback.',
   );
 
-  const reorderRequest = await submitModerationRequest('E2E moderator reorders this request');
-  const secondReorderRequest = await submitModerationRequest('E2E moderator reorders another request');
+  const queuedMedia = {
+    provider: 'youtube',
+    mediaId: 'dQw4w9WgXcQ',
+    mediaUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+  };
+  const reorderRequest = await submitModerationRequest('E2E moderator reorders this request', queuedMedia);
+  const secondReorderRequest = await submitModerationRequest('E2E moderator reorders another request', queuedMedia);
   assert.equal(reorderRequest.status, 'pending');
   assert.equal(secondReorderRequest.status, 'pending');
   for (const request of [reorderRequest, secondReorderRequest]) {
@@ -691,6 +990,61 @@ try {
     reorderedQueue.after.map((entry) => entry.id),
     reorderedQueue.before.map((entry) => entry.id).reverse(),
     'The Moderator must be able to persist a new logical queue order.',
+  );
+
+  const promoted = await inviteePage.evaluate(async ({ workspaceId, requestId, token }) => {
+    const response = await fetch(`/api/workspaces/${workspaceId}/queue/${requestId}/promote`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'x-csrf-token': token },
+    });
+    return { status: response.status, body: await response.json() };
+  }, { workspaceId: workspace.id, requestId: secondReorderRequest.id, token: foreignCsrfToken });
+  assert.equal(promoted.status, 201);
+  assert.equal(promoted.body.position, 1);
+  const promotedQueueResponse = await inviteePage.evaluate(async (workspaceId) => {
+    const response = await fetch(`/api/workspaces/${workspaceId}/queue`, {
+      credentials: 'include',
+      cache: 'no-store',
+    });
+    return { status: response.status, body: await response.json() };
+  }, workspace.id);
+  assert.equal(promotedQueueResponse.status, 200);
+  assert.equal(promotedQueueResponse.body[0]?.id, secondReorderRequest.id);
+  assert.equal(promotedQueueResponse.body[0]?.queue_priority, 100, 'Promotion must establish the highest priority class.');
+  assert.equal(providerFixture.playCount, 1, 'A queued request must not interrupt the active playback session.');
+
+  providerFixture.completeCurrentPlayback();
+  await providerFixture.waitForPlayCount(2);
+  const firstCompletionRequests = await waitForRequestStatuses({
+    [approvedRequest.id]: 'completed',
+    [secondReorderRequest.id]: 'playing',
+  });
+  assert.equal(
+    firstCompletionRequests.find((entry) => entry.id === approvedRequest.id)?.status,
+    'completed',
+    'Natural provider completion must persist the request terminal state.',
+  );
+  assert.equal(
+    firstCompletionRequests.find((entry) => entry.id === secondReorderRequest.id)?.status,
+    'playing',
+    'Queue advancement must start the promoted request first.',
+  );
+
+  providerFixture.completeCurrentPlayback();
+  await providerFixture.waitForPlayCount(3);
+  const secondCompletionRequests = await waitForRequestStatuses({
+    [secondReorderRequest.id]: 'completed',
+    [reorderRequest.id]: 'playing',
+  });
+  assert.equal(
+    secondCompletionRequests.find((entry) => entry.id === secondReorderRequest.id)?.status,
+    'completed',
+  );
+  assert.equal(
+    secondCompletionRequests.find((entry) => entry.id === reorderRequest.id)?.status,
+    'playing',
+    'The next request must advance after the promoted request completes.',
   );
 
   const revokedMembership = await page.evaluate(async ({ workspaceId, memberId, token }) => {
@@ -994,5 +1348,7 @@ try {
   if (browser) await browser.close();
   await stopServers();
   if (providerFixture) await providerFixture.close();
+  if (oauthFixture) await oauthFixture.close();
+  if (oauthSecretDirectory) rmSync(oauthSecretDirectory, { recursive: true, force: true });
   if (seeded) cleanSession(databaseContainer);
 }
