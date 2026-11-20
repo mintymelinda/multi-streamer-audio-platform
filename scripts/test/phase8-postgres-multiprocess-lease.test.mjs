@@ -374,9 +374,13 @@ test('an expired playback lease is reclaimed with a higher fencing token and rej
       containerId,
       'platform_runtime',
       'local-runtime-only',
-      `SELECT status || ':' || fencing_token::text || ':' || (result->>'outcome')
+      `BEGIN;
+       SET LOCAL app.user_id = '${actorId}';
+       SET LOCAL app.workspace_id = '${workspaceId}';
+       SELECT status || ':' || fencing_token::text || ':' || (result->>'outcome')
          FROM public.playback_operations
-        WHERE workspace_id = '${workspaceId}' AND idempotency_key = '${idempotencyKey}'`,
+        WHERE workspace_id = '${workspaceId}' AND idempotency_key = '${idempotencyKey}';
+       COMMIT;`,
     );
     assert.equal(currentOperation, 'completed:8:started');
 
