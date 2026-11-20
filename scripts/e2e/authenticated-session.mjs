@@ -623,10 +623,14 @@ try {
   assert.equal(
     querySql(
       databaseContainer,
-      `SELECT (revoked_at IS NOT NULL)::text FROM user_sessions
-        WHERE user_id = '${oauthActorId}' AND session_token_hash = '${oauthSessionHash}'`,
+      `SELECT count(*)::text FROM user_sessions
+        WHERE user_id = '${oauthActorId}'
+          AND session_token_hash <> '${oauthSessionCookie.value}'
+          AND session_token_hash ~ '^[a-f0-9]{64}$'
+          AND revoked_at IS NOT NULL`,
     ),
-    'true',
+    '1',
+    'The hashed OAuth session record must be revoked after logout.',
   );
   await oauthContext.close();
 
