@@ -7,6 +7,7 @@ import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { IoAdapter } from '@nestjs/platform-socket.io';
+import { RedisIoAdapter } from './realtime/redis-io.adapter.js';
 import { ApiExceptionFilter } from './api-exception.filter.js';
 import { AppModule } from './app.module.js';
 
@@ -26,7 +27,17 @@ async function bootstrap(): Promise<void> {
     { logger: new ConsoleLogger({ json: true }), rawBody: true },
   );
 
-  app.useWebSocketAdapter(new IoAdapter(app));
+  const redisUrl = process.env.REDIS_URL;
+  if (process.env.NODE_ENV === 'production' && !redisUrl) {
+    throw new Error('REDIS_URL is required in production for cross-instance Socket.IO delivery.');
+  }
+  if (redisUrl) {
+    const redisAdapter = new RedisIoAdapter(app);
+    await redisAdapter.connect(redisUrl);
+    app.useWebSocketAdapter(redisAdapter);
+  } else {
+    app.useWebSocketAdapter(new IoAdapter(app));
+  }
 
   const overlayOrigins = (process.env.OVERLAY_ALLOWED_ORIGINS ?? '')
     .split(',')

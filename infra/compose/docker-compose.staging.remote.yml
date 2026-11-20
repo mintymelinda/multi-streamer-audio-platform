@@ -1,0 +1,5 @@
+# Production-style remote deployment override: the image is built and pushed by
+# GitHub Actions. Do not attempt a build on the staging host.
+services:
+  api:
+    build: null

@@ -1,10 +1,12 @@
-import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { DatabaseService } from '../database/database.service.js';
 import { encryptIntegrationCredentials, decryptIntegrationCredentials, loadIntegrationKeyRing } from '../security/integration-credential-crypto.js';
 import { ProviderCredentialsService } from './provider-credentials.service.js';
 import { ProviderInstanceService } from './provider-instance.service.js';
 import { SPOTIFY_CONNECT_SCOPES } from './provider-scope-policy.service.js';
+
+export const SPOTIFY_HTTP_CLIENT = Symbol('SPOTIFY_HTTP_CLIENT');
 
 interface SpotifyTokenResponse { access_token?: string; refresh_token?: string; expires_in?: number; scope?: string; token_type?: string; }
 
@@ -14,7 +16,7 @@ export class SpotifyConnectOAuthService {
     private readonly database: DatabaseService,
     private readonly credentials: ProviderCredentialsService,
     private readonly instances: ProviderInstanceService,
-    private readonly request: typeof fetch = fetch,
+    @Inject(SPOTIFY_HTTP_CLIENT) private readonly request: typeof fetch,
   ) {}
 
   async begin(input: { workspaceId: string; userId: string; sessionId: string }): Promise<string> {

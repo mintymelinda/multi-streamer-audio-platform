@@ -8,7 +8,10 @@ import { ProviderSecretRedactionService } from './provider-secret-redaction.serv
 @Module({
   imports: [DatabaseModule],
   providers: [
-    ProviderScopePolicyService,
+    {
+      provide: ProviderScopePolicyService,
+      useFactory: () => new ProviderScopePolicyService(),
+    },
     ProviderSecretRedactionService,
     {
       provide: ProviderCredentialsService,

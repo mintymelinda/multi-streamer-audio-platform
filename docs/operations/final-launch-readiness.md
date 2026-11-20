@@ -2,13 +2,30 @@
 
 **Status: NOT READY FOR PUBLIC LAUNCH.** This checklist is the final gate for roadmap Phase 8 item 75. It records the current implementation evidence and the remaining operator, legal, infrastructure, and multi-instance acceptance work. A merged code change or passing CI run is not, by itself, a launch approval.
 
+## Decision 91 — first-release feature coverage
+
+The repository contains implementation and automated tests across the agreed first-release scope. This is an evidence index, not a declaration that every feature has passed release acceptance. Most automated tests use deterministic fixtures; operator/provider/legal acceptance remains separate.
+
+| First-release area | Repository evidence | Remaining launch verification |
+|---|---|---|
+| Twitch identity, sessions, workspaces, membership, roles, and RLS | Identity/workspace/team modules; migrations 0001 and later authorization migrations; API, workspace-permission, team, and tenant-isolation tests; authenticated browser test seeds a server-side session and verifies workspace isolation and invitation/revocation | Exercise the real Twitch OAuth authorization-code exchange and identity validation; verify production callback registration, session revocation, and workspace selection with real accounts |
+| Requests, moderation, queue policy, EventSub, rewards, and recovery | Requests/queue/EventSub/reward/recovery modules; request-state, queue-ordering, EventSub signature/routing, recovery, and PostgreSQL isolation tests | Complete browser-level request submission through moderation, queue ordering, provider execution, and recovery; verify real Twitch EventSub subscription delivery and reconciliation in staging |
+| Provider adapters, routing, output assignment, and playback | Provider contracts/instances/credentials/routing/output assignment/execution queue/Playback Coordinator; Phase 3 coverage matrix and provider integration tests | YouTube/Invidious currently provides search/metadata only and direct playback is disabled; Spotify catalog/Connect control does not provide broadcast audio and playback capabilities remain false; validate optional Lyrion against an operator-controlled device and complete provider/legal approvals before enabling any path |
+| Streamer dashboard, onboarding, team, notifications, and preferences | Dashboard routes and API/worker modules for onboarding, team, notifications, email dispatch, and user preferences; corresponding API/worker tests | Verify complete user journeys and real email delivery/configuration in staging; confirm all notification categories, retention, and cross-workspace behavior against real users |
+| OBS scenes, editor, assets, and overlay runtime | Scene management/editor, published runtime, bearer-token handling, asset library, migrations, and API tests; authenticated browser E2E verifies starter scene, draft/publish isolation, token revocation, overlay snapshot, and reconnect recovery | Verify the full editor/component interactions and actual OBS browser-source rendering; test uploads and asset recovery against the deployed object-storage service |
+| Platform administration, support, restrictions, status, maintenance, and rights operations | Platform-admin/support/status/maintenance/compliance modules, migrations, dashboard routes, and authorization/workflow tests | Rehearse operator workflows with appointed administrators; verify public status/incident communications, rights-holder intake, escalation, support-access revocation, and account/workspace restriction procedures |
+| Export, deletion, retention, and recovery safeguards | Account/workspace export and deletion services, worker export, retention jobs, deletion ledger, migrations, SQL isolation tests, and operator runbooks | Complete independent-key backup restore, real PostgreSQL PITR, object restore, newest deletion-ledger replay, and measured RPO/RTO drills |
+| Appearance and hosted deployment foundations | User-level appearance preference service/UI/tests; separate dashboard and overlay apps; staging application Compose plus separate Caddy edge Compose | Verify deployed appearance persistence and the complete non-production topology, public DNS/TLS, callbacks, WebSockets, assets, and persistent volumes on a disposable staging host |
+
+**Scope rule:** Decision 91 remains the first-release target. Missing release evidence is not permission to remove a feature from scope or to treat a mocked/fixture test as provider or operational approval.
+
 ## Phase 3 — Provider playback and recovery
 
-- [x] Durable provider playback sessions are promoted to main and bind completion to session identity and dispatch generation.
+- [x] Durable provider playback sessions bind completion to session identity and dispatch generation on the reviewed stacked release branch.
 - [x] Provider-observed natural completion and retryable queue advancement are implemented.
 - [x] Manual terminal recovery closes the active durable playback session so a stale monitor cannot later complete or advance it.
-- [x] Phase 3 coordinator/recovery tests and coverage matrix updates are promoted to main.
-- [ ] Complete the true two-process API/worker/provider recovery exercise under Phase 8, including uncertain outcomes and manual recovery after process restart.
+- [x] Phase 3 coordinator/recovery tests and coverage matrix updates are present on the reviewed stacked release branch.
+- [ ] Complete the remaining restart/fencing/uncertain-outcome acceptance work described under item 70, including manual recovery after process restart.
 - [ ] Complete the rights/use approvals and provider assessments required for each enabled provider before public use.
 
 ## Phase 7 — Backups, privacy, and legal materials
@@ -45,7 +62,8 @@ The drafts are not legal advice and are not approved for publication. Do not tre
 - [x] Existing unit, API integration, database isolation, provider recovery, overlay, export/deletion, and backup tooling tests run through the repository's existing test command.
 - [x] A two-independent-PostgreSQL-session lease contention test is added and included through the existing scripts test glob.
 - [x] PostgreSQL readiness behavior has unit coverage.
-- [ ] Add and pass browser-level E2E coverage for sign-in, workspace creation/selection, moderator invitations/revocation, request intake/moderation/queue, provider playback and recovery, overlay editor draft/publish, OBS snapshot/reconnect, export/deletion, and deletion-safe restore.
+- [x] CI builds and exercises the production dashboard/overlay in Playwright, including sign-in boundary, authenticated workspace creation and isolation, moderator invitation/acceptance/revocation, starter scene creation, draft/publish isolation, bearer-token security, overlay snapshot/reconnect, and session/CSRF revocation.
+- [ ] Extend browser E2E to cover the full request/moderation/queue/provider-playback/recovery journey, real Twitch OAuth exchange, export/deletion, and deletion-safe restore; the existing authenticated test seeds its session identity and does not contact Twitch OAuth.
 - [ ] Verify each relevant test against the actual non-production application and service topology, not only mocked HTTP servers or internal service methods.
 
 ### 69. Capacity and SLOs
@@ -59,19 +77,19 @@ The drafts are not legal advice and are not approved for publication. Do not tre
 ### 70. Multi-instance correctness
 
 - [x] The PostgreSQL lease upsert is verified using two independent database sessions; the test checks the live lease owner and fencing token.
-- [ ] Run two API processes and two provider worker processes against shared PostgreSQL/Redis with actual playback/provider traffic.
-- [ ] Verify duplicate BullMQ deliveries, scheduler overlap, worker crashes/restarts, expired lease reclaim, stale fencing-token rejection, and natural completion/queue advancement across process boundaries.
-- [ ] Configure and verify the Socket.IO Redis adapter for cross-instance room/event fan-out. The current API bootstrap uses the default Socket.IO adapter, so cross-instance realtime fan-out is not yet proven.
-- [ ] Verify workspace authorization, overlay reconnect/snapshot recovery, and no cross-tenant realtime leakage across API instances.
+- [x] Two independent API coordinator processes run against shared PostgreSQL/Redis with the production Redis Socket.IO adapter; real WebSocket clients verify cross-instance room broadcast and outbox fan-out, while duplicate play commands issue one provider start.
+- [x] Two independent BullMQ provider consumers share PostgreSQL/Redis and use the live API handoff, Playback Coordinator, Invidious resolver, and Lyrion adapter with deterministic HTTP fixtures; five workspaces reach `playing` without duplicate handoffs/starts.
+- [ ] Complete worker crash/restart, scheduler-overlap, expired-lease reclaim, stale-fencing-token rejection, uncertain-outcome recovery, and natural-completion/queue-advance tests across process boundaries; current automated fixtures do not exercise live provider hardware.
+- [ ] Verify cross-tenant realtime isolation and the complete overlay reconnect/missed-event behavior across independently deployed API instances.
 
 ### 71. Non-production deployment
 
-- [x] The isolated Compose smoke command is implemented for PostgreSQL, Redis, MinIO, object initialization, and cleanup under a unique Compose project.
-- [ ] Run the Compose smoke command on a disposable non-production host and retain its output.
-- [ ] Validate a complete application deployment, including API, worker, dashboard, overlay runtime, PostgreSQL, Redis, object storage, HTTPS reverse proxy, WebSocket upgrades, OAuth callbacks, and configured domain.
-- [ ] Verify persistent-volume behavior and safe domain migration against the actual deployment manifest.
+- [x] The isolated local Compose smoke command validates PostgreSQL, Redis, MinIO, object initialization, and cleanup under a unique Compose project.
+- [x] A separate staging application Compose definition includes PostgreSQL, Redis, object storage, migrations, API, worker, dashboard, and overlay; a separate Caddy edge Compose definition provides the HTTPS reverse proxy. CI validates the Compose models and Caddy configuration.
+- [ ] Run the infrastructure smoke and complete staging application/edge deployment on a disposable non-production host; retain health, ingress, WebSocket, OAuth-callback, and volume-restart evidence.
+- [ ] Verify persistent-volume behavior and safe domain migration against the deployed manifests and real DNS/TLS.
 
-The current Compose stack does not define an API service or the complete hosted frontend/reverse-proxy deployment. The smoke command is infrastructure-only; it does not satisfy the complete deployment gate.
+The local development Compose file remains infrastructure-only. The full staging manifests now exist, but static validation is not a substitute for a real non-production deployment rehearsal.
 
 ### 72. Operational readiness
 
@@ -81,7 +99,7 @@ The current Compose stack does not define an API service or the complete hosted 
 - [ ] Rehearse incident response, rights-holder reports, maintenance communications, provider outages, account/workspace recovery, and support access revocation.
 - [ ] Review operator setup, streamer onboarding, moderator support, credential recovery, and deployment procedures with the people who will execute them.
 
-The current API readiness endpoint checks PostgreSQL only. It does not yet assert Redis, object storage, worker, or provider readiness.
+The API `/health/ready` endpoint currently checks PostgreSQL only. The worker readiness endpoint checks PostgreSQL and Redis, and production API bootstrap requires `REDIS_URL` for the Socket.IO Redis adapter; API readiness still does not assert object storage, worker, or provider readiness. Health endpoints are not yet a complete dependency dashboard or alerting system.
 
 ### 73. CI quality gates
 
@@ -94,7 +112,8 @@ The current API readiness endpoint checks PostgreSQL only. It does not yet asser
 ### 74. Audit, release health, and rollback
 
 - [x] A release/rollback runbook covers immutable artifacts, forward-compatible migrations, application rollback, PITR recovery, deletion-ledger replay, and verification evidence.
-- [ ] Perform a non-production release rehearsal with immutable versioned artifacts and record release/audit metadata.
+- [x] The staging workflow emits a sanitized machine-readable `release-audit.json` for successful and failed deployment attempts, retains it with ingress evidence as a 90-day run artifact, and summarizes build/deploy/health/rollback outcomes. Routine rollback verifies restored container health and reruns public ingress checks before reporting recovery.
+- [ ] Perform a non-production release rehearsal with immutable versioned artifacts and retain the audit artifact and job summary as evidence.
 - [ ] Perform an application rollback without restoring database state and prove the previous app/worker version remains schema-compatible.
 - [ ] Perform a database/PITR recovery rehearsal and record the expected data-loss window, measured RPO/RTO, deletion-ledger replay, and post-restore checks.
 - [ ] Verify health checks, provider recovery, queue state, overlay access, incident notices, and audit evidence before traffic resumes.
@@ -108,12 +127,12 @@ The current API readiness endpoint checks PostgreSQL only. It does not yet asser
 - [ ] Outstanding defects, exceptions, and operational risks have named owners and written acceptance from the platform owner.
 - [ ] Platform owner has explicitly approved launch.
 
-**Launch decision:** [Not approved / Approved with documented exceptions]
+**Launch decision: NOT APPROVED.** The implementation has substantial automated coverage, but the release-blocking operator, legal, provider, deployment, capacity, restore, and end-to-end evidence above is not complete. No production or NAS deployment is authorized by this review.
 
-**Release candidate commit:** [SHA]
+**Reviewed repository commit:** `ce7b524ded66bae28c697de04ab939d5d1170b33` (stacked release branch after Phase 8 item 74).
 
-**Review date:** [Date]
+**Review date:** 2026-11-14
 
-**Platform owner:** [Name]
+**Platform owner approval:** Not recorded.
 
-**Evidence bundle:** [Links to CI, CodeQL, E2E, load reports, restore drills, rollback rehearsal, and legal approvals]
+**Evidence bundle:** CI and CodeQL must be linked for the exact eventual release candidate; retain browser E2E, load/SLO, staging deployment/ingress, rollback, independent-key restore/PITR, deletion-ledger replay, and legal/provider approval evidence here before reconsidering launch.
