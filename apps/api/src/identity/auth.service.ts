@@ -42,7 +42,7 @@ export class AuthService {
       "INSERT INTO twitch_oauth_states (state_hash, return_path, expires_at) VALUES ($1, $2, now() + interval '10 minutes')",
       [sha256(state), isSafeLocalReturnPath(returnTo)],
     );
-    const url = new URL('https://id.twitch.tv/oauth2/authorize');
+    const url = new URL(twitchOAuthEndpoint('authorize'));
     url.searchParams.set('client_id', config.clientId);
     url.searchParams.set('redirect_uri', config.redirectUri);
     url.searchParams.set('response_type', 'code');
@@ -133,7 +133,7 @@ export class AuthService {
     });
     let tokenPayload: TwitchTokenResponse;
     try {
-      const response = await fetch('https://id.twitch.tv/oauth2/token', {
+      const response = await fetch(twitchOAuthEndpoint('token'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body,
@@ -150,7 +150,7 @@ export class AuthService {
 
     let validation: TwitchValidationResponse;
     try {
-      const response = await fetch('https://id.twitch.tv/oauth2/validate', {
+      const response = await fetch(twitchOAuthEndpoint('validate'), {
         headers: { Authorization: `OAuth ${tokenPayload.access_token}` },
         signal: AbortSignal.timeout(10_000),
       });
@@ -209,4 +209,20 @@ export class AuthService {
       },
     );
   }
+}
+
+function twitchOAuthEndpoint(endpoint: 'authorize' | 'token' | 'validate'): string {
+  const testBase = process.env.NODE_ENV === 'test'
+    ? process.env.TWITCH_OAUTH_TEST_BASE_URL?.trim()
+    : undefined;
+  if (!testBase) return `https://id.twitch.tv/oauth2/${endpoint}`;
+
+  const base = new URL(testBase);
+  if (
+    base.protocol !== 'http:' ||
+    !['127.0.0.1', 'localhost', '::1'].includes(base.hostname)
+  ) {
+    throw new Error('TWITCH_OAUTH_TEST_BASE_URL must be a loopback HTTP URL.');
+  }
+  return new URL(`/oauth2/${endpoint}`, base).toString();
 }
