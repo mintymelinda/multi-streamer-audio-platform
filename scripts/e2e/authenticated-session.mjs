@@ -97,6 +97,10 @@ function querySql(containerId, statement) {
 async function startProviderFixture() {
   const commands = [];
   let resolvePlay;
+  let playbackMode = 'stop';
+  let playbackTime = '0';
+  let playCount = 0;
+  const playWaiters = [];
   const playSeen = new Promise((resolve) => { resolvePlay = resolve; });
   const server = createServer(async (request, response) => {
     try {
@@ -129,9 +133,27 @@ async function startProviderFixture() {
         return;
       }
       commands.push({ playerId: targetPlayer, command });
-      if (command[0] === 'play') resolvePlay();
+      if (command[0] === 'play') {
+        playbackMode = 'play';
+        playbackTime = '0';
+        playCount += 1;
+        resolvePlay();
+        for (const waiter of playWaiters.splice(0)) {
+          if (playCount >= waiter.count) waiter.resolve();
+          else playWaiters.push(waiter);
+        }
+      } else if (command[0] === 'pause') {
+        playbackMode = command[1] === '1' ? 'pause' : 'play';
+      }
       response.writeHead(200, { 'content-type': 'application/json' });
-      response.end(JSON.stringify({ result: { mode: 'play', time: '0', duration: '60' } }));
+      response.end(JSON.stringify({
+        result: {
+          mode: playbackMode,
+          time: playbackTime,
+          duration: '60',
+          playlist_cur_index: String(Math.max(0, playCount - 1)),
+        },
+      }));
     } catch {
       if (!response.headersSent) response.writeHead(400);
       response.end();
@@ -158,6 +180,29 @@ async function startProviderFixture() {
     url: `http://127.0.0.1:${address.port}`,
     commands,
     playSeen: playObserved,
+    get playCount() { return playCount; },
+    waitForPlayCount(count, timeoutMs = 30_000) {
+      if (playCount >= count) return Promise.resolve();
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          const index = playWaiters.indexOf(waiter);
+          if (index >= 0) playWaiters.splice(index, 1);
+          reject(new Error('The provider fixture did not observe play command ' + count + '.'));
+        }, timeoutMs);
+        const waiter = {
+          count,
+          resolve: () => {
+            clearTimeout(timer);
+            resolve();
+          },
+        };
+        playWaiters.push(waiter);
+      });
+    },
+    completeCurrentPlayback() {
+      playbackMode = 'stop';
+      playbackTime = '60';
+    },
     async close() {
       server.closeAllConnections?.();
       if (server.listening) await new Promise((resolve) => server.close(() => resolve()));
@@ -745,6 +790,42 @@ try {
   assert.equal(promotedQueueResponse.status, 200);
   assert.equal(promotedQueueResponse.body[0]?.id, secondReorderRequest.id);
   assert.equal(promotedQueueResponse.body[0]?.queue_priority, 100, 'Promotion must establish the highest priority class.');
+  assert.equal(providerFixture.playCount, 1, 'A queued request must not interrupt the active playback session.');
+
+  providerFixture.completeCurrentPlayback();
+  await providerFixture.waitForPlayCount(2);
+  const firstCompletionState = await fetch(`${apiUrl}/workspaces/${workspace.id}/requests`, {
+    headers: { cookie: `platform_session=${sessionToken}` },
+  });
+  assert.equal(firstCompletionState.status, 200);
+  const firstCompletionRequests = await firstCompletionState.json();
+  assert.equal(
+    firstCompletionRequests.find((entry) => entry.id === approvedRequest.id)?.status,
+    'completed',
+    'Natural provider completion must persist the request terminal state.',
+  );
+  assert.equal(
+    firstCompletionRequests.find((entry) => entry.id === secondReorderRequest.id)?.status,
+    'playing',
+    'Queue advancement must start the promoted request first.',
+  );
+
+  providerFixture.completeCurrentPlayback();
+  await providerFixture.waitForPlayCount(3);
+  const secondCompletionState = await fetch(`${apiUrl}/workspaces/${workspace.id}/requests`, {
+    headers: { cookie: `platform_session=${sessionToken}` },
+  });
+  assert.equal(secondCompletionState.status, 200);
+  const secondCompletionRequests = await secondCompletionState.json();
+  assert.equal(
+    secondCompletionRequests.find((entry) => entry.id === secondReorderRequest.id)?.status,
+    'completed',
+  );
+  assert.equal(
+    secondCompletionRequests.find((entry) => entry.id === firstReorderRequest.id)?.status,
+    'playing',
+    'The next request must advance after the promoted request completes.',
+  );
 
   const revokedMembership = await page.evaluate(async ({ workspaceId, memberId, token }) => {
     const response = await fetch(`/api/workspaces/${workspaceId}/members/${memberId}`, {
