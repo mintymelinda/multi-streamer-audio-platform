@@ -30,7 +30,7 @@ test('uses the pull request merge-base range when linting a PR', () => {
     headSha: 'head-sha',
   }, (_command, args) => {
     received = args;
-    return 'apps/api/src/main.ts\\0docs/guide.md\\0';
+    return 'apps/api/src/main.ts\0docs/guide.md\0';
   });
 
   assert.deepEqual(received, ['diff', '--name-only', '-z', 'base-sha...head-sha']);
@@ -41,7 +41,7 @@ test('uses the before/head range for pushes and handles a new-branch push safely
   const calls = [];
   const runGit = (_command, args) => {
     calls.push(args);
-    return 'scripts/ci/lint-changed.mjs\\0';
+    return 'scripts/ci/lint-changed.mjs\0';
   };
 
   getChangedFiles({ eventName: 'push', baseSha: 'before-sha', headSha: 'head-sha' }, runGit);
