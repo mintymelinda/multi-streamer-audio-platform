@@ -738,8 +738,13 @@ try {
     'The Playback Coordinator must resolve the submitted YouTube media through the Invidious fixture before playback.',
   );
 
-  const reorderRequest = await submitModerationRequest('E2E moderator reorders this request');
-  const secondReorderRequest = await submitModerationRequest('E2E moderator reorders another request');
+  const queuedMedia = {
+    provider: 'youtube',
+    mediaId: 'dQw4w9WgXcQ',
+    mediaUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+  };
+  const reorderRequest = await submitModerationRequest('E2E moderator reorders this request', queuedMedia);
+  const secondReorderRequest = await submitModerationRequest('E2E moderator reorders another request', queuedMedia);
   assert.equal(reorderRequest.status, 'pending');
   assert.equal(secondReorderRequest.status, 'pending');
   for (const request of [reorderRequest, secondReorderRequest]) {
