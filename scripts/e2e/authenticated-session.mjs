@@ -532,6 +532,102 @@ try {
     '/api/auth/twitch/start?returnTo=%2F',
   );
 
+  const oauthContext = await browser.newContext();
+  const oauthPage = await oauthContext.newPage();
+  await oauthPage.goto(dashboardUrl, { waitUntil: 'networkidle' });
+  await oauthPage.getByRole('link', { name: 'Continue with Twitch' }).click();
+  await oauthPage.waitForURL(`${dashboardUrl}/`, { waitUntil: 'networkidle' });
+  await oauthPage.getByRole('heading', { name: 'Create your workspace' }).waitFor();
+
+  const oauthIdentity = await oauthPage.evaluate(async () => {
+    const response = await fetch('/api/auth/me', { credentials: 'include', cache: 'no-store' });
+    return { status: response.status, body: await response.json() };
+  });
+  assert.equal(oauthIdentity.status, 200, 'The Twitch callback must establish a usable platform session.');
+  oauthActorId = oauthIdentity.body.user.id;
+  assert.equal(oauthIdentity.body.user.twitchUserId, oauthTwitchUserId);
+
+  const oauthCookies = await oauthContext.cookies(dashboardUrl);
+  const oauthSessionCookie = oauthCookies.find((cookie) => cookie.name === 'platform_session');
+  const oauthCsrfCookie = oauthCookies.find((cookie) => cookie.name === 'platform_csrf');
+  assert.ok(oauthSessionCookie?.value, 'The callback must issue a session cookie.');
+  assert.equal(oauthSessionCookie.httpOnly, true);
+  assert.equal(oauthSessionCookie.sameSite, 'Lax');
+  assert.ok(oauthCsrfCookie?.value, 'The callback must issue a CSRF cookie.');
+  assert.equal(oauthCsrfCookie.httpOnly, false);
+  assert.equal(oauthCsrfCookie.sameSite, 'Strict');
+  assert.deepEqual(
+    oauthFixture.requests.map((request) => request.type),
+    ['authorize', 'token', 'validate'],
+    'The browser redirect must complete authorization-code exchange and token validation.',
+  );
+  assert.equal(oauthFixture.requests[0].scope, '', 'Basic platform sign-in must request no Twitch scopes.');
+  assert.equal(
+    oauthFixture.requests[1].redirect_uri,
+    `${dashboardUrl}/api/auth/twitch/callback`,
+  );
+
+  const oauthState = oauthFixture.requests[0].state;
+  const replayedCallback = await oauthPage.evaluate(async (state) => {
+    const response = await fetch(
+      `/api/auth/twitch/callback?code=phase8-browser-oauth-code&state=${encodeURIComponent(state)}`,
+      { redirect: 'manual', credentials: 'include' },
+    );
+    return response.status;
+  }, oauthState);
+  assert.equal(replayedCallback, 401, 'An OAuth state value must be single-use.');
+  const invalidStateCallback = await oauthPage.evaluate(async () => {
+    const response = await fetch(
+      '/api/auth/twitch/callback?code=phase8-browser-oauth-code&state=invalid-state',
+      { redirect: 'manual', credentials: 'include' },
+    );
+    return response.status;
+  });
+  assert.equal(invalidStateCallback, 401, 'An unissued OAuth state value must be rejected.');
+
+  const oauthSessionHash = createHash('sha256').update(oauthSessionCookie.value).digest('hex');
+  assert.equal(
+    querySql(
+      databaseContainer,
+      `SELECT count(*)::text FROM user_sessions
+        WHERE user_id = '${oauthActorId}' AND session_token_hash = '${oauthSessionHash}'`,
+    ),
+    '1',
+    'The database must store only the hash of the issued session token.',
+  );
+  const invalidOauthLogout = await oauthPage.evaluate(async () => {
+    const response = await fetch('/api/auth/logout', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'x-csrf-token': 'invalid-csrf-token' },
+    });
+    return response.status;
+  });
+  assert.equal(invalidOauthLogout, 403, 'OAuth-created sessions must enforce CSRF protection.');
+  const oauthLogout = await oauthPage.evaluate(async (token) => {
+    const response = await fetch('/api/auth/logout', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'x-csrf-token': token },
+    });
+    return response.status;
+  }, oauthCsrfCookie.value);
+  assert.equal(oauthLogout, 204);
+  const revokedOauthIdentity = await oauthPage.evaluate(async () => {
+    const response = await fetch('/api/auth/me', { credentials: 'include', cache: 'no-store' });
+    return response.status;
+  });
+  assert.equal(revokedOauthIdentity, 401, 'Logout must revoke the server-side session, not just clear cookies.');
+  assert.equal(
+    querySql(
+      databaseContainer,
+      `SELECT (revoked_at IS NOT NULL)::text FROM user_sessions
+        WHERE user_id = '${oauthActorId}' AND session_token_hash = '${oauthSessionHash}'`,
+    ),
+    'true',
+  );
+  await oauthContext.close();
+
   await context.addCookies([
     {
       name: 'platform_session',
