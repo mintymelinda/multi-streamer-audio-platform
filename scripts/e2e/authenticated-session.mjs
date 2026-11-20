@@ -840,14 +840,14 @@ try {
   await providerFixture.waitForPlayCount(3);
   const secondCompletionRequests = await waitForRequestStatuses({
     [secondReorderRequest.id]: 'completed',
-    [firstReorderRequest.id]: 'playing',
+    [reorderRequest.id]: 'playing',
   });
   assert.equal(
     secondCompletionRequests.find((entry) => entry.id === secondReorderRequest.id)?.status,
     'completed',
   );
   assert.equal(
-    secondCompletionRequests.find((entry) => entry.id === firstReorderRequest.id)?.status,
+    secondCompletionRequests.find((entry) => entry.id === reorderRequest.id)?.status,
     'playing',
     'The next request must advance after the promoted request completes.',
   );
