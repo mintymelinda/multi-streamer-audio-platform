@@ -388,11 +388,15 @@ test('an expired playback lease is reclaimed with a higher fencing token and rej
       containerId,
       'platform_runtime',
       'local-runtime-only',
-      `SELECT fencing_token::text || ':' || lease_owner_id::text || ':' || lease_token::text
+      `BEGIN;
+       SET LOCAL app.user_id = '${actorId}';
+       SET LOCAL app.workspace_id = '${workspaceId}';
+       SELECT fencing_token::text || ':' || lease_owner_id::text || ':' || lease_token::text
          FROM public.playback_leases
         WHERE workspace_id = '${workspaceId}'
           AND provider_instance_id = '${providerId}'
-          AND player_id = '${playerId}'`,
+          AND player_id = '${playerId}';
+       COMMIT;`,
     );
     assert.equal(current, '8:' + currentOwnerId + ':' + currentLeaseToken);
   } finally {
