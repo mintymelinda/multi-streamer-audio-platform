@@ -48,7 +48,11 @@ export function lintChangedFiles(files, runBiome = spawnSync) {
     return 0;
   }
 
-  const result = runBiome('pnpm', ['exec', 'biome', 'lint', ...files], { stdio: 'inherit' });
+  const result = runBiome(
+    'pnpm',
+    ['exec', 'biome', 'lint', '--max-diagnostics=500', ...files],
+    { stdio: 'inherit' },
+  );
   if (result.error) throw result.error;
   return result.status ?? 1;
 }
