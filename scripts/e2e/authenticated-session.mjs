@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import { createHash, randomInt, randomUUID } from 'node:crypto';
+import { pbkdf2Sync, randomInt, randomUUID } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -585,9 +585,13 @@ try {
   });
   assert.equal(invalidStateCallback, 401, 'An unissued OAuth state value must be rejected.');
 
-  const oauthSessionHash = createHash('sha256')
-    .update(oauthSessionCookie.value)
-    .digest('hex');
+  const oauthSessionHash = pbkdf2Sync(
+    oauthSessionCookie.value,
+    'platform-session-token-hash',
+    310000,
+    32,
+    'sha256',
+  ).toString('hex');
   assert.equal(
     querySql(
       databaseContainer,
