@@ -3,10 +3,10 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, 'phase-8/**']
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -16,6 +16,10 @@ jobs:
   quality:
     name: Quality gates
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      REDIS_URL: redis://127.0.0.1:6379
+      API_INTERNAL_URL: http://127.0.0.1:3300
     services:
       postgres:
         image: postgres:18.6
@@ -30,11 +34,22 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 20
+      redis:
+        image: redis:7.4-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
     steps:
       - name: Check out source
         uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v6
@@ -47,21 +62,20 @@ jobs:
           node-version: 26.13.0
           cache: pnpm
 
-      # Temporary lockfile repair after merging the latest Dependabot baseline.
-      - name: Repair and commit lockfile
-        if: github.event_name == 'pull_request' && github.actor == 'mintymelinda' && (github.event.pull_request.head.ref == 'phase-1/identity-workspaces-tenant-isolation' || github.event.pull_request.head.ref == 'phase-2/twitch-reward-integration' || github.event.pull_request.head.ref == 'phase-2/test-first-completion')
+      - name: Verify workspace lockfile checkout
         run: |
-          pnpm install --fix-lockfile --no-frozen-lockfile
-          if ! git diff --quiet -- pnpm-lock.yaml; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add pnpm-lock.yaml
-            git commit -m "chore: repair pnpm lockfile after dependency baseline update"
-            git push origin "HEAD:${GITHUB_HEAD_REF}"
-          fi
+          set -eu
+          printf 'PWD=%s\\nGITHUB_WORKSPACE=%s\\n' "$PWD" "$GITHUB_WORKSPACE"
+          test "$PWD" = "$GITHUB_WORKSPACE"
+          test -s "$GITHUB_WORKSPACE/pnpm-workspace.yaml"
+          test -s "$GITHUB_WORKSPACE/pnpm-lock.yaml"
+          git ls-files --error-unmatch pnpm-workspace.yaml pnpm-lock.yaml
+          git cat-file -e HEAD:pnpm-lock.yaml
+          pnpm config get lockfile
+          pnpm config get lockfile-dir
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --lockfile-dir="$GITHUB_WORKSPACE"
 
       - name: Validate deletion-ledger recovery tooling
         run: |
@@ -71,12 +85,42 @@ jobs:
       - name: Validate local infrastructure definition
         run: docker compose --env-file infra/compose/.env.example -f infra/compose/docker-compose.yml config --quiet
 
+      - name: Validate staging edge Compose definition
+        run: docker compose --env-file infra/compose/.env.edge.example -f infra/compose/docker-compose.edge.yml config --quiet
+
+      - name: Validate staging Caddy reverse-proxy configuration
+        run: |
+          docker run --rm \
+            --env DASHBOARD_DOMAIN=dashboard.staging.example.net \
+            --env OVERLAY_DOMAIN=overlay.staging.example.net \
+            --env API_DOMAIN=api.staging.example.net \
+            --env ASSET_DOMAIN=assets.staging.example.net \
+            --env ACME_EMAIL=operator@example.net \
+            -v "$PWD/infra/compose/Caddyfile:/etc/caddy/Caddyfile:ro" \
+            caddy:2.10.2-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+
+      - name: Validate staging Compose definition
+        run: |
+          set -eu
+          mkdir -p infra/compose/secrets
+          cleanup() { rm -rf infra/compose/secrets; }
+          trap cleanup EXIT
+          for secret in api-database-url worker-database-url provider-execution-database-url redis-url twitch-client-secret integration-kek-ring.json provider-execution-handoff-secret; do
+            : > "infra/compose/secrets/$secret"
+          done
+          docker compose --env-file infra/compose/.env.staging.example -f infra/compose/docker-compose.staging.yml -f infra/compose/docker-compose.staging.remote.yml config --quiet
+
       - name: Validate PostgreSQL migration/runtime role separation
         run: |
           container_id="$(docker ps --filter 'ancestor=postgres:18.6' --format '{{.ID}}' | head -n 1)"
           test -n "$container_id"
           docker cp infra/postgres/init/001-roles.sql "$container_id:/tmp/001-roles.sql"
-          docker exec "$container_id" psql -U platform_bootstrap -d platform -v ON_ERROR_STOP=1 -f /tmp/001-roles.sql
+          docker exec \
+            -e PLATFORM_MIGRATOR_PASSWORD=local-migration-only \
+            -e PLATFORM_RUNTIME_PASSWORD=local-runtime-only \
+            -e PLATFORM_WORKER_PASSWORD=local-worker-only \
+            -e PLATFORM_PROVIDER_WORKER_PASSWORD=local-provider-worker-only \
+            "$container_id" psql -U platform_bootstrap -d platform -v ON_ERROR_STOP=1 -f /tmp/001-roles.sql
           runtime_flags="$(docker exec "$container_id" psql -U platform_bootstrap -d platform -Atqc "SELECT rolsuper::text || ':' || rolbypassrls::text FROM pg_roles WHERE rolname='platform_runtime'")"
           migrator_flags="$(docker exec "$container_id" psql -U platform_bootstrap -d platform -Atqc "SELECT rolsuper::text || ':' || rolbypassrls::text FROM pg_roles WHERE rolname='platform_migrator'")"
           worker_flags="$(docker exec "$container_id" psql -U platform_bootstrap -d platform -Atqc "SELECT rolsuper::text || ':' || rolbypassrls::text FROM pg_roles WHERE rolname='platform_worker'")"
@@ -188,6 +232,13 @@ jobs:
           docker cp infra/postgres/tests/phase7-deletion-ledger.sql "$container_id:/tmp/phase7-deletion-ledger.sql"
           docker exec -e PGPASSWORD=ci-bootstrap-only "$container_id" psql -h 127.0.0.1 -U platform_bootstrap -d platform -v ON_ERROR_STOP=1 -f /tmp/phase7-deletion-ledger.sql
 
+      - name: Lint changed files
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          GITHUB_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: pnpm lint:changed
+
       - name: Type check
         run: pnpm typecheck
 
@@ -199,3 +250,54 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+      - name: Build immutable staging application image
+        run: docker build --file infra/compose/Deployment.Dockerfile --target runtime --tag platform-staging-app:ci .
+
+
+      - name: Smoke test standalone dashboard and overlay containers
+        run: |
+          set -eu
+          cleanup() {
+            docker rm -f platform-staging-dashboard-smoke platform-staging-overlay-smoke >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          docker run -d --name platform-staging-dashboard-smoke -p 127.0.0.1:3391:3000 -e HOSTNAME=0.0.0.0 -e PORT=3000 platform-staging-app:ci sh -lc 'server="$(find apps/dashboard/.next/standalone -type d -name node_modules -prune -o -type f -name server.js -print -quit)"; test -n "$server"; exec node "$server"'
+          docker run -d --name platform-staging-overlay-smoke -p 127.0.0.1:3392:3001 -e HOSTNAME=0.0.0.0 -e PORT=3001 platform-staging-app:ci sh -lc 'server="$(find apps/overlay/.next/standalone -type d -name node_modules -prune -o -type f -name server.js -print -quit)"; test -n "$server"; exec node "$server"'
+          ready=false
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3391/ -o /tmp/staging-dashboard.html && curl -fsS http://127.0.0.1:3392/ -o /tmp/staging-overlay.html; then
+              ready=true
+              break
+            fi
+            sleep 2
+          done
+          if [ "$ready" != true ]; then
+            docker logs platform-staging-dashboard-smoke
+            docker logs platform-staging-overlay-smoke
+            exit 1
+          fi
+          for app in dashboard overlay; do
+            html="/tmp/staging-$app.html"
+            asset="$(grep -oE '/_next/static/[^" ]+' "$html" | head -n 1 | sed 's/[?#].*//' || true)"
+            if [ -n "$asset" ]; then
+              port=3391
+              if [ "$app" = overlay ]; then port=3392; fi
+              curl -fsS "http://127.0.0.1:$port$asset" >/dev/null
+            fi
+          done
+
+      - name: Install isolated browser test runtime
+        run: |
+          google-chrome --version
+          npm install --prefix "$RUNNER_TEMP/playwright" --no-save --no-package-lock playwright-core@1.56.1
+
+      - name: Run browser UI smoke tests
+        env:
+          PLAYWRIGHT_MODULE: ${{ runner.temp }}/playwright/node_modules/playwright-core/index.mjs
+        run: node scripts/e2e/browser-smoke.mjs
+
+      - name: Run authenticated browser and overlay runtime E2E
+        env:
+          PLAYWRIGHT_MODULE: ${{ runner.temp }}/playwright/node_modules/playwright-core/index.mjs
+        run: node scripts/e2e/authenticated-session.mjs

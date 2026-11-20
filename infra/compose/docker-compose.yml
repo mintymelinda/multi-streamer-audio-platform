@@ -58,8 +58,8 @@ services:
       - pnpm_store:/home/node/.local/share/pnpm/store
     environment:
       NODE_ENV: development
-      DATABASE_URL: ${WORKER_DATABASE_URL:-postgres://platform_worker:local-worker-only@postgres:5432/platform}
-      PROVIDER_EXECUTION_DATABASE_URL: ${PROVIDER_EXECUTION_DATABASE_URL:-postgres://platform_provider_worker:local-provider-worker-only@postgres:5432/platform}
+      DATABASE_URL: ${WORKER_DATABASE_URL:-postgres://platform_worker:${PLATFORM_WORKER_PASSWORD:-local-worker-only}@postgres:5432/platform}
+      PROVIDER_EXECUTION_DATABASE_URL: ${PROVIDER_EXECUTION_DATABASE_URL:-postgres://platform_provider_worker:${PLATFORM_PROVIDER_WORKER_PASSWORD:-local-provider-worker-only}@postgres:5432/platform}
       REDIS_URL: redis://redis:6379
       PROVIDER_EXECUTION_HANDOFF_URL: ${PROVIDER_EXECUTION_HANDOFF_URL:-http://api:3000/internal/provider-executions/handoff}
       PROVIDER_EXECUTION_HANDOFF_SECRET: ${PROVIDER_EXECUTION_HANDOFF_SECRET:-local-provider-execution-handoff-secret-at-least-32-bytes}
@@ -93,6 +93,10 @@ services:
       POSTGRES_DB: platform
       POSTGRES_USER: platform_bootstrap
       POSTGRES_PASSWORD: ${POSTGRES_BOOTSTRAP_PASSWORD:-local-bootstrap-only}
+      PLATFORM_MIGRATOR_PASSWORD: ${PLATFORM_MIGRATOR_PASSWORD:-local-migration-only}
+      PLATFORM_RUNTIME_PASSWORD: ${PLATFORM_RUNTIME_PASSWORD:-local-runtime-only}
+      PLATFORM_WORKER_PASSWORD: ${PLATFORM_WORKER_PASSWORD:-local-worker-only}
+      PLATFORM_PROVIDER_WORKER_PASSWORD: ${PLATFORM_PROVIDER_WORKER_PASSWORD:-local-provider-worker-only}
     ports:
       - "127.0.0.1:5432:5432"
     volumes:

@@ -293,12 +293,37 @@ function mapOperation(row: OperationRow): PlaybackOperation {
                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13)
                    ON CONFLICT (workspace_id, idempotency_key)
                    DO UPDATE SET
-                     status = EXCLUDED.status,
-                     result = EXCLUDED.result,
-                     error_code = EXCLUDED.error_code,
-                     provider_playback_id = EXCLUDED.provider_playback_id,
+                     -- A stale duplicate can observe an in-flight provider command as
+                     -- uncertain after the first process has already persisted success.
+                     -- Terminal operation outcomes must never be downgraded by that
+                     -- late reconciliation write, even when both processes share the
+                     -- same fencing generation and idempotency key.
+                     status = CASE
+                       WHEN playback_operations.status IN ('completed', 'reconciled', 'failed')
+                       THEN playback_operations.status
+                       ELSE EXCLUDED.status
+                     END,
+                     result = CASE
+                       WHEN playback_operations.status IN ('completed', 'reconciled', 'failed')
+                       THEN playback_operations.result
+                       ELSE EXCLUDED.result
+                     END,
+                     error_code = CASE
+                       WHEN playback_operations.status IN ('completed', 'reconciled', 'failed')
+                       THEN playback_operations.error_code
+                       ELSE EXCLUDED.error_code
+                     END,
+                     provider_playback_id = CASE
+                       WHEN playback_operations.status IN ('completed', 'reconciled', 'failed')
+                       THEN playback_operations.provider_playback_id
+                       ELSE EXCLUDED.provider_playback_id
+                     END,
                      fencing_token = EXCLUDED.fencing_token,
-                     updated_at = now()
+                     updated_at = CASE
+                       WHEN playback_operations.status IN ('completed', 'reconciled', 'failed')
+                       THEN playback_operations.updated_at
+                       ELSE now()
+                     END
                    WHERE playback_operations.fencing_token <= EXCLUDED.fencing_token
                    RETURNING id, workspace_id, provider_instance_id, player_id, output_id,
                              request_id, requested_by, command, idempotency_key, status, result,

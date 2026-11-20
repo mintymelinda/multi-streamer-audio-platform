@@ -187,7 +187,10 @@ export class WorkspaceRealtimeGateway
       return;
     }
     const room = `workspace:${event.workspaceId}`;
-    const sockets = await this.server.in(room).fetchSockets();
+    // Every API instance receives the same PostgreSQL notification. Keep this
+    // authorization-and-delivery pass local so Redis fan-out does not multiply
+    // the event once per API process.
+    const sockets = await this.server.local.in(room).fetchSockets();
     for (const socket of sockets) {
       const data = socket.data as { userId?: string; sessionToken?: string };
       if (!data.userId || !data.sessionToken) {
