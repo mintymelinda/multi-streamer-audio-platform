@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import { pbkdf2Sync, randomInt, randomUUID } from 'node:crypto';
+import { createHash, randomInt, randomUUID } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -585,21 +585,769 @@ try {
   });
   assert.equal(invalidStateCallback, 401, 'An unissued OAuth state value must be rejected.');
 
-  const oauthSessionHash = pbkdf2Sync(
-    oauthSessionCookie.value,
-    'platform-session-token-hash',
-    310000,
-    32,
-    'sha256',
-  ).toString('hex');
+  const oauthSessionStorage = querySql(
+    databaseContainer,
+    `SELECT count(*)::text FROM user_sessions
+      WHERE user_id = '${oauthActorId}'
+        AND session_token_hash <> '${oauthSessionCookie.value}'
+        AND session_token_hash ~ '^[a-f0-9]{64}
+  const invalidOauthLogout = await oauthPage.evaluate(async () => {
+    const response = await fetch('/api/auth/logout', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'x-csrf-token': 'invalid-csrf-token' },
+    });
+    return response.status;
+  });
+  assert.equal(invalidOauthLogout, 403, 'OAuth-created sessions must enforce CSRF protection.');
+  const oauthLogout = await oauthPage.evaluate(async (token) => {
+    const response = await fetch('/api/auth/logout', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'x-csrf-token': token },
+    });
+    return response.status;
+  }, oauthCsrfCookie.value);
+  assert.equal(oauthLogout, 204);
+  const revokedOauthIdentity = await oauthPage.evaluate(async () => {
+    const response = await fetch('/api/auth/me', { credentials: 'include', cache: 'no-store' });
+    return response.status;
+  });
+  assert.equal(revokedOauthIdentity, 401, 'Logout must revoke the server-side session, not just clear cookies.');
   assert.equal(
     querySql(
       databaseContainer,
-      `SELECT count(*)::text FROM user_sessions
+      `SELECT (revoked_at IS NOT NULL)::text FROM user_sessions
         WHERE user_id = '${oauthActorId}' AND session_token_hash = '${oauthSessionHash}'`,
     ),
+    'true',
+  );
+  await oauthContext.close();
+
+  await context.addCookies([
+    {
+      name: 'platform_session',
+      value: sessionToken,
+      url: dashboardUrl,
+      httpOnly: true,
+      sameSite: 'Lax',
+    },
+    {
+      name: 'platform_csrf',
+      value: csrfToken,
+      url: dashboardUrl,
+      sameSite: 'Strict',
+    },
+  ]);
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.getByRole('heading', { name: 'Create your workspace' }).waitFor();
+
+  const identity = await page.evaluate(async () => {
+    const response = await fetch('/api/auth/me', { credentials: 'include', cache: 'no-store' });
+    return { status: response.status, body: await response.json() };
+  });
+  assert.equal(identity.status, 200);
+  assert.equal(identity.body.user.id, actorId);
+  assert.equal(identity.body.user.twitchUserId, twitchUserId);
+
+  await page.getByPlaceholder('Workspace name').fill('Browser E2E Workspace');
+  const workspaceResponsePromise = page.waitForResponse((response) =>
+    response.url().endsWith('/api/workspaces') && response.request().method() === 'POST',
+  );
+  await page.getByRole('button', { name: 'Create workspace' }).click();
+  const workspaceResponse = await workspaceResponsePromise;
+  assert.equal(workspaceResponse.status(), 201);
+  const workspace = await workspaceResponse.json();
+  assert.equal(typeof workspace.id, 'string');
+  await page.getByRole('heading', { name: 'Browser E2E Workspace' }).waitFor();
+  seedPlaybackProviders(databaseContainer, workspace.id, providerFixture.url);
+
+  seedInvitation(databaseContainer, workspace.id);
+  const inviteeContext = await browser.newContext();
+  await inviteeContext.addCookies([
+    {
+      name: 'platform_session',
+      value: foreignSessionToken,
+      url: dashboardUrl,
+      httpOnly: true,
+      sameSite: 'Lax',
+    },
+    {
+      name: 'platform_csrf',
+      value: foreignCsrfToken,
+      url: dashboardUrl,
+      sameSite: 'Strict',
+    },
+  ]);
+  const inviteePage = await inviteeContext.newPage();
+  await inviteePage.goto(`${dashboardUrl}/invitations`, { waitUntil: 'networkidle' });
+  await inviteePage.getByRole('heading', { name: 'Invitation inbox' }).waitFor();
+  await inviteePage.getByRole('heading', { name: 'Browser E2E Workspace' }).waitFor();
+
+  const pendingAccess = await inviteePage.evaluate(async (workspaceId) => {
+    const response = await fetch(`/api/workspaces/${workspaceId}`, {
+      credentials: 'include',
+      cache: 'no-store',
+    });
+    return response.status;
+  }, workspace.id);
+  assert.equal(pendingAccess, 404, 'A pending invitation must not grant workspace access.');
+
+  const wrongIdentityAcceptance = await page.evaluate(async ({ invitationId, token }) => {
+    const response = await fetch(`/api/me/invitations/${invitationId}/accept`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'x-csrf-token': token },
+    });
+    return response.status;
+  }, { invitationId, token: csrfToken });
+  assert.equal(wrongIdentityAcceptance, 404, 'An invitation cannot be accepted by a different signed-in Twitch identity.');
+
+  await inviteePage.getByRole('button', { name: 'Accept' }).click();
+  await inviteePage.waitForURL(`${dashboardUrl}/`);
+  const acceptedMemberships = await inviteePage.evaluate(async () => {
+    const response = await fetch('/api/workspaces', { credentials: 'include', cache: 'no-store' });
+    return { status: response.status, body: await response.json() };
+  });
+  assert.equal(acceptedMemberships.status, 200);
+  assert.ok(acceptedMemberships.body.some((item) =>
+    item.id === workspace.id && item.role === 'moderator',
+  ), 'The invitation must grant only its assigned Moderator role.');
+
+  const requestSettingsResponse = await fetch(
+    `${apiUrl}/workspaces/${workspace.id}/requests/settings`,
+    {
+      method: 'PATCH',
+      headers: {
+        cookie: `platform_session=${sessionToken}; platform_csrf=${csrfToken}`,
+        'content-type': 'application/json',
+        'x-csrf-token': csrfToken,
+      },
+      body: JSON.stringify({
+        moderationMode: 'manual',
+        queueLimit: 50,
+        perUserLimit: 5,
+        perSourceLimit: 50,
+        holdTerms: [],
+        rejectTerms: [],
+      }),
+    },
+  );
+  assert.equal(requestSettingsResponse.status, 200, 'The workspace owner must be able to configure manual moderation.');
+
+  async function submitModerationRequest(title, media = {}) {
+    const response = await fetch(`${apiUrl}/workspaces/${workspace.id}/requests`, {
+      method: 'POST',
+      headers: {
+        cookie: `platform_session=${sessionToken}; platform_csrf=${csrfToken}`,
+        'content-type': 'application/json',
+        'x-csrf-token': csrfToken,
+      },
+      body: JSON.stringify({ title, requesterDisplayName: 'Browser E2E', ...media }),
+    });
+    assert.equal(response.status, 201, 'The owner must be able to submit a request.');
+    return response.json();
+  }
+
+  async function waitForRequestStatuses(expectedStatuses) {
+    const deadline = Date.now() + 20_000;
+    let latest = [];
+    while (Date.now() < deadline) {
+      const response = await fetch(`${apiUrl}/workspaces/${workspace.id}/requests`, {
+        headers: { cookie: `platform_session=${sessionToken}` },
+      });
+      assert.equal(response.status, 200);
+      latest = await response.json();
+      if (Object.entries(expectedStatuses).every(([requestId, status]) =>
+        latest.find((entry) => entry.id === requestId)?.status === status
+      )) {
+        return latest;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    throw new Error(
+      'Timed out waiting for request statuses: ' + JSON.stringify(expectedStatuses)
+        + '; latest=' + JSON.stringify(latest.map((entry) => ({ id: entry.id, status: entry.status }))),
+    );
+  }
+
+  const rejectedRequest = await submitModerationRequest('E2E moderator rejects this');
+  const approvedRequest = await submitModerationRequest('E2E moderator approves this', {
+    provider: 'youtube',
+    mediaId: 'dQw4w9WgXcQ',
+    mediaUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+  });
+  assert.equal(rejectedRequest.status, 'pending');
+  assert.equal(approvedRequest.status, 'pending');
+
+  const duplicateSubmissionKey = 'browser-e2e-idempotency-' + randomUUID();
+  const duplicateFirst = await submitModerationRequest('E2E duplicate submission', {
+    idempotencyKey: duplicateSubmissionKey,
+  });
+  const duplicateSecond = await submitModerationRequest('E2E duplicate submission', {
+    idempotencyKey: duplicateSubmissionKey,
+  });
+  assert.equal(duplicateFirst.id, duplicateSecond.id, 'A repeated idempotency key must return the original request.');
+  assert.equal(duplicateSecond.status, 'pending');
+
+  const cancelledRequest = await submitModerationRequest('E2E requester cancels this');
+  const cancellation = await fetch(
+    `${apiUrl}/workspaces/${workspace.id}/requests/${cancelledRequest.id}/cancel`,
+    {
+      method: 'PATCH',
+      headers: {
+        cookie: `platform_session=${sessionToken}; platform_csrf=${csrfToken}`,
+        'x-csrf-token': csrfToken,
+      },
+    },
+  );
+  assert.equal(cancellation.status, 200, 'A requester must be able to cancel a request before playback resolution.');
+  assert.equal((await cancellation.json()).status, 'cancelled');
+  const cancelledQueue = await fetch(`${apiUrl}/workspaces/${workspace.id}/queue`, {
+    headers: { cookie: `platform_session=${sessionToken}` },
+  });
+  assert.equal(cancelledQueue.status, 200);
+  assert.ok(
+    !(await cancelledQueue.json()).some((entry) => entry.id === cancelledRequest.id),
+    'A cancelled request must not remain in the playable queue.',
+  );
+
+  const moderatorSettingsAttempt = await inviteePage.evaluate(async ({ workspaceId, token }) => {
+    const response = await fetch(`/api/workspaces/${workspaceId}/requests/settings`, {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json', 'x-csrf-token': token },
+      body: JSON.stringify({
+        moderationMode: 'automatic',
+        queueLimit: 50,
+        perUserLimit: 5,
+        perSourceLimit: 50,
+        holdTerms: [],
+        rejectTerms: [],
+      }),
+    });
+    return response.status;
+  }, { workspaceId: workspace.id, token: foreignCsrfToken });
+  assert.equal(moderatorSettingsAttempt, 403, 'A Moderator must not change workspace-level request settings.');
+
+  const moderationResults = await inviteePage.evaluate(async ({ workspaceId, rejectId, approveId, token }) => {
+    async function moderate(requestId, action) {
+      const response = await fetch(`/api/workspaces/${workspaceId}/requests/${requestId}/moderation`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json', 'x-csrf-token': token },
+        body: JSON.stringify({ action, reason: 'Verified by browser E2E' }),
+      });
+      return { status: response.status, body: await response.json() };
+    }
+    const rejected = await moderate(rejectId, 'reject');
+    const approved = await moderate(approveId, 'approve');
+    const queue = await fetch(`/api/workspaces/${workspaceId}/queue`, {
+      credentials: 'include',
+      cache: 'no-store',
+    });
+    return {
+      rejected,
+      approved,
+      queueStatus: queue.status,
+      queue: await queue.json(),
+    };
+  }, {
+    workspaceId: workspace.id,
+    rejectId: rejectedRequest.id,
+    approveId: approvedRequest.id,
+    token: foreignCsrfToken,
+  });
+  assert.equal(moderationResults.rejected.status, 200);
+  assert.equal(moderationResults.rejected.body.status, 'rejected');
+  assert.equal(moderationResults.approved.status, 200);
+  assert.equal(moderationResults.approved.body.status, 'queued');
+  assert.equal(moderationResults.queueStatus, 200);
+  assert.ok(
+    moderationResults.queue.some((entry) => entry.id === approvedRequest.id),
+    'The Moderator must be able to see the approved request in the playable queue.',
+  );
+  assert.ok(
+    !moderationResults.queue.some((entry) => entry.id === rejectedRequest.id),
+    'Rejected requests must not appear in the playable queue.',
+  );
+
+  const workerEnvironment = {
+    ...process.env,
+    NODE_ENV: 'test',
+    DATABASE_URL: 'postgresql://platform_worker:local-worker-only@127.0.0.1:5432/platform',
+    PROVIDER_EXECUTION_DATABASE_URL: 'postgresql://platform_provider_worker:local-provider-worker-only@127.0.0.1:5432/platform',
+    REDIS_URL: apiEnvironment.REDIS_URL,
+    INVIDIOUS_INSTANCE_URL: providerFixture.url,
+    LYRION_ALLOWED_HOSTS: '127.0.0.1',
+    PROVIDER_EXECUTION_HANDOFF_URL: `${apiUrl}/internal/provider-executions/handoff`,
+    PROVIDER_EXECUTION_HANDOFF_SECRET: handoffSecret,
+  };
+  delete workerEnvironment.DATABASE_URL_FILE;
+  delete workerEnvironment.PROVIDER_EXECUTION_DATABASE_URL_FILE;
+  delete workerEnvironment.REDIS_URL_FILE;
+  delete workerEnvironment.PROVIDER_EXECUTION_HANDOFF_SECRET_FILE;
+  await startRequestPlaybackWorker(workerEnvironment);
+  await providerFixture.playSeen;
+
+  const playbackStateQuery = `SELECT r.status || ':' || execution.state || ':' || count(session.id)::text
+    FROM media_requests r
+    JOIN provider_execution_states execution ON execution.workspace_id = r.workspace_id AND execution.request_id = r.id
+    LEFT JOIN playback_sessions session ON session.workspace_id = r.workspace_id AND session.request_id = r.id
+    WHERE r.workspace_id = '${workspace.id}' AND r.id = '${approvedRequest.id}'
+    GROUP BY r.status, execution.state`;
+
+  const playbackDeadline = Date.now() + 20_000;
+  let playbackState = '';
+  while (Date.now() < playbackDeadline) {
+    playbackState = querySql(databaseContainer, playbackStateQuery);
+    if (playbackState === 'playing:playing:1') break;
+    await delay(100);
+  }
+  assert.equal(
+    playbackState,
+    'playing:playing:1',
+    'The approved browser-submitted request must reach a persisted playback session.',
+  );
+  assert.equal(
+    providerFixture.commands.filter((entry) => entry.command[0] === 'play').length,
+    1,
+    'The real provider worker and Playback Coordinator must issue exactly one play command.',
+  );
+  assert.ok(
+    providerFixture.commands.some((entry) =>
+      entry.command[0] === 'playlist' &&
+      entry.command[1] === 'add' &&
+      entry.command[2] === 'https://media.example.test/browser-e2e.webm',
+    ),
+    'The Playback Coordinator must resolve the submitted YouTube media through the Invidious fixture before playback.',
+  );
+
+  const queuedMedia = {
+    provider: 'youtube',
+    mediaId: 'dQw4w9WgXcQ',
+    mediaUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+  };
+  const reorderRequest = await submitModerationRequest('E2E moderator reorders this request', queuedMedia);
+  const secondReorderRequest = await submitModerationRequest('E2E moderator reorders another request', queuedMedia);
+  assert.equal(reorderRequest.status, 'pending');
+  assert.equal(secondReorderRequest.status, 'pending');
+  for (const request of [reorderRequest, secondReorderRequest]) {
+    const approval = await inviteePage.evaluate(async ({ workspaceId, requestId, token }) => {
+      const response = await fetch(`/api/workspaces/${workspaceId}/requests/${requestId}/moderation`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json', 'x-csrf-token': token },
+        body: JSON.stringify({ action: 'approve', reason: 'Approved for queue ordering test' }),
+      });
+      return { status: response.status, body: await response.json() };
+    }, { workspaceId: workspace.id, requestId: request.id, token: foreignCsrfToken });
+    assert.equal(approval.status, 200);
+    assert.equal(approval.body.status, 'queued');
+  }
+
+  const reorderedQueue = await inviteePage.evaluate(async ({ workspaceId, token }) => {
+    const beforeResponse = await fetch(`/api/workspaces/${workspaceId}/queue`, {
+      credentials: 'include',
+      cache: 'no-store',
+    });
+    const before = await beforeResponse.json();
+    const requestIds = before.map((entry) => entry.id).reverse();
+    const reorderResponse = await fetch(`/api/workspaces/${workspaceId}/queue/order`, {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json', 'x-csrf-token': token },
+      body: JSON.stringify({ requestIds }),
+    });
+    const afterResponse = await fetch(`/api/workspaces/${workspaceId}/queue`, {
+      credentials: 'include',
+      cache: 'no-store',
+    });
+    return {
+      before,
+      reorderStatus: reorderResponse.status,
+      reorderBody: await reorderResponse.json(),
+      after: await afterResponse.json(),
+    };
+  }, { workspaceId: workspace.id, token: foreignCsrfToken });
+  assert.equal(reorderedQueue.before.length, 2, 'Both approved requests must be visible to the Moderator.');
+  assert.equal(reorderedQueue.reorderStatus, 200);
+  assert.deepEqual(
+    reorderedQueue.reorderBody.requestIds,
+    reorderedQueue.before.map((entry) => entry.id).reverse(),
+  );
+  assert.deepEqual(
+    reorderedQueue.after.map((entry) => entry.id),
+    reorderedQueue.before.map((entry) => entry.id).reverse(),
+    'The Moderator must be able to persist a new logical queue order.',
+  );
+
+  const promoted = await inviteePage.evaluate(async ({ workspaceId, requestId, token }) => {
+    const response = await fetch(`/api/workspaces/${workspaceId}/queue/${requestId}/promote`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'x-csrf-token': token },
+    });
+    return { status: response.status, body: await response.json() };
+  }, { workspaceId: workspace.id, requestId: secondReorderRequest.id, token: foreignCsrfToken });
+  assert.equal(promoted.status, 201);
+  assert.equal(promoted.body.position, 1);
+  const promotedQueueResponse = await inviteePage.evaluate(async (workspaceId) => {
+    const response = await fetch(`/api/workspaces/${workspaceId}/queue`, {
+      credentials: 'include',
+      cache: 'no-store',
+    });
+    return { status: response.status, body: await response.json() };
+  }, workspace.id);
+  assert.equal(promotedQueueResponse.status, 200);
+  assert.equal(promotedQueueResponse.body[0]?.id, secondReorderRequest.id);
+  assert.equal(promotedQueueResponse.body[0]?.queue_priority, 100, 'Promotion must establish the highest priority class.');
+  assert.equal(providerFixture.playCount, 1, 'A queued request must not interrupt the active playback session.');
+
+  providerFixture.completeCurrentPlayback();
+  await providerFixture.waitForPlayCount(2);
+  const firstCompletionRequests = await waitForRequestStatuses({
+    [approvedRequest.id]: 'completed',
+    [secondReorderRequest.id]: 'playing',
+  });
+  assert.equal(
+    firstCompletionRequests.find((entry) => entry.id === approvedRequest.id)?.status,
+    'completed',
+    'Natural provider completion must persist the request terminal state.',
+  );
+  assert.equal(
+    firstCompletionRequests.find((entry) => entry.id === secondReorderRequest.id)?.status,
+    'playing',
+    'Queue advancement must start the promoted request first.',
+  );
+
+  providerFixture.completeCurrentPlayback();
+  await providerFixture.waitForPlayCount(3);
+  const secondCompletionRequests = await waitForRequestStatuses({
+    [secondReorderRequest.id]: 'completed',
+    [reorderRequest.id]: 'playing',
+  });
+  assert.equal(
+    secondCompletionRequests.find((entry) => entry.id === secondReorderRequest.id)?.status,
+    'completed',
+  );
+  assert.equal(
+    secondCompletionRequests.find((entry) => entry.id === reorderRequest.id)?.status,
+    'playing',
+    'The next request must advance after the promoted request completes.',
+  );
+
+  const revokedMembership = await page.evaluate(async ({ workspaceId, memberId, token }) => {
+    const response = await fetch(`/api/workspaces/${workspaceId}/members/${memberId}`, {
+      method: 'DELETE',
+      credentials: 'include',
+      headers: { 'x-csrf-token': token },
+    });
+    return response.status;
+  }, { workspaceId: workspace.id, memberId: foreignActorId, token: csrfToken });
+  assert.equal(revokedMembership, 200);
+  const afterRevocation = await inviteePage.evaluate(async (workspaceId) => {
+    const response = await fetch(`/api/workspaces/${workspaceId}`, {
+      credentials: 'include',
+      cache: 'no-store',
+    });
+    return response.status;
+  }, workspace.id);
+  assert.equal(afterRevocation, 404, 'Membership revocation must immediately remove workspace access.');
+
+  const workspaceBoundary = await page.evaluate(async (foreignId) => {
+    const listed = await fetch('/api/workspaces', { credentials: 'include', cache: 'no-store' });
+    const listedBody = await listed.json();
+    const foreignRead = await fetch(`/api/workspaces/${foreignId}/scenes`, {
+      credentials: 'include',
+      cache: 'no-store',
+    });
+    const foreignMutation = await fetch(`/api/workspaces/${foreignId}/scenes/starter`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'x-csrf-token': document.cookie.split('; ').find((value) => value.startsWith('platform_csrf='))?.split('=')[1] ?? '' },
+    });
+    return {
+      listedStatus: listed.status,
+      listed: listedBody,
+      foreignReadStatus: foreignRead.status,
+      foreignReadBody: await foreignRead.text(),
+      foreignMutationStatus: foreignMutation.status,
+    };
+  }, foreignWorkspaceId);
+  assert.equal(workspaceBoundary.listedStatus, 200);
+  assert.ok(workspaceBoundary.listed.some((entry) => entry.id === workspace.id));
+  assert.ok(!JSON.stringify(workspaceBoundary.listed).includes(foreignWorkspaceId));
+  assert.ok(!JSON.stringify(workspaceBoundary.listed).includes('Isolation Canary Workspace'));
+  assert.equal(workspaceBoundary.foreignReadStatus, 404);
+  assert.ok(!workspaceBoundary.foreignReadBody.includes('Isolation Canary Workspace'));
+  assert.equal(workspaceBoundary.foreignMutationStatus, 404);
+  await inviteeContext.close();
+
+  const starter = await page.evaluate(async ({ workspaceId, token }) => {
+    const response = await fetch(`/api/workspaces/${workspaceId}/scenes/starter`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'x-csrf-token': token },
+    });
+    return { status: response.status, body: await response.json() };
+  }, { workspaceId: workspace.id, token: csrfToken });
+  assert.equal(starter.status, 201);
+  assert.equal(typeof starter.body.scene.id, 'string');
+  assert.match(starter.body.accessToken, /^[A-Za-z0-9_-]{43}$/);
+
+  let overlayPage = await context.newPage();
+  const overlaySnapshot = overlayPage.waitForResponse((response) =>
+    response.url().includes(`/api/overlay/scenes/${starter.body.scene.id}/snapshot`),
+  );
+  await overlayPage.goto(
+    `${overlayUrl}${starter.body.overlayPath}#${starter.body.accessToken}`,
+    { waitUntil: 'domcontentloaded' },
+  );
+  const snapshotResponse = await overlaySnapshot;
+  assert.equal(snapshotResponse.status(), 200, 'The overlay must load its published scene from the real API.');
+  await overlayPage.getByText('Now Playing', { exact: true }).first().waitFor();
+  assert.equal(new URL(overlayPage.url()).hash, '', 'The overlay must scrub the bearer token from browser history.');
+  const snapshotHeaders = snapshotResponse.headers();
+  assert.match(snapshotHeaders['cache-control'] ?? '', /no-store/);
+  assert.match(snapshotHeaders['cache-control'] ?? '', /private/);
+  assert.equal(snapshotHeaders['referrer-policy'], 'no-referrer');
+  assert.match(snapshotHeaders.vary ?? '', /authorization/i);
+
+  const unknownTokenPage = await context.newPage();
+  const unknownTokenResponse = unknownTokenPage.waitForResponse((response) =>
+    response.url().includes(`/api/overlay/scenes/${starter.body.scene.id}/snapshot`),
+  );
+  await unknownTokenPage.goto(
+    `${overlayUrl}${starter.body.overlayPath}#${'b'.repeat(43)}`,
+    { waitUntil: 'domcontentloaded' },
+  );
+  const rejectedSnapshot = await unknownTokenResponse;
+  assert.equal(rejectedSnapshot.status(), 404, 'A well-formed but unknown bearer token must not disclose a scene.');
+  assert.match(rejectedSnapshot.headers()['cache-control'] ?? '', /no-store/);
+  assert.equal(rejectedSnapshot.headers()['referrer-policy'], 'no-referrer');
+  await unknownTokenPage.getByText('This overlay URL is invalid or has been revoked.', { exact: true }).waitFor();
+
+  const malformedTokenPage = await context.newPage();
+  await malformedTokenPage.goto(
+    `${overlayUrl}${starter.body.overlayPath}#not-a-valid-token`,
+    { waitUntil: 'domcontentloaded' },
+  );
+  await malformedTokenPage.getByText('This overlay URL is invalid or has been revoked.', { exact: true }).waitFor();
+  assert.equal(
+    await malformedTokenPage.evaluate(() => performance.getEntriesByType('resource')
+      .some((entry) => entry.name.includes('/api/overlay/scenes/'))),
+    false,
+    'Malformed fragment tokens must be rejected before making an API request.',
+  );
+
+  const draftOnlyState = {
+    version: 1,
+    canvas: { mode: 'responsive', width: 1920, height: 1080, snap: true, snapSize: 2 },
+    transition: { type: 'none', durationMs: 0 },
+    reducedMotion: true,
+    elements: [{
+      id: 'e2e-draft-only-now-playing',
+      type: 'now-playing',
+      name: 'Now Playing',
+      text: 'Draft Must Stay Private',
+      x: 5,
+      y: 5,
+      width: 58,
+      height: 18,
+      locked: false,
+      animation: { enter: 'none', exit: 'none', durationMs: 0, delayMs: 0, trigger: 'always' },
+    }],
+  };
+  const cookieHeader = `platform_session=${sessionToken}; platform_csrf=${csrfToken}`;
+  const draftOnlyResponse = await fetch(
+    `${apiUrl}/workspaces/${workspace.id}/scenes/${starter.body.scene.id}/draft`,
+    {
+      method: 'PUT',
+      headers: {
+        cookie: cookieHeader,
+        'content-type': 'application/json',
+        'x-csrf-token': csrfToken,
+      },
+      body: JSON.stringify({ state: draftOnlyState, expectedRevision: 0 }),
+    },
+  );
+  assert.equal(draftOnlyResponse.status, 200);
+  await delay(500);
+  assert.equal(await overlayPage.getByText('Draft Must Stay Private', { exact: true }).count(), 0);
+  assert.equal(await overlayPage.getByText('Now Playing', { exact: true }).count(), 1);
+
+  const publishDraftResponse = await fetch(
+    `${apiUrl}/workspaces/${workspace.id}/scenes/${starter.body.scene.id}/publish`,
+    {
+      method: 'POST',
+      headers: {
+        cookie: cookieHeader,
+        'content-type': 'application/json',
+        'x-csrf-token': csrfToken,
+      },
+      body: JSON.stringify({ expectedRevision: 1 }),
+    },
+  );
+  assert.equal(publishDraftResponse.status, 201);
+
+  // This E2E process starts the API and web apps, but not the outbox dispatcher.
+  // Open a fresh overlay session to verify that the newly published snapshot is
+  // visible without depending on an outbox-driven realtime invalidation.
+  await overlayPage.close();
+  overlayPage = await context.newPage();
+  await overlayPage.goto(
+    `${overlayUrl}${starter.body.overlayPath}#${starter.body.accessToken}`,
+    { waitUntil: 'domcontentloaded' },
+  );
+  await overlayPage.getByText('Draft Must Stay Private', { exact: true }).waitFor({ timeout: 10_000 });
+
+  const connection = await context.newCDPSession(overlayPage);
+  await connection.send('Network.enable');
+  await connection.send('Network.emulateNetworkConditions', {
+    offline: true,
+    latency: 0,
+    downloadThroughput: 0,
+    uploadThroughput: 0,
+  });
+  await delay(500);
+
+  const recoveredState = {
+    version: 1,
+    canvas: { mode: 'responsive', width: 1920, height: 1080, snap: true, snapSize: 2 },
+    transition: { type: 'none', durationMs: 0 },
+    reducedMotion: true,
+    elements: [{
+      id: 'e2e-reconnect-now-playing',
+      type: 'now-playing',
+      name: 'Now Playing',
+      text: 'Recovered After Reconnect',
+      x: 5,
+      y: 5,
+      width: 58,
+      height: 18,
+      locked: false,
+      animation: { enter: 'none', exit: 'none', durationMs: 0, delayMs: 0, trigger: 'always' },
+    }],
+  };
+  const editorStateResponse = await fetch(
+    `${apiUrl}/workspaces/${workspace.id}/scenes/${starter.body.scene.id}/editor`,
+    { headers: { cookie: cookieHeader }, cache: 'no-store' },
+  );
+  assert.equal(editorStateResponse.status, 200, 'The editor must expose the current scene draft revision.');
+  const editorState = await editorStateResponse.json();
+  const draftResponse = await fetch(
+    `${apiUrl}/workspaces/${workspace.id}/scenes/${starter.body.scene.id}/draft`,
+    {
+      method: 'PUT',
+      headers: {
+        cookie: cookieHeader,
+        'content-type': 'application/json',
+        'x-csrf-token': csrfToken,
+      },
+      body: JSON.stringify({ state: recoveredState, expectedRevision: editorState.draftRevision }),
+    },
+  );
+  assert.equal(draftResponse.status, 200, 'The API must accept a scene draft while the overlay browser is offline.');
+  const savedDraft = await draftResponse.json();
+  assert.equal(savedDraft.draftRevision, editorState.draftRevision + 1, 'Saving the offline draft must advance the revision exactly once.');
+  const publishResponse = await fetch(
+    `${apiUrl}/workspaces/${workspace.id}/scenes/${starter.body.scene.id}/publish`,
+    {
+      method: 'POST',
+      headers: {
+        cookie: cookieHeader,
+        'content-type': 'application/json',
+        'x-csrf-token': csrfToken,
+      },
+      body: JSON.stringify({ expectedRevision: savedDraft.draftRevision }),
+    },
+  );
+  assert.equal(publishResponse.status, 201, 'The API must publish the new scene while the overlay browser is offline.');
+  const reconnectSnapshot = overlayPage.waitForResponse((response) =>
+    response.url().includes(`/api/overlay/scenes/${starter.body.scene.id}/snapshot`)
+      && response.request().method() === 'GET',
+  );
+  await connection.send('Network.emulateNetworkConditions', {
+    offline: false,
+    latency: 0,
+    downloadThroughput: -1,
+    uploadThroughput: -1,
+  });
+  // Chromium's network emulation does not consistently dispatch the browser
+  // online event, so emit the same event the overlay listens for on real recovery.
+  await overlayPage.evaluate(() => window.dispatchEvent(new Event('online')));
+  const recoveredSnapshot = await reconnectSnapshot;
+  assert.equal(recoveredSnapshot.status(), 200, 'The overlay must fetch a fresh snapshot after connectivity returns.');
+  const recoveredBody = await recoveredSnapshot.json();
+  assert.equal(
+    recoveredBody.publishedState.elements[0].text,
+    'Recovered After Reconnect',
+    'The reconnect snapshot must contain the newly published scene.',
+  );
+  await overlayPage.getByText('Recovered After Reconnect', { exact: true }).waitFor({ timeout: 10_000 });
+  await connection.detach();
+
+  const revoke = await page.evaluate(async ({ workspaceId, sceneId, token }) => {
+    const response = await fetch(`/api/workspaces/${workspaceId}/scenes/${sceneId}/access-token`, {
+      method: 'DELETE',
+      credentials: 'include',
+      headers: { 'x-csrf-token': token },
+    });
+    return response.status;
+  }, { workspaceId: workspace.id, sceneId: starter.body.scene.id, token: csrfToken });
+  assert.equal(revoke, 200);
+  // Verify revocation through a fresh runtime request. The websocket invalidation
+  // is best-effort realtime behavior; browser timing must not gate this security
+  // assertion or depend on PostgreSQL LISTEN delivery in the test environment.
+  await overlayPage.reload({ waitUntil: 'domcontentloaded' });
+  await overlayPage.getByText('This overlay URL is invalid or has been revoked.', { exact: true }).waitFor({
+    timeout: 10_000,
+  });
+  await unknownTokenPage.close();
+  await malformedTokenPage.close();
+
+  const rejectedLogout = await page.evaluate(async () => {
+    const response = await fetch('/api/auth/logout', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'x-csrf-token': 'incorrect-csrf-token' },
+      signal: AbortSignal.timeout(5_000),
+    });
+    return response.status;
+  });
+  assert.equal(rejectedLogout, 403, 'The API must reject a logout request with an invalid CSRF token.');
+
+  const logout = await page.evaluate(async (token) => {
+    const response = await fetch('/api/auth/logout', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'x-csrf-token': token },
+      signal: AbortSignal.timeout(5_000),
+    });
+    return response.status;
+  }, csrfToken);
+  assert.equal(logout, 204);
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.getByRole('heading', { name: 'Your channel.' }).waitFor();
+
+  process.stdout.write(
+    'Authenticated browser E2E passed: session/workspace/team authorization, request submission/moderation/queue ordering, outbox dispatch, provider resolution, Lyrion playback, published overlay snapshot/reconnect/revocation, CSRF enforcement, and logout.\n',
+  );
+} finally {
+  if (browser) await browser.close();
+  await stopServers();
+  if (providerFixture) await providerFixture.close();
+  if (oauthFixture) await oauthFixture.close();
+  if (oauthSecretDirectory) rmSync(oauthSecretDirectory, { recursive: true, force: true });
+  if (seeded) cleanSession(databaseContainer);
+}
+`,
+  );
+  assert.equal(
+    oauthSessionStorage,
     '1',
-    'The database must store only the hash of the issued session token.',
+    'The database must store a SHA-256 digest rather than the bearer session token.',
   );
   const invalidOauthLogout = await oauthPage.evaluate(async () => {
     const response = await fetch('/api/auth/logout', {
