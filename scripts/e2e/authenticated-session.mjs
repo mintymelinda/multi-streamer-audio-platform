@@ -585,13 +585,9 @@ try {
   });
   assert.equal(invalidStateCallback, 401, 'An unissued OAuth state value must be rejected.');
 
-  const oauthSessionHash = pbkdf2Sync(
-    oauthSessionCookie.value,
-    'platform-session-hash',
-    210000,
-    32,
-    'sha256',
-  ).toString('hex');
+  const oauthSessionHash = createHash('sha256')
+    .update(oauthSessionCookie.value)
+    .digest('hex');
   assert.equal(
     querySql(
       databaseContainer,
