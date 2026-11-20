@@ -541,6 +541,7 @@ test('a replacement worker reclaims a crashed worker delivery without duplicatin
   const fixture = {
     actorId: randomUUID(),
     workspaceId: randomUUID(),
+    sourceProviderId: randomUUID(),
     outputProviderId: randomUUID(),
     requestId: randomUUID(),
     executionStateId: randomUUID(),
@@ -580,6 +581,7 @@ test('a replacement worker reclaims a crashed worker delivery without duplicatin
         "INSERT INTO platform_users (id, twitch_user_id) VALUES ('" + fixture.actorId + "', '" + fixture.twitchId + "');",
         "INSERT INTO workspaces (id, name, owner_user_id, broadcaster_twitch_user_id) VALUES ('" + fixture.workspaceId + "', 'Phase 8 worker restart', '" + fixture.actorId + "', '" + fixture.twitchId + "');",
         "INSERT INTO workspace_memberships (workspace_id, user_id, role, status) VALUES ('" + fixture.workspaceId + "', '" + fixture.actorId + "', 'owner', 'active');",
+        "INSERT INTO provider_instances (id, workspace_id, provider_id, instance_key, contract_version, capabilities, connection_health, enabled) VALUES ('" + fixture.sourceProviderId + "', '" + fixture.workspaceId + "', 'youtube', 'phase8-restart-source-" + fixture.sourceProviderId + "', 1, '{\"resolve\":true}'::jsonb, 'healthy', true);",
         "INSERT INTO provider_instances (id, workspace_id, provider_id, instance_key, contract_version, capabilities, connection_health, enabled) VALUES ('" + fixture.outputProviderId + "', '" + fixture.workspaceId + "', 'lyrion', 'phase8-restart-" + fixture.outputProviderId + "', 1, '{\"playback\":true,\"supportedSourceProviderIds\":[\"youtube\"]}'::jsonb, 'healthy', true);",
         "INSERT INTO provider_output_assignments (workspace_id, provider_instance_id, output_id, player_id, assigned_by, active) VALUES ('" + fixture.workspaceId + "', '" + fixture.outputProviderId + "', '" + fixture.outputId + "', '" + fixture.playerId + "', '" + fixture.actorId + "', true);",
         "INSERT INTO media_requests (id, workspace_id, source, submitted_by_user_id, provider, media_id, title, status) VALUES ('" + fixture.requestId + "', '" + fixture.workspaceId + "', 'dashboard', '" + fixture.actorId + "', 'youtube', 'phase8-restart-media', 'Phase 8 worker restart', 'queued');",
