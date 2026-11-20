@@ -182,15 +182,15 @@ function createCrashHandoffFixture() {
         body,
       );
       requests.push({ body, validSignature });
+      if (!appliedExecutions.has(body.executionStateId)) {
+        appliedExecutions.add(body.executionStateId);
+        effectCount += 1;
+      }
       if (requests.length === 1) {
         firstReceived.resolve();
         return;
       }
       if (requests.length === 2) secondReceived.resolve();
-      if (!appliedExecutions.has(body.executionStateId)) {
-        appliedExecutions.add(body.executionStateId);
-        effectCount += 1;
-      }
       response.writeHead(202, { 'content-type': 'application/json' });
       response.end(JSON.stringify({
         accepted: true,
