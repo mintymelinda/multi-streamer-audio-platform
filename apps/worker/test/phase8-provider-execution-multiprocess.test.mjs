@@ -629,7 +629,7 @@ test('a replacement worker reclaims a crashed worker delivery without duplicatin
     await withTimeout(handoff.firstReceived, 20_000, 'The first worker did not reach the handoff fixture.');
     const firstExit = new Promise((resolve) => first.child.once('exit', (code, signal) => resolve({ code, signal })));
     first.child.kill('SIGKILL');
-    const [exitCode, exitSignal] = await withTimeout(firstExit, 10_000, 'The terminated worker did not exit.');
+    const { code: exitCode, signal: exitSignal } = await withTimeout(firstExit, 10_000, 'The terminated worker did not exit.');
     assert.equal(exitCode, null);
     assert.equal(exitSignal, 'SIGKILL');
 
