@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
-import { cpSync, existsSync, mkdirSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import { createHash, randomInt, randomUUID } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
@@ -22,6 +23,9 @@ const foreignActorId = randomUUID();
 const foreignWorkspaceId = randomUUID();
 const foreignTwitchUserId = String(Date.now() + 1) + String(randomInt(1_000_000));
 const twitchUserId = String(Date.now()) + String(randomInt(1_000_000));
+const oauthTwitchUserId = String(Date.now() + 2) + String(randomInt(1_000_000));
+const oauthClientId = 'phase8-e2e-twitch-client-id';
+const oauthClientSecret = 'phase8-e2e-twitch-client-secret';
 const sessionToken = randomUUID() + randomUUID();
 const csrfToken = randomUUID() + randomUUID();
 const sessionHash = createHash('sha256').update(sessionToken).digest('hex');
@@ -40,6 +44,9 @@ const handoffSecret = 'browser-e2e-provider-handoff-secret-with-more-than-32-byt
 const children = [];
 let browser;
 let providerFixture;
+let oauthFixture;
+let oauthSecretDirectory;
+let oauthActorId;
 let seeded = false;
 
 function run(command, args, options = {}) {
@@ -92,6 +99,84 @@ function querySql(containerId, statement) {
     'psql', '-h', '127.0.0.1', '-U', 'platform_bootstrap', '-d', 'platform',
     '-v', 'ON_ERROR_STOP=1', '-A', '-t', '-c', statement,
   ]);
+}
+
+async function startTwitchOAuthFixture() {
+  const requests = [];
+  const server = createServer(async (request, response) => {
+    const url = new URL(request.url ?? '/', 'http://127.0.0.1');
+    if (request.method === 'GET' && url.pathname === '/oauth2/authorize') {
+      const clientId = url.searchParams.get('client_id');
+      const redirectUri = url.searchParams.get('redirect_uri');
+      const state = url.searchParams.get('state');
+      if (
+        clientId !== oauthClientId ||
+        url.searchParams.get('response_type') !== 'code' ||
+        url.searchParams.get('scope') !== '' ||
+        !redirectUri ||
+        !state
+      ) {
+        response.writeHead(400).end();
+        return;
+      }
+      requests.push({ type: 'authorize', clientId, redirectUri, state, scope: url.searchParams.get('scope') });
+      const callback = new URL(redirectUri);
+      callback.searchParams.set('code', 'phase8-browser-oauth-code');
+      callback.searchParams.set('state', state);
+      response.writeHead(302, { location: callback.toString() }).end();
+      return;
+    }
+    if (request.method === 'POST' && url.pathname === '/oauth2/token') {
+      const chunks = [];
+      for await (const chunk of request) chunks.push(chunk);
+      const form = new URLSearchParams(Buffer.concat(chunks).toString('utf8'));
+      const tokenRequest = Object.fromEntries(form.entries());
+      requests.push({ type: 'token', ...tokenRequest });
+      if (
+        tokenRequest.client_id !== oauthClientId ||
+        tokenRequest.client_secret !== oauthClientSecret ||
+        tokenRequest.code !== 'phase8-browser-oauth-code' ||
+        tokenRequest.grant_type !== 'authorization_code'
+      ) {
+        response.writeHead(400).end();
+        return;
+      }
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ access_token: 'phase8-e2e-access-token', expires_in: 3600 }));
+      return;
+    }
+    if (request.method === 'GET' && url.pathname === '/oauth2/validate') {
+      if (request.headers.authorization !== 'OAuth phase8-e2e-access-token') {
+        response.writeHead(401).end();
+        return;
+      }
+      requests.push({ type: 'validate' });
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({
+        client_id: oauthClientId,
+        user_id: oauthTwitchUserId,
+        expires_in: 3600,
+      }));
+      return;
+    }
+    response.writeHead(404).end();
+  });
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  const address = server.address();
+  if (!address || typeof address === 'string') {
+    throw new Error('Twitch OAuth fixture did not bind to a TCP port.');
+  }
+  return {
+    url: `http://127.0.0.1:${address.port}`,
+    requests,
+    async close() {
+      server.closeAllConnections?.();
+      if (server.listening) await new Promise((resolve) => server.close(() => resolve()));
+    },
+  };
 }
 
 async function startProviderFixture() {
@@ -355,7 +440,7 @@ function cleanSession(containerId) {
   sql(containerId, [
     'BEGIN;',
     `DELETE FROM workspaces WHERE id IN ('${actorId}', '${foreignWorkspaceId}') OR owner_user_id IN ('${actorId}', '${foreignActorId}');`,
-    `DELETE FROM platform_users WHERE id IN ('${actorId}', '${foreignActorId}');`,
+    `DELETE FROM platform_users WHERE id IN ('${actorId}', '${foreignActorId}') OR twitch_user_id = '${oauthTwitchUserId}';`,
     'COMMIT;',
   ].join('\n'));
 }
@@ -365,11 +450,19 @@ const databaseContainer = postgresContainer();
 try {
   seedSession(databaseContainer);
   providerFixture = await startProviderFixture();
+  oauthFixture = await startTwitchOAuthFixture();
+  oauthSecretDirectory = mkdtempSync(join(tmpdir(), 'phase8-twitch-oauth-'));
+  const oauthSecretFile = join(oauthSecretDirectory, 'client-secret');
+  writeFileSync(oauthSecretFile, oauthClientSecret, { mode: 0o600 });
   const apiEnvironment = {
     ...process.env,
     NODE_ENV: 'test',
     DATABASE_URL: postgresUrl,
     API_PORT: '3300',
+    TWITCH_CLIENT_ID: oauthClientId,
+    TWITCH_CLIENT_SECRET_FILE: oauthSecretFile,
+    TWITCH_REDIRECT_URI: `${dashboardUrl}/api/auth/twitch/callback`,
+    TWITCH_OAUTH_TEST_BASE_URL: oauthFixture.url,
     PROVIDER_EXECUTION_HANDOFF_SECRET: handoffSecret,
     REDIS_URL: process.env.REDIS_URL ?? 'redis://127.0.0.1:6379',
     INVIDIOUS_INSTANCE_URL: providerFixture.url,
@@ -1153,5 +1246,7 @@ try {
   if (browser) await browser.close();
   await stopServers();
   if (providerFixture) await providerFixture.close();
+  if (oauthFixture) await oauthFixture.close();
+  if (oauthSecretDirectory) rmSync(oauthSecretDirectory, { recursive: true, force: true });
   if (seeded) cleanSession(databaseContainer);
 }
