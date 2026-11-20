@@ -310,19 +310,75 @@ test('an expired playback lease is reclaimed with a higher fencing token and rej
        SET LOCAL app.user_id = '${actorId}';
        SET LOCAL app.workspace_id = '${workspaceId}';
        WITH released AS (
-         DELETE FROM public.playback_leases
+         UPDATE public.playback_leases
+            SET expires_at = now(), updated_at = now()
           WHERE workspace_id = '${workspaceId}'
             AND provider_instance_id = '${providerId}'
             AND player_id = '${playerId}'
             AND lease_owner_id = '${staleOwnerId}'
-            AND lease_token = '${staleLeaseToken}'
-            AND fencing_token = 7
          RETURNING 1
        )
        SELECT count(*)::text FROM released;
        COMMIT;`,
     );
     assert.equal(staleReleaseCount, '0', 'A stale lease owner must not release a reclaimed lease.');
+
+    const requestId = randomUUID();
+    const idempotencyKey = 'phase8-fenced-operation-' + randomUUID();
+    runSql(
+      containerId,
+      'platform_runtime',
+      'local-runtime-only',
+      `BEGIN;
+       SET LOCAL app.user_id = '${actorId}';
+       SET LOCAL app.workspace_id = '${workspaceId}';
+       INSERT INTO public.playback_operations (
+         workspace_id, provider_instance_id, player_id, output_id, request_id,
+         requested_by, command, idempotency_key, status, result, fencing_token
+       ) VALUES (
+         '${workspaceId}', '${providerId}', '${playerId}', 'phase8-output',
+         '${requestId}', '${actorId}', 'play', '${idempotencyKey}',
+         'completed', '{"outcome":"started"}'::jsonb, 8
+       );
+       COMMIT;`,
+    );
+
+    const staleWrite = runSql(
+      containerId,
+      'platform_runtime',
+      'local-runtime-only',
+      `BEGIN;
+       SET LOCAL app.user_id = '${actorId}';
+       SET LOCAL app.workspace_id = '${workspaceId}';
+       INSERT INTO public.playback_operations (
+         workspace_id, provider_instance_id, player_id, output_id, request_id,
+         requested_by, command, idempotency_key, status, result, fencing_token
+       ) VALUES (
+         '${workspaceId}', '${providerId}', '${playerId}', 'phase8-output',
+         '${requestId}', '${actorId}', 'play', '${idempotencyKey}',
+         'uncertain', '{"outcome":"unknown"}'::jsonb, 7
+       )
+       ON CONFLICT (workspace_id, idempotency_key)
+       DO UPDATE SET
+         status = EXCLUDED.status,
+         result = EXCLUDED.result,
+         fencing_token = EXCLUDED.fencing_token,
+         updated_at = now()
+       WHERE public.playback_operations.fencing_token <= EXCLUDED.fencing_token
+       RETURNING status;
+       COMMIT;`,
+    );
+    assert.equal(staleWrite, '', 'A stale fencing generation must not overwrite the current operation.');
+
+    const currentOperation = runSql(
+      containerId,
+      'platform_runtime',
+      'local-runtime-only',
+      `SELECT status || ':' || fencing_token::text || ':' || result->>'outcome'
+         FROM public.playback_operations
+        WHERE workspace_id = '${workspaceId}' AND idempotency_key = '${idempotencyKey}'`,
+    );
+    assert.equal(currentOperation, 'completed:8:started');
 
     const current = runSql(
       containerId,
