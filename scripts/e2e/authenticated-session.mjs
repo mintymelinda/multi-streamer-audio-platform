@@ -462,7 +462,7 @@ try {
     TWITCH_CLIENT_ID: oauthClientId,
     TWITCH_CLIENT_SECRET_FILE: oauthSecretFile,
     TWITCH_REDIRECT_URI: `${dashboardUrl}/api/auth/twitch/callback`,
-    TWITCH_OAUTH_TEST_BASE_URL: oauthFixture.url,
+    TWITCH_OAUTH_TEST_PORT: String(new URL(oauthFixture.url).port),
     PROVIDER_EXECUTION_HANDOFF_SECRET: handoffSecret,
     REDIS_URL: process.env.REDIS_URL ?? 'redis://127.0.0.1:6379',
     INVIDIOUS_INSTANCE_URL: providerFixture.url,
