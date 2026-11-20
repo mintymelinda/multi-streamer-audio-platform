@@ -278,7 +278,9 @@ test('workspace realtime fan-out stays tenant-isolated across API processes and 
     first.send({ type: 'reconnect' });
     const reconnected = await first.waitFor((message) => message.type === 'reconnected');
     assert.equal(reconnected.nodeId, 'api-a');
-    assert.equal(typeof reconnected.cursor, 'string');
+    assert.equal(reconnected.cursor.workspaceId, workspaceA);
+    assert.equal(typeof reconnected.cursor.eventId, 'string');
+    assert.ok(Number.isSafeInteger(reconnected.cursor.sequence));
     const eventAfterReconnect = {
       id: randomUUID(),
       workspaceId: workspaceA,
