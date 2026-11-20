@@ -30,7 +30,7 @@ test('uses the pull request merge-base range when linting a PR', () => {
     headSha: 'head-sha',
   }, (_command, args) => {
     received = args;
-    return 'apps/api/src/main.ts\0docs/guide.md\0';
+    return 'apps/api/src/main.ts\\0docs/guide.md\\0';
   });
 
   assert.deepEqual(received, ['diff', '--name-only', '-z', 'base-sha...head-sha']);
@@ -41,7 +41,7 @@ test('uses the before/head range for pushes and handles a new-branch push safely
   const calls = [];
   const runGit = (_command, args) => {
     calls.push(args);
-    return 'scripts/ci/lint-changed.mjs\0';
+    return 'scripts/ci/lint-changed.mjs\\0';
   };
 
   getChangedFiles({ eventName: 'push', baseSha: 'before-sha', headSha: 'head-sha' }, runGit);
@@ -64,7 +64,7 @@ test('does not run Biome when the change set has no supported files', () => {
   assert.equal(invoked, false);
 });
 
-test('passes only the changed files to Biome and propagates its status', () => {
+test('passes only the changed files to Biome with an expanded diagnostic limit and propagates its status', () => {
   let received;
   const status = lintChangedFiles(['apps/api/src/main.ts', 'scripts/test/example.test.mjs'], (_command, args) => {
     received = args;
@@ -75,6 +75,7 @@ test('passes only the changed files to Biome and propagates its status', () => {
     'exec',
     'biome',
     'lint',
+    '--max-diagnostics=500',
     'apps/api/src/main.ts',
     'scripts/test/example.test.mjs',
   ]);
