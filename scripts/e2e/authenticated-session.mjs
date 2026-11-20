@@ -564,6 +564,28 @@ try {
     return response.json();
   }
 
+  async function waitForRequestStatuses(expectedStatuses) {
+    const deadline = Date.now() + 20_000;
+    let latest = [];
+    while (Date.now() < deadline) {
+      const response = await fetch(`${apiUrl}/workspaces/${workspace.id}/requests`, {
+        headers: { cookie: `platform_session=${sessionToken}` },
+      });
+      assert.equal(response.status, 200);
+      latest = await response.json();
+      if (Object.entries(expectedStatuses).every(([requestId, status]) =>
+        latest.find((entry) => entry.id === requestId)?.status === status
+      )) {
+        return latest;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    throw new Error(
+      'Timed out waiting for request statuses: ' + JSON.stringify(expectedStatuses)
+        + '; latest=' + JSON.stringify(latest.map((entry) => ({ id: entry.id, status: entry.status }))),
+    );
+  }
+
   const rejectedRequest = await submitModerationRequest('E2E moderator rejects this');
   const approvedRequest = await submitModerationRequest('E2E moderator approves this', {
     provider: 'youtube',
@@ -794,11 +816,10 @@ try {
 
   providerFixture.completeCurrentPlayback();
   await providerFixture.waitForPlayCount(2);
-  const firstCompletionState = await fetch(`${apiUrl}/workspaces/${workspace.id}/requests`, {
-    headers: { cookie: `platform_session=${sessionToken}` },
+  const firstCompletionRequests = await waitForRequestStatuses({
+    [approvedRequest.id]: 'completed',
+    [secondReorderRequest.id]: 'playing',
   });
-  assert.equal(firstCompletionState.status, 200);
-  const firstCompletionRequests = await firstCompletionState.json();
   assert.equal(
     firstCompletionRequests.find((entry) => entry.id === approvedRequest.id)?.status,
     'completed',
@@ -812,11 +833,10 @@ try {
 
   providerFixture.completeCurrentPlayback();
   await providerFixture.waitForPlayCount(3);
-  const secondCompletionState = await fetch(`${apiUrl}/workspaces/${workspace.id}/requests`, {
-    headers: { cookie: `platform_session=${sessionToken}` },
+  const secondCompletionRequests = await waitForRequestStatuses({
+    [secondReorderRequest.id]: 'completed',
+    [firstReorderRequest.id]: 'playing',
   });
-  assert.equal(secondCompletionState.status, 200);
-  const secondCompletionRequests = await secondCompletionState.json();
   assert.equal(
     secondCompletionRequests.find((entry) => entry.id === secondReorderRequest.id)?.status,
     'completed',
