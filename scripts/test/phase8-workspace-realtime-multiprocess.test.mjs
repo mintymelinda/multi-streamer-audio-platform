@@ -240,7 +240,7 @@ test('workspace realtime fan-out stays tenant-isolated across API processes and 
       });
     }
     assert.deepEqual([firstEvent.nodeId, secondEvent.nodeId].sort(), ['api-a', 'api-b']);
-    await rejectEvent(foreign, eventA);
+    await Promise.all([rejectEvent(first, eventA), rejectEvent(second, eventA), rejectEvent(foreign, eventA)]);
 
     const eventB = {
       id: randomUUID(),
@@ -292,7 +292,11 @@ test('workspace realtime fan-out stays tenant-isolated across API processes and 
     ]);
     assert.equal(resumedFirstEvent.payload.id, eventAfterReconnect.id);
     assert.equal(resumedSecondEvent.payload.id, eventAfterReconnect.id);
-    await rejectEvent(foreign, eventAfterReconnect);
+    await Promise.all([
+      rejectEvent(first, eventAfterReconnect),
+      rejectEvent(second, eventAfterReconnect),
+      rejectEvent(foreign, eventAfterReconnect),
+    ]);
   } finally {
     await Promise.all(children.map((child) => child.close().catch(() => undefined)));
     if (seeded) {
