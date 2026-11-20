@@ -563,7 +563,7 @@ test('a replacement worker reclaims a crashed worker delivery without duplicatin
     ]);
     redisStarted = true;
     const mappedPort = docker(['port', redisContainer, '6379/tcp'])
-      .split('\\n')
+      .split('\n')
       .map((line) => line.trim())
       .find((line) => line.startsWith('127.0.0.1:'))
       ?.split(':')
@@ -586,7 +586,7 @@ test('a replacement worker reclaims a crashed worker delivery without duplicatin
         "INSERT INTO logical_queue_entries (workspace_id, request_id, priority, sequence) VALUES ('" + fixture.workspaceId + "', '" + fixture.requestId + "', 0, 1);",
         "INSERT INTO provider_execution_states (id, workspace_id, request_id, provider_instance_id, state, dispatch_generation) VALUES ('" + fixture.executionStateId + "', '" + fixture.workspaceId + "', '" + fixture.requestId + "', '" + fixture.outputProviderId + "', 'queued', 1);",
         'COMMIT;',
-      ].join('\\n'),
+      ].join('\n'),
     );
     seeded = true;
 
