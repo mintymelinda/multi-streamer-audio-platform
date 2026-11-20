@@ -212,17 +212,14 @@ export class AuthService {
 }
 
 function twitchOAuthEndpoint(endpoint: 'authorize' | 'token' | 'validate'): string {
-  const testBase = process.env.NODE_ENV === 'test'
-    ? process.env.TWITCH_OAUTH_TEST_BASE_URL?.trim()
+  const testPort = process.env.NODE_ENV === 'test'
+    ? process.env.TWITCH_OAUTH_TEST_PORT?.trim()
     : undefined;
-  if (!testBase) return `https://id.twitch.tv/oauth2/${endpoint}`;
+  if (!testPort) return `https://id.twitch.tv/oauth2/${endpoint}`;
 
-  const base = new URL(testBase);
-  if (
-    base.protocol !== 'http:' ||
-    !['127.0.0.1', 'localhost', '::1'].includes(base.hostname)
-  ) {
-    throw new Error('TWITCH_OAUTH_TEST_BASE_URL must be a loopback HTTP URL.');
+  const port = Number(testPort);
+  if (!Number.isSafeInteger(port) || port < 1 || port > 65_535) {
+    throw new Error('TWITCH_OAUTH_TEST_PORT must be a valid TCP port.');
   }
-  return new URL(`/oauth2/${endpoint}`, base).toString();
+  return `http://127.0.0.1:${port}/oauth2/${endpoint}`;
 }
