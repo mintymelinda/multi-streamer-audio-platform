@@ -62,8 +62,20 @@ jobs:
           node-version: 26.13.0
           cache: pnpm
 
+      - name: Verify workspace lockfile checkout
+        run: |
+          set -eu
+          printf 'PWD=%s\\nGITHUB_WORKSPACE=%s\\n' "$PWD" "$GITHUB_WORKSPACE"
+          test "$PWD" = "$GITHUB_WORKSPACE"
+          test -s "$GITHUB_WORKSPACE/pnpm-workspace.yaml"
+          test -s "$GITHUB_WORKSPACE/pnpm-lock.yaml"
+          git ls-files --error-unmatch pnpm-workspace.yaml pnpm-lock.yaml
+          git cat-file -e HEAD:pnpm-lock.yaml
+          pnpm config get lockfile
+          pnpm config get lockfile-dir
+
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --lockfile-dir="$GITHUB_WORKSPACE"
 
       - name: Validate deletion-ledger recovery tooling
         run: |
