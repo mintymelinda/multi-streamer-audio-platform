@@ -216,3 +216,134 @@ test('two independent PostgreSQL sessions cannot acquire the same live playback 
     );
   }
 });
+
+
+test('an expired playback lease is reclaimed with a higher fencing token and rejects stale release', async (t) => {
+  if (process.env.CI !== 'true' && process.env.GITHUB_ACTIONS !== 'true') {
+    t.skip('Runs in CI against the PostgreSQL service container; local tests do not require Docker.');
+    return;
+  }
+  const containerId = findPostgresContainer();
+  if (!containerId) {
+    t.skip('No PostgreSQL 18.6 CI service container is available.');
+    return;
+  }
+
+  const actorId = randomUUID();
+  const workspaceId = randomUUID();
+  const providerId = randomUUID();
+  const staleOwnerId = randomUUID();
+  const currentOwnerId = randomUUID();
+  const staleLeaseToken = randomUUID();
+  const currentLeaseToken = randomUUID();
+  const twitchId = String(Date.now()) + String(Math.floor(Math.random() * 1_000_000));
+  const playerId = 'phase8-expired-lease-player';
+
+  try {
+    runSql(
+      containerId,
+      'platform_bootstrap',
+      'ci-bootstrap-only',
+      `BEGIN;
+       INSERT INTO public.platform_users (id, twitch_user_id)
+       VALUES ('${actorId}', '${twitchId}');
+       INSERT INTO public.workspaces (id, name, owner_user_id, broadcaster_twitch_user_id)
+       VALUES ('${workspaceId}', 'Phase 8 expired lease', '${actorId}', '${twitchId}');
+       INSERT INTO public.workspace_memberships (workspace_id, user_id, role)
+       VALUES ('${workspaceId}', '${actorId}', 'owner');
+       INSERT INTO public.provider_instances (
+         id, workspace_id, provider_id, instance_key, contract_version
+       ) VALUES (
+         '${providerId}', '${workspaceId}', 'youtube', 'phase8-expired-${providerId}', 1
+       );
+       COMMIT;`,
+    );
+
+    runSql(
+      containerId,
+      'platform_runtime',
+      'local-runtime-only',
+      `BEGIN;
+       SET LOCAL app.user_id = '${actorId}';
+       SET LOCAL app.workspace_id = '${workspaceId}';
+       INSERT INTO public.playback_leases (
+         workspace_id, provider_instance_id, player_id, lease_owner_id,
+         lease_token, fencing_token, expires_at
+       ) VALUES (
+         '${workspaceId}', '${providerId}', '${playerId}', '${staleOwnerId}',
+         '${staleLeaseToken}', 7, now() - interval '1 second'
+       );
+       COMMIT;`,
+    );
+
+    const reclaimed = runSql(
+      containerId,
+      'platform_runtime',
+      'local-runtime-only',
+      `BEGIN;
+       SET LOCAL app.user_id = '${actorId}';
+       SET LOCAL app.workspace_id = '${workspaceId}';
+       INSERT INTO public.playback_leases AS lease (
+         workspace_id, provider_instance_id, player_id, lease_owner_id,
+         lease_token, fencing_token, expires_at
+       ) VALUES (
+         '${workspaceId}', '${providerId}', '${playerId}', '${currentOwnerId}',
+         '${currentLeaseToken}', 1, now() + interval '1 minute'
+       )
+       ON CONFLICT (workspace_id, provider_instance_id, player_id)
+       DO UPDATE SET
+         lease_owner_id = EXCLUDED.lease_owner_id,
+         lease_token = EXCLUDED.lease_token,
+         fencing_token = lease.fencing_token + 1,
+         expires_at = EXCLUDED.expires_at
+       WHERE lease.expires_at <= now()
+       RETURNING fencing_token;
+       COMMIT;`,
+    );
+    assert.equal(reclaimed, '8', 'Reclaiming an expired lease must increment its fencing token.');
+
+    const staleReleaseCount = runSql(
+      containerId,
+      'platform_runtime',
+      'local-runtime-only',
+      `BEGIN;
+       SET LOCAL app.user_id = '${actorId}';
+       SET LOCAL app.workspace_id = '${workspaceId}';
+       WITH released AS (
+         DELETE FROM public.playback_leases
+          WHERE workspace_id = '${workspaceId}'
+            AND provider_instance_id = '${providerId}'
+            AND player_id = '${playerId}'
+            AND lease_owner_id = '${staleOwnerId}'
+            AND lease_token = '${staleLeaseToken}'
+            AND fencing_token = 7
+         RETURNING 1
+       )
+       SELECT count(*)::text FROM released;
+       COMMIT;`,
+    );
+    assert.equal(staleReleaseCount, '0', 'A stale lease owner must not release a reclaimed lease.');
+
+    const current = runSql(
+      containerId,
+      'platform_runtime',
+      'local-runtime-only',
+      `SELECT fencing_token::text || ':' || lease_owner_id::text || ':' || lease_token::text
+         FROM public.playback_leases
+        WHERE workspace_id = '${workspaceId}'
+          AND provider_instance_id = '${providerId}'
+          AND player_id = '${playerId}'`,
+    );
+    assert.equal(current, '8:' + currentOwnerId + ':' + currentLeaseToken);
+  } finally {
+    runSql(
+      containerId,
+      'platform_bootstrap',
+      'ci-bootstrap-only',
+      `BEGIN;
+       DELETE FROM public.workspaces WHERE id = '${workspaceId}';
+       DELETE FROM public.platform_users WHERE id = '${actorId}';
+       COMMIT;`,
+    );
+  }
+});
