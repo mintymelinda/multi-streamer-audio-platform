@@ -63,6 +63,23 @@ async function main() {
       continue;
     }
     if (message?.type === 'close') break;
+    if (message?.type === 'disconnect') {
+      await socket.leave(`workspace:${workspaceId}`);
+      send({ type: 'disconnected', nodeId });
+      continue;
+    }
+    if (message?.type === 'reconnect') {
+      try {
+        const resumed = await gateway.subscribe(socket, { workspaceId });
+        send({ type: 'reconnected', nodeId, cursor: resumed.cursor });
+      } catch (error) {
+        send({
+          type: 'reconnect-error',
+          nodeId,
+          message: error instanceof Error ? error.message : 'unknown-error',
+        });
+      }
+    }
   }
 
   await gateway.onModuleDestroy();
