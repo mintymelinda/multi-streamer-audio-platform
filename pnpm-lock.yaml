@@ -3,6 +3,11 @@ lockfileVersion: '9.0'
 
 importers:
   .:
+    configDependencies: {}
+    packageManagerDependencies:
+      pnpm:
+        specifier: 12.18.0
+        version: 12.18.0
     devDependencies:
       '@biomejs/biome':
         specifier: 2.6.5
