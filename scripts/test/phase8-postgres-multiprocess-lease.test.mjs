@@ -364,7 +364,7 @@ test('an expired playback lease is reclaimed with a higher fencing token and rej
          result = EXCLUDED.result,
          fencing_token = EXCLUDED.fencing_token,
          updated_at = now()
-       WHERE public.playback_operations.fencing_token <= EXCLUDED.fencing_token
+       WHERE playback_operations.fencing_token <= EXCLUDED.fencing_token
        RETURNING status;
        COMMIT;`,
     );
@@ -374,7 +374,7 @@ test('an expired playback lease is reclaimed with a higher fencing token and rej
       containerId,
       'platform_runtime',
       'local-runtime-only',
-      `SELECT status || ':' || fencing_token::text || ':' || result->>'outcome'
+      `SELECT status || ':' || fencing_token::text || ':' || (result->>'outcome')
          FROM public.playback_operations
         WHERE workspace_id = '${workspaceId}' AND idempotency_key = '${idempotencyKey}'`,
     );
