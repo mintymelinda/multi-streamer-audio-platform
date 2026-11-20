@@ -77,8 +77,9 @@ function startApiProcess(environment) {
   child.stdout.on('data', (chunk) => {
     stdout = (stdout + chunk).slice(-6000);
     buffer += chunk;
-    let newline;
-    while ((newline = buffer.indexOf('\n')) >= 0) {
+    while (true) {
+      const newline = buffer.indexOf('\n');
+      if (newline < 0) break;
       const line = buffer.slice(0, newline);
       buffer = buffer.slice(newline + 1);
       if (!line.trim()) continue;
