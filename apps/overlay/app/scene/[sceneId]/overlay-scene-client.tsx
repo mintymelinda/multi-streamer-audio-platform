@@ -396,7 +396,7 @@ export function OverlaySceneClient({ sceneId }: { sceneId: string }) {
               } as CSSProperties}
             >
               {type === "now-playing" && <div className="overlay-now-playing">
-                <div className="overlay-artwork" aria-label="Album artwork unavailable">
+                <div className="overlay-artwork" role="img" aria-label="Album artwork unavailable">
                   <span aria-hidden="true">♫</span>
                 </div>
                 <div className="overlay-track-copy">
