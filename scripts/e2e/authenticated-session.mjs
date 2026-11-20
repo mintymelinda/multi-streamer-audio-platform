@@ -744,7 +744,7 @@ try {
   }, workspace.id);
   assert.equal(promotedQueueResponse.status, 200);
   assert.equal(promotedQueueResponse.body[0]?.id, secondReorderRequest.id);
-  assert.equal(promotedQueueResponse.body[0]?.priority, 100, 'Promotion must establish the highest priority class.');
+  assert.equal(promotedQueueResponse.body[0]?.queue_priority, 100, 'Promotion must establish the highest priority class.');
 
   const revokedMembership = await page.evaluate(async ({ workspaceId, memberId, token }) => {
     const response = await fetch(`/api/workspaces/${workspaceId}/members/${memberId}`, {
