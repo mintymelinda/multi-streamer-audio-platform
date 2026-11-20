@@ -528,6 +528,38 @@ try {
   assert.equal(rejectedRequest.status, 'pending');
   assert.equal(approvedRequest.status, 'pending');
 
+  const duplicateSubmissionKey = 'browser-e2e-idempotency-' + randomUUID();
+  const duplicateFirst = await submitModerationRequest('E2E duplicate submission', {
+    idempotencyKey: duplicateSubmissionKey,
+  });
+  const duplicateSecond = await submitModerationRequest('E2E duplicate submission', {
+    idempotencyKey: duplicateSubmissionKey,
+  });
+  assert.equal(duplicateFirst.id, duplicateSecond.id, 'A repeated idempotency key must return the original request.');
+  assert.equal(duplicateSecond.status, 'pending');
+
+  const cancelledRequest = await submitModerationRequest('E2E requester cancels this');
+  const cancellation = await fetch(
+    `${apiUrl}/workspaces/${workspace.id}/requests/${cancelledRequest.id}/cancel`,
+    {
+      method: 'PATCH',
+      headers: {
+        cookie: `platform_session=${sessionToken}; platform_csrf=${csrfToken}`,
+        'x-csrf-token': csrfToken,
+      },
+    },
+  );
+  assert.equal(cancellation.status, 200, 'A requester must be able to cancel a request before playback resolution.');
+  assert.equal((await cancellation.json()).status, 'cancelled');
+  const cancelledQueue = await fetch(`${apiUrl}/workspaces/${workspace.id}/queue`, {
+    headers: { cookie: `platform_session=${sessionToken}` },
+  });
+  assert.equal(cancelledQueue.status, 200);
+  assert.ok(
+    !(await cancelledQueue.json()).some((entry) => entry.id === cancelledRequest.id),
+    'A cancelled request must not remain in the playable queue.',
+  );
+
   const moderatorSettingsAttempt = await inviteePage.evaluate(async ({ workspaceId, token }) => {
     const response = await fetch(`/api/workspaces/${workspaceId}/requests/settings`, {
       method: 'PATCH',
@@ -692,6 +724,27 @@ try {
     reorderedQueue.before.map((entry) => entry.id).reverse(),
     'The Moderator must be able to persist a new logical queue order.',
   );
+
+  const promoted = await inviteePage.evaluate(async ({ workspaceId, requestId, token }) => {
+    const response = await fetch(`/api/workspaces/${workspaceId}/queue/${requestId}/promote`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'x-csrf-token': token },
+    });
+    return { status: response.status, body: await response.json() };
+  }, { workspaceId: workspace.id, requestId: secondReorderRequest.id, token: foreignCsrfToken });
+  assert.equal(promoted.status, 201);
+  assert.equal(promoted.body.position, 1);
+  const promotedQueueResponse = await inviteePage.evaluate(async (workspaceId) => {
+    const response = await fetch(`/api/workspaces/${workspaceId}/queue`, {
+      credentials: 'include',
+      cache: 'no-store',
+    });
+    return { status: response.status, body: await response.json() };
+  }, workspace.id);
+  assert.equal(promotedQueueResponse.status, 200);
+  assert.equal(promotedQueueResponse.body[0]?.id, secondReorderRequest.id);
+  assert.equal(promotedQueueResponse.body[0]?.priority, 100, 'Promotion must establish the highest priority class.');
 
   const revokedMembership = await page.evaluate(async ({ workspaceId, memberId, token }) => {
     const response = await fetch(`/api/workspaces/${workspaceId}/members/${memberId}`, {
