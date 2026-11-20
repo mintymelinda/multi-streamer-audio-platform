@@ -31,3 +31,7 @@ Using `main` as the first parent preserves its six main-only commits (#138 and #
 The first CI run on the initial integration commit failed at `pnpm install --frozen-lockfile` because root package-manager metadata was missing from the hand-assembled lockfile. That metadata has since been restored in the candidate. The subsequent commit must pass a fresh frozen install, quality gates, tests, type checks, migrations, builds, and CodeQL before this PR can be considered merge-ready.
 
 No production deployment or launch approval is authorized by this reconciliation.
+
+## CI trigger branch
+
+The candidate is also published as `phase-8/reconciled-release` so the repository's existing Phase 8 push CI filter runs on the reconciled tree. The release branch itself remains a draft integration candidate until CI and CodeQL complete successfully.
