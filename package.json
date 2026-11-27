@@ -18,7 +18,7 @@
     "lint:changed": "node scripts/ci/lint-changed.mjs"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.6.5",
+    "@biomejs/biome": "2.6.8",
     "typescript": "7.0.2"
   }
 }
