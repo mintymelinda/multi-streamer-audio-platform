@@ -9,7 +9,7 @@
   },
   "dependencies": {
     "@nestjs/common": "12.5.0",
-    "@nestjs/core": "12.4.0",
+    "@nestjs/core": "12.6.0",
     "@platform/contracts": "workspace:*",
     "bullmq": "6.7.0",
     "ioredis": "6.0.0",
